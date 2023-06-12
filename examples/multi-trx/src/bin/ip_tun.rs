@@ -63,7 +63,8 @@ use wlan::MAX_SYM;
 use zigbee::parse_channel as zigbee_parse_channel;
 use zigbee::modulator as zigbee_modulator;
 use zigbee::IqDelay as ZigbeeIqDelay;
-use zigbee::Mac as ZigbeeMac;
+// use zigbee::Mac as ZigbeeMac;
+use multitrx::ZigbeeMac;
 use zigbee::ClockRecoveryMm as ZigbeeClockRecoveryMm;
 use zigbee::Decoder as ZigbeeDecoder;
 
@@ -550,6 +551,7 @@ fn main() -> Result<()> {
             .netmask((255, 255, 255, 0))
             .destination(args.remote_ip.clone())
             .queues(1)
+            .mtu(256 - 4 - 5 - 2)  // TODO 256 bytes max zigbee frame size - 4 bytes TUN metadata - 5 bytes zigbee header - 2 bytes zigbee footer (checksum)
             .up();
         #[cfg(target_os = "linux")]
         tun_config.platform(|tun_config| {

@@ -1,3 +1,5 @@
+use crate::{BoundedDiscretePriorityQueue, PRIORITY_VALUES};
+
 use wlan::FrameParam;
 use wlan::Mcs;
 use wlan::MAX_ENCODED_BITS;
@@ -18,82 +20,10 @@ use futuresdr::runtime::StreamIo;
 use futuresdr::runtime::StreamIoBuilder;
 use futuresdr::runtime::Tag;
 use futuresdr::runtime::WorkIo;
-use std::collections::{HashMap, VecDeque};
 use std::future::Future;
 use std::pin::Pin;
 
-struct BoundedDiscretePriorityQueue<'a, T1, T2> {
-    data: VecDeque<T1>,
-    priority_values: &'a [T2],
-    priority_index_map: HashMap<T2, usize>,
-    max_size: usize,
-}
-
-impl<T1, T2> BoundedDiscretePriorityQueue<'_, T1, T2> where T2: Eq + std::hash::Hash + Copy + std::fmt::Display + std::cmp::Ord{
-    fn new(new_max_size: usize, new_priority_values: &[T2]) -> BoundedDiscretePriorityQueue<T1, T2> {
-        BoundedDiscretePriorityQueue {
-            data: VecDeque::with_capacity(new_max_size),
-            priority_values: new_priority_values.clone(),
-            priority_index_map: HashMap::from_iter(new_priority_values.iter().map(|x| (*x, 0_usize))),
-            max_size: new_max_size,
-        }
-    }
-
-    fn pop_front(&mut self) -> Option<T1> {
-        if self.data.is_empty() {
-            None
-        } else {
-            for priority_key in self.priority_values {
-                self.priority_index_map.insert(*priority_key, self.priority_index_map[priority_key].checked_sub(1_usize).unwrap_or(0_usize));
-            }
-            self.data.pop_front()
-        }
-    }
-
-    fn push_back(&mut self, value: T1, priority: T2) {
-        let insert_index = *self.priority_index_map.get(&priority).unwrap();
-        if insert_index >= self.max_size {
-            warn!(
-                "WLAN Encoder: max number of frames of higher or equal priority already in TX queue (trying to insert at {}, queue capacity {}, priority {}). Dropping.",
-                insert_index, MAX_FRAMES, priority
-            );
-            return;
-        }
-        // println!("inserted at index {}, priority {}", insert_index, priority);
-        self.data.insert(insert_index, value);
-        for priority_key in self.priority_values {
-            if *priority_key < priority {
-                self.priority_index_map.insert(*priority_key, self.priority_index_map[priority_key] + 1_usize);
-            }
-        }
-    }
-}
-
-/// Maximum number of frames to queue for transmission
 const MAX_FRAMES: usize = 1000;
-const PRIORITY_VALUES: [u8; 21] = [
-    0b000000 << 2,
-    0b001000 << 2,
-    0b001010 << 2,
-    0b001100 << 2,
-    0b001110 << 2,
-    0b010000 << 2,
-    0b010010 << 2,
-    0b010100 << 2,
-    0b010110 << 2,
-    0b011000 << 2,
-    0b011010 << 2,
-    0b011100 << 2,
-    0b011110 << 2,
-    0b100000 << 2,
-    0b100010 << 2,
-    0b100100 << 2,
-    0b100110 << 2,
-    0b101000 << 2,
-    0b101110 << 2,  // EF
-    0b110000 << 2,  // CS6
-    0b111000 << 2,  // CS7
-];
 
 fn get_dscp_priority(data: &Vec<u8>) -> u8 {
     let dscp_index = 24 + 4 + 1;  // mac header length + 4 bytes added by TUN adapter + offset in IP header
