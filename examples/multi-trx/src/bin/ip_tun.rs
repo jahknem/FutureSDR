@@ -2,6 +2,7 @@ use std::collections::HashMap;
 use std::thread::sleep;
 use clap::Parser;
 use std::time::Duration;
+use async_process::Command;
 use forky_tun::{self, Configuration};
 // use futures::StreamExt;
 // use futures::sink::SinkExt;
@@ -42,6 +43,9 @@ use futuresdr::soapysdr::Direction::{Rx, Tx};
 
 use multitrx::MessageSelector;
 
+use multitrx::IPDSCPRewriter;
+
+use wlan::MAX_PAYLOAD_SIZE;
 use wlan::fft_tag_propagation as wlan_fft_tag_propagation;
 use wlan::parse_channel as wlan_parse_channel;
 use wlan::Decoder as WlanDecoder;
@@ -188,7 +192,19 @@ struct Args {
     flow_priority_file: String,
 }
 
-static DSCP_EF: u8 = 0b101110 << 2;
+const DSCP_EF: u8 = 0b101110 << 2;
+const NUM_PROTOCOLS: usize = 2;
+static MTU_VALUES: [usize; NUM_PROTOCOLS] = [
+    MAX_PAYLOAD_SIZE, // WiFi
+    256 - 4 - 5 - 2  // Zigbee: 256 bytes max frame size - 4 bytes TUN metadata - 5 bytes mac header - 2 bytes mac footer (checksum)
+];
+// use phf::phf_map;
+// static FLOW_PRIORITY_MAP: phf::Map<u16, u8> = phf_map! {
+//     14550 => DSCP_EF,
+//     18570 => DSCP_EF,
+//     10317 => DSCP_EF,
+//     10318 => DSCP_EF,
+// };
 
 fn main() -> Result<()> {
     let args = Args::parse();
@@ -484,15 +500,21 @@ fn main() -> Result<()> {
     // ========================================
 
     let message_selector = MessageSelector::new();
-    let message_in_port_id = message_selector
-        .message_input_name_to_id("message_in")
-        .expect("No message_in port found!");
     let output_selector_port_id = message_selector
         .message_input_name_to_id("output_selector")
         .expect("No output_selector port found!");
     let message_selector = fg.add_block(message_selector);
     fg.connect_message(message_selector, "out0", wlan_mac, "tx")?;
     fg.connect_message(message_selector, "out1", zigbee_mac, "tx")?;
+
+    //
+
+    let ip_dscp_rewriter = IPDSCPRewriter::new(flow_priority_map);
+    let fg_tx_port = ip_dscp_rewriter
+        .message_input_name_to_id("in")
+        .expect("No message_in port found!");
+    let ip_dscp_rewriter = fg.add_block(ip_dscp_rewriter);
+    fg.connect_message(ip_dscp_rewriter, "out", message_selector, "message_in")?;
 
 
 
@@ -530,8 +552,8 @@ fn main() -> Result<()> {
                 Timer::after(Duration::from_secs_f32(tx_interval)).await;
                 myhandle
                     .call(
-                        message_selector,
-                        message_in_port_id,
+                        ip_dscp_rewriter,
+                        fg_tx_port,
                         Pmt::Blob(format!("FutureSDR {}", seq).as_bytes().to_vec()),
                     )
                     .await
@@ -551,7 +573,7 @@ fn main() -> Result<()> {
             .netmask((255, 255, 255, 0))
             .destination(args.remote_ip.clone())
             .queues(1)
-            .mtu(256 - 4 - 5 - 2)  // TODO 256 bytes max zigbee frame size - 4 bytes TUN metadata - 5 bytes zigbee header - 2 bytes zigbee footer (checksum)
+            .mtu(MTU_VALUES[0].try_into().unwrap())
             .up();
         #[cfg(target_os = "linux")]
         tun_config.platform(|tun_config| {
@@ -608,35 +630,12 @@ fn main() -> Result<()> {
                     //     warn!("received packet with dst_ip not matching {}", remote_ip1);
                     //     continue;  // TODO
                     // }
-                    let next_protocol = buf[4 + 9] as usize;
-                    if next_protocol == 6_usize || next_protocol == 17_usize {
-                        let ip_header_length = ((buf[4] & 0b00001111) as usize * 4_usize) as usize;
-                        // let src_port = ((buf[4 + ip_header_length] as u16) << 8) | (buf[4 + ip_header_length + 1] as u16);
-                        let dst_port = ((buf[4 + ip_header_length + 2] as u16) << 8) | (buf[4 + ip_header_length + 3] as u16);
-                        // println!("{}", format!("src: {}, dst: {}", src_port, dst_port));
-                        if let Some(new_dscp_val) = flow_priority_map.get(&dst_port) {
-                            // println!("Replacing old dscp {:#8b} with new value {:#8b}", buf[5], new_dscp_val);
-                            buf[4 + 1] = *new_dscp_val;
-                            // if we change the header, we need to recuopute and update the checksum, else the packet will be discarded at the receiver
-                            let mut new_checksum = 0_u16;
-                            for i in 0..5 {
-                                let (new_checksum_tmp, carry) = new_checksum.overflowing_add(((buf[4+2*i] as u16) << 8) + (buf[4+2*i+1] as u16));
-                                new_checksum = if carry {new_checksum_tmp + 1} else {new_checksum_tmp};
-                            }
-                            for i in 6..(ip_header_length / 2) {
-                                let (new_checksum_tmp, carry) = new_checksum.overflowing_add(((buf[4+2*i] as u16) << 8) + (buf[4+2*i+1] as u16));
-                                new_checksum = if carry {new_checksum_tmp + 1} else {new_checksum_tmp};
-                            }
-                            new_checksum = !new_checksum;
-                            buf[4 + 10] = (new_checksum >> 8) as u8;
-                            buf[4 + 11] = (new_checksum & 0b0000000011111111) as u8;
-                        }
-                    }
+
                     print!("s");
                     handle
                     .call(
-                        message_selector,
-                        message_in_port_id,
+                        ip_dscp_rewriter,
+                        fg_tx_port,
                         Pmt::Blob(buf[0..n].to_vec())
                     )
                     .await
@@ -702,16 +701,25 @@ fn main() -> Result<()> {
     let socket = block_on(UdpSocket::bind((Ipv4Addr::UNSPECIFIED, args.protocol_switching_ctrl_port as u16))).unwrap();
 
     rt.spawn_background(async move {
+        let mut current_mtu = MTU_VALUES[0];
         let mut buf = vec![0u8; 1024];
         loop {
             match socket.recv_from(&mut buf).await {
                 Ok((n, s)) => {
                     let the_string = std::str::from_utf8(&buf[0..n]).expect("not UTF-8");
-                    let the_number = the_string.trim_end().parse::<u32>().unwrap();
-                    println!("received protocol number {} from {:?}", the_number, s);
+                    let new_protocol_index = the_string.trim_end().parse::<u32>().unwrap();
+                    println!("received protocol number {} from {:?}", new_protocol_index, s);
 
-                    if (the_number as usize) < tx_freq.len() {
-                        let new_index = the_number as u32;
+                    if (new_protocol_index as usize) < tx_freq.len() {
+                        let new_mtu = MTU_VALUES[new_protocol_index as usize];
+                        if new_mtu < current_mtu {
+                            // switch to smaller MTU before changing the PHY to avoid dropping packets
+                            if let Err(e) = Command::new("sh").arg("-c").arg(format!("ifconfig chanem mtu {} up", new_mtu)).output().await {
+                                warn!("could not change MTU of TUN interface. Original error message: {}", e);
+                            };
+                            current_mtu = new_mtu;
+                        }
+                        let new_index = new_protocol_index as u32;
                         println!("Setting source index to {}", new_index);
                         if let (Some(tx_frequency_from_channel), Some(rx_frequency_from_channel)) = (tx_freq[new_index as usize], rx_freq[new_index as usize]) {
                             async_io::block_on(
@@ -821,6 +829,13 @@ fn main() -> Result<()> {
                                     Pmt::U32(new_index)
                                 )
                         ).unwrap();
+                        if new_mtu > current_mtu {
+                            // switch to larger MTU after changing the PHY to avoid dropping packets
+                            if let Err(e) = Command::new("sh").arg("-c").arg(format!("ifconfig chanem mtu {} up", new_mtu)).output().await {
+                                warn!("could not change MTU of TUN interface. Original error message: {}", e);
+                            };
+                            current_mtu = new_mtu;
+                        }
                     }
                     else {
                         println!("Invalid protocol index.")
