@@ -1,3 +1,4 @@
+import traceback
 import warnings
 from typing import Tuple, List, Dict, Optional
 
@@ -11,6 +12,7 @@ from matplotlib.backends.qt_compat import QtCore, QtWidgets
 # from PyQt5 import QtWidgets, QtCore
 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
 import matplotlib.pyplot as plt
+from matplotlib.lines import Line2D
 import numpy as np
 import struct
 import cmath
@@ -62,12 +64,12 @@ CHANEM_ENDPOINT = ("10.193.0.73", 1341)
 RX_PORT_PACKAGE_COUNTER = 1340
 RX_PORT_POSITION = 1342
 
-COUNTING_BINS = [
-    ('192.168.42.10', 'tx'),
-    ('192.168.42.10', 'rx'),
-    ('192.168.42.11', 'tx'),
-    ('192.168.42.11', 'rx')
-]
+# COUNTING_BINS = [
+#     ('192.168.42.10', 'tx'),
+#     ('192.168.42.10', 'rx'),
+#     ('192.168.42.11', 'tx'),
+#     ('192.168.42.11', 'rx')
+# ]
 
 MAX_PATH_LOSS_FOR_PLOTTING = 120
 PLOTTING_INTERVAL_MS = 1000
@@ -92,10 +94,112 @@ class MyFigureCanvas(FigureCanvas):
     https://stackoverflow.com/q/57891219
     """
 
+    class Line:
+
+        def __init__(self, ax, x_len):
+            # Store two lists _x_ and _y_
+            self._x_len_ = x_len
+            self._x_ = list(range(0, x_len))
+            self._y_segments = [[0] * x_len]
+            self._colours = [0]
+            self._linestyles = ['-']
+            self._fills = [False]
+            self._fill_colours = [0]
+            self.colormap = plt.cm.Dark2.colors
+
+            self._lines_ = []
+            x_counter = 0
+            for y_segment, colour in zip(self._y_segments, self._colours):
+                x_counter_new = x_counter + len(y_segment)
+                self._lines_ += ax.plot(
+                    list(range(x_counter, x_counter_new)),
+                    y_segment,
+                    "-", c=self.colormap[colour]
+                )
+
+        def update(self, new_val, ax):
+            if isinstance(new_val, tuple):
+                val, kwargs = new_val
+            else:
+                val = new_val
+                kwargs = {}
+            try:
+                colour = kwargs["color"]
+            except KeyError:
+                colour = 0
+            try:
+                linestyle = kwargs["linestyle"]
+            except KeyError:
+                linestyle = '-'
+            try:
+                fill = kwargs["fill"]
+            except KeyError:
+                fill = False
+            try:
+                fill_colour = kwargs["fill_color"]
+            except KeyError:
+                fill_colour = 0
+            if colour == self._colours[-1] and linestyle == self._linestyles[-1] and fill == self._fills[-1] and fill_colour == self._fill_colours[-1]:
+                # extend last line segment
+                self._y_segments[-1].append(round(val, 4))  # Add new datapoint
+            else:
+                # add new line segment with different colour or linestyle
+                self._y_segments.append([
+                    self._y_segments[-1][-1],  # replicate previous datapoint to avoid gaps in the graph
+                    round(val, 4)]
+                )  # Add new datapoint
+                self._colours.append(colour)
+                self._linestyles.append(linestyle)
+                self._fills.append(fill)
+                self._fill_colours.append(fill_colour)
+                # create Line2D object for new line segment
+                y_data = self._y_segments[-1]
+                c = self._colours[-1] if isinstance(self._colours[-1], str) else self.colormap[self._colours[-1]]
+                self._lines_ += ax.plot(
+                    list(range(self._x_len_ - len(y_data), self._x_len_)),
+                    y_data,
+                    c=c, linestyle=self._linestyles[-1]
+                )
+            if len(self._y_segments[0]) > 1:
+                # shorten first line segment
+                self._y_segments[0] = self._y_segments[0][1:]
+            else:
+                # discard first line segment as it has been moved out of the visible scope
+                self._y_segments = self._y_segments[1:]
+                self._y_segments[0] = self._y_segments[0][1:]  # remove previously replicated datapoint
+                self._colours = self._colours[1:]
+                self._linestyles = self._linestyles[1:]
+                self._lines_ = self._lines_[1:]
+                self._fills = self._fills[1:]
+                self._fill_colours = self._fill_colours[1:]
+            for line, y_data in zip(self._lines_, self._y_segments):
+                line.set_ydata(y_data)
+            x_counter = 0
+            for line in self._lines_:
+                x_counter_new = x_counter + len(line.get_data()[1])
+                x_data_new = list(range(x_counter, x_counter_new))
+                line.set_xdata(x_data_new)
+                x_counter = x_counter_new - 1  # handle replicated datapoint
+
+        def draw(self, ax):
+            for line, y_data in zip(self._lines_, self._y_segments):
+                ax.draw_artist(line)
+            for line, y_data, c, fill in zip(self._lines_, self._y_segments, self._fill_colours, self._fills):
+                if fill:
+                    c = c if isinstance(c, str) else self.colormap[c]
+                    ax.draw_artist(ax.fill_between(
+                        line.get_xdata(),
+                        y_data,
+                        color=c, alpha=0.3
+                    ))
+
+
+
     def __init__(
             self, x_len: int, interval: int, data_getter_callback: callable,
-            y_range: Optional[list], y_label: Optional[str] = None, small: Optional[bool] = False,
-            y_scale: str = 'linear'
+            y_range: Optional[list], y_label: Optional[str] = None, y_label_pad: int = 0, small: Optional[bool] = False,
+            y_scale: str = 'linear', num_lines: int = 1, y_ticks: Optional[Dict[str, list]] = None,
+            legend: Optional[Tuple[list, list]] = None
     ) -> None:
         """
         :param x_len:       The nr of data points shown in one plot.
@@ -109,13 +213,7 @@ class MyFigureCanvas(FigureCanvas):
         self._y_range_ = y_range
         self.data_getter_callback = data_getter_callback
 
-        self.prev_val = 0
-
-        # Store two lists _x_ and _y_
-        self._x_ = list(range(0, x_len))
-        self._y_segments = [[0] * x_len]
-        self._colours = [0]
-        self.colormap = plt.cm.Dark2.colors
+        self.prev_val = (0, ) * num_lines
 
         # Store a figure ax
         self._ax_ = self.figure.subplots()
@@ -123,7 +221,7 @@ class MyFigureCanvas(FigureCanvas):
             self._ax_.set_xticks([0, 29, 59, 89, 119], ["-2min", "-1.5min", "-1min", "-30sek", "0"])
             # self._ax_.set_xlabel("Time")
             if y_label is not None:
-                self._ax_.set_ylabel(y_label)
+                self._ax_.set_ylabel(y_label, labelpad=y_label_pad)
         else:
             self._ax_.set_xticks([0, 9, 19, 29, 39, 49, 59], ["-60", "-50", "-40", "-30", "-20", "-10", "0"])
         if y_range is not None:
@@ -133,15 +231,14 @@ class MyFigureCanvas(FigureCanvas):
                 ymax=self._y_range_[1] + 0.05 * y_range_size
             )
         self._ax_.set_yscale(y_scale)
-        self._lines_ = []
-        x_counter = 0
-        for y_segment, colour in zip(self._y_segments, self._colours):
-            x_counter_new = x_counter + len(y_segment)
-            self._lines_ += self._ax_.plot(
-                list(range(x_counter, x_counter_new)),
-                y_segment,
-                "-", c=self.colormap[colour]
-            )
+        if y_ticks is not None:
+            self._ax_.set_yticks(*y_ticks)
+        self.lines = [self.Line(self._ax_, x_len) for _ in range(num_lines)]
+        if legend is not None:
+            self._legend = plt.legend(**legend, bbox_transform=self.figure.transFigure)
+            self._ax_.draw_artist(self._legend)
+        else:
+            self._legend = None
         self.draw()  # added
 
         # Initiate the timer
@@ -158,50 +255,29 @@ class MyFigureCanvas(FigureCanvas):
             new_val = self.data_getter_callback()
             self.prev_val = new_val
         except ArithmeticError:
+            print(traceback.format_exc())
             new_val = self.prev_val
-        if isinstance(new_val, tuple):
-            val, colour = new_val
-        else:
-            val = new_val
-            colour = 0
-        if colour == self._colours[-1]:
-            # extend last line segment
-            self._y_segments[-1].append(round(val, 4))  # Add new datapoint
-        else:
-            # add new line segment with different colour
-            self._y_segments.append([
-                self._y_segments[-1][-1],  # replicate previous datapoint to avoid gaps in the graph
-                round(val, 4)]
-            )  # Add new datapoint
-            self._colours.append(colour)
-            # create Line2D object for new line segment
-            y_data = self._y_segments[-1]
-            self._lines_ += self._ax_.plot(
-                list(range(self._x_len_ - len(y_data), self._x_len_)),
-                y_data,
-                "-", c=self.colormap[self._colours[-1]]
-            )
-        if len(self._y_segments[0]) > 1:
-            # shorten first line segment
-            self._y_segments[0] = self._y_segments[0][1:]
-        else:
-            # discard first line segment as it has been moved out of the visible scope
-            self._y_segments = self._y_segments[1:]
-            self._y_segments[0] = self._y_segments[0][1:]  # remove previously replicated datapoint
-            self._colours = self._colours[1:]
-            self._lines_ = self._lines_[1:]
-        for line, y_data in zip(self._lines_, self._y_segments):
-            line.set_ydata(y_data)
-        x_counter = 0
-        for line in self._lines_:
-            x_counter_new = x_counter + len(line.get_data()[1])
-            x_data_new = list(range(x_counter, x_counter_new))
-            line.set_xdata(x_data_new)
-            x_counter = x_counter_new - 1  # handle replicated datapoint
+        # if len(new_val) > 1:
+        #     print(self.data_getter_callback)
+        #     print(new_val)
+        try:
+            for i, val in enumerate(new_val):
+                try:
+                    self.lines[i].update(val, self._ax_)
+                except Exception as e:
+                    print(e)
+                    print(self.data_getter_callback)
+                    print(i, val)
+        except TypeError:
+            print(traceback.format_exc())
+            print(self.data_getter_callback)
+            print(new_val)
 
         self._ax_.draw_artist(self._ax_.patch)
-        for line in self._lines_:
-            self._ax_.draw_artist(line)
+        for line in self.lines:
+            line.draw(self._ax_)
+        if self._legend is not None:
+            self._ax_.draw_artist(self._legend)
         self.update()
         self.flush_events()
         return
@@ -321,40 +397,69 @@ class Ui(QtWidgets.QMainWindow):
         else:
             self.magic_scaling_factor_send.clicked.connect(self.send_magic_scaling_factor)
 
-        self.get_datapoint_rate_ag = partial(self.get_datapoint_rate, keys=(('192.168.42.10', 'rx'), ('192.168.42.11', 'tx')))
-        self.get_datapoint_rate_ga = partial(self.get_datapoint_rate, keys=(('192.168.42.11', 'rx'), ('192.168.42.10', 'tx')))
-        self.get_datapoint_rate_combined = lambda: (
-            (
-                    self.get_datapoint_rate(keys=(('192.168.42.10', 'rx'), ('192.168.42.11', 'tx')))[0]
-                    +
-                    self.get_datapoint_rate(keys=(('192.168.42.11', 'rx'), ('192.168.42.10', 'tx')))[0]
-            ) / 2,
-            0 if self.radio_button_wifi.isChecked() else 1
-        )
+        self.get_datapoint_rate_ag = partial(self.get_datapoint_data_rate, receiver=('192.168.42.10', 'rx'), sender=('192.168.42.11', 'tx'))
+        self.get_datapoint_rate_ga = partial(self.get_datapoint_data_rate, receiver=('192.168.42.11', 'rx'), sender=('192.168.42.10', 'tx'))
+        self.get_datapoint_delivery_rate_ag = partial(self.get_datapoint_delivery_rate, (('192.168.42.10', 'rx'), ('192.168.42.11', 'tx')))
+        self.get_datapoint_delivery_rate_ga = partial(self.get_datapoint_delivery_rate, (('192.168.42.11', 'rx'), ('192.168.42.10', 'tx')))
+        self.get_datapoint_rate_combined = self.get_datapoint_data_rate_combined
 
         self.workers = [
             self.init_receiver(RX_PORT_PACKAGE_COUNTER, self.on_data_ready_package_counter),
             self.init_receiver(RX_PORT_POSITION, self.on_data_ready_position),
         ]
 
+        # data rate tab
+        self.plot_data_rate_ga = MyFigureCanvas(
+            x_len=120, y_range=[-0.250, 0.600], interval=PLOTTING_INTERVAL_MS,
+            data_getter_callback=self.get_datapoint_rate_ga,
+            y_label="Data Rate (kB/s)\n\nPrio <-|-> Normal                       ", y_label_pad=-15,
+            num_lines=5, y_ticks=([-0.25, 0, 0.25, 0.5], ["0.25", "0", "0.25", "0.5"]),
+            legend=({
+                "handles": [Line2D((0,), (0,), linestyle='--', c='black'), Line2D((0,), (0,), linestyle='-', c='black')],
+                "labels": ['sent', 'received'],
+                "loc": "upper left",
+                "bbox_to_anchor": (0.095, 0.95)
+            })
+        )
+        self.layout_canvas_delivery_rate_ag_2.addWidget(self.plot_data_rate_ga)
+        self.plot_data_rate_ag = MyFigureCanvas(
+            x_len=120, y_range=[-4, 40], interval=PLOTTING_INTERVAL_MS,
+            data_getter_callback=self.get_datapoint_rate_ag,
+            y_label="Data Rate (kB/s)\n\nPrio <-|-> Normal                                                    ",
+            y_label_pad=-5,
+            num_lines=5, y_ticks=([-4, 0, 4, 8, 16, 24, 32, 40], ["4", "0", "4", "8", "16", "24", "32", "40"]),
+            legend=({
+                "handles": [Line2D((0,), (0,), linestyle='--', c='black'), Line2D((0,), (0,), linestyle='-', c='black')],
+                "labels": ['sent', 'received'],
+                "loc": "upper left",
+                "bbox_to_anchor": (0.095, 0.95)
+            })
+        )
+        self.layout_canvas_delivery_rate_ga_2.addWidget(self.plot_data_rate_ag)
         # delivery rate tab
         self.plot_delivery_rate_ga = MyFigureCanvas(
             x_len=120, y_range=[0, 1], interval=PLOTTING_INTERVAL_MS,
-            data_getter_callback=self.get_datapoint_rate_ga,
-            y_label="Delivery Rate"
+            data_getter_callback=self.get_datapoint_delivery_rate_ga,
+            y_label="Packet Delivery Rate", num_lines=1
         )
         self.layout_canvas_delivery_rate_ag.addWidget(self.plot_delivery_rate_ga)
         self.plot_delivery_rate_ag = MyFigureCanvas(
             x_len=120, y_range=[0, 1], interval=PLOTTING_INTERVAL_MS,
-            data_getter_callback=self.get_datapoint_rate_ag,
-            y_label="Delivery Rate"
+            data_getter_callback=self.get_datapoint_delivery_rate_ag,
+            y_label="Packet Delivery Rate", num_lines=1
         )
         self.layout_canvas_delivery_rate_ga.addWidget(self.plot_delivery_rate_ag)
         self.plot_delivery_rate_combined_small = MyFigureCanvas(
             x_len=60, y_range=[0, 1], interval=PLOTTING_INTERVAL_MS,
-            data_getter_callback=self.get_datapoint_rate_combined,
+            data_getter_callback=self.get_datapoint_delivery_rate_combined,
             small=True,
-            y_label="Delivery Rate"
+            y_label="Delivery Rate", num_lines=2,
+            legend=({
+                "handles": [Line2D((0,), (0,), linestyle='--', c='black'), Line2D((0,), (0,), linestyle=':', c='black')],
+                "labels": ['GA', 'AG'],
+                "loc": "upper left",
+                "bbox_to_anchor": (0.12, 0.95)
+            })
         )
         self.canvas_small_delivery_rate.addWidget(self.plot_delivery_rate_combined_small)
         # path loss tab
@@ -384,12 +489,12 @@ class Ui(QtWidgets.QMainWindow):
         self.layout_canvas_path_loss_fe2r.addWidget(self.plot_path_loss_fe2r)
         self.plot_path_loss_2r_dir = MyFigureCanvas(
             x_len=120, y_range=[-MAX_PATH_LOSS_FOR_PLOTTING, 0], interval=PLOTTING_INTERVAL_MS,
-            data_getter_callback=lambda: -self.manual_path_loss_value,
+            data_getter_callback=lambda: (-self.manual_path_loss_value, ),
             y_label="Path Loss (dB)"
         )
         self.plot_path_loss_2r_dir_small = MyFigureCanvas(
             x_len=60, y_range=[-MAX_PATH_LOSS_FOR_PLOTTING, 0], interval=PLOTTING_INTERVAL_MS,
-            data_getter_callback=lambda: -self.manual_path_loss_value,
+            data_getter_callback=lambda: (-self.manual_path_loss_value, ),
             small=True,
             y_label="Path Loss (dB)"
         )
@@ -413,7 +518,7 @@ class Ui(QtWidgets.QMainWindow):
         self.canvas_small_distance.addWidget(self.plot_position_distance_small)
         self.plot_position_height = MyFigureCanvas(
             x_len=120, y_range=[0, 100], interval=PLOTTING_INTERVAL_MS,
-            data_getter_callback=lambda: self.uav_pos[2],
+            data_getter_callback=lambda: (self.uav_pos[2], ),
             y_label="Height (m)"
         )
         self.layout_canvas_height.addWidget(self.plot_position_height)
@@ -547,13 +652,13 @@ class Ui(QtWidgets.QMainWindow):
         )
         self.init_reference_plot(
             self.pl_reference_plot_fe_2r,
-            self.path_loss_fe_2r,
+            lambda x, y, z: self.path_loss_fe_2r(x, y, z)[0],
             x_len,
             init
         )
         self.init_reference_plot(
             self.pl_reference_plot_man,
-            lambda x, y, z: -self.manual_path_loss_value,
+            lambda x, y, z: self.manual_path_loss_value,
             x_len,
             init
         )
@@ -592,7 +697,61 @@ class Ui(QtWidgets.QMainWindow):
         # 6 - do not start the thread yet, wait after initializations are finished
         return udp_receiver, thread
 
-    def get_datapoint_rate(self, keys: tuple[tuple[str, str], tuple[str, str]]):
+    def get_datapoint_data_rate(self, receiver: tuple[str, str], sender: tuple[str, str]):
+        byte_rates = {}
+        now = int(time.time_ns() / 1_000_000)
+        for key in (receiver, sender):
+            current_data = self.datapoints[key]
+            try:
+                first_relevant_datapoint = next((
+                    i
+                    for i, sample
+                    in enumerate(current_data)
+                    if sample[0] > now - PLOTTING_INTERVAL_MS * RATE_SMOOTHING_FACTOR
+                ))
+                # discard old samples
+                # print(now, current_data[0])
+                self.datapoints[key] = self.datapoints[key][first_relevant_datapoint:]
+            except StopIteration:
+                pass
+
+        def get_byte_rate(key, prioritized: bool):
+            bytes_sum = sum((
+                sample[1]
+                for sample
+                in self.datapoints[key]
+                if (
+                    (prioritized and sample[2] > 0)
+                    or
+                    (not prioritized and sample[2] == 0)
+                )
+            )) / RATE_SMOOTHING_FACTOR
+            return bytes_sum / 1024
+
+        color = 0 if self.radio_button_wifi.isChecked() else 1
+        return (
+            (0, {"color": 'black', "linestyle": '-'}),
+            (-get_byte_rate(receiver, True), {"color": color, "linestyle": '-', "fill" : True, "fill_color": color}),
+            (-get_byte_rate(sender, True), {"color": color, "linestyle": '--'}),
+            (get_byte_rate(receiver, False), {"color": color, "linestyle": '-', "fill" : True, "fill_color": color}),
+            (get_byte_rate(sender, False), {"color": color, "linestyle": '--'})
+        )
+
+    def get_datapoint_data_rate_combined(self):
+        _, (ag_recv_prio, _), (ag_send_prio, _), (ag_recv, _), (ag_send, _) = self.get_datapoint_data_rate(('192.168.42.10', 'rx'), ('192.168.42.11', 'tx'))
+        _, (ga_recv_prio, _), (ga_send_prio, _), (ga_recv, _), (ga_send, _) = self.get_datapoint_data_rate(('192.168.42.11', 'rx'), ('192.168.42.10', 'tx'))
+        ag_recv -= ag_recv_prio
+        ag_send -= ag_send_prio
+        ga_recv -= ga_recv_prio
+        ga_send -= ga_send_prio
+        color = 0 if self.radio_button_wifi.isChecked() else 1
+        return (
+            (0, {"color": 'black', "linestyle": '-'}),
+            (ag_recv, {"color": color, "linestyle": '-'}), (ag_send, {"color": color, "linestyle": '--'}),
+            (-ga_recv, {"color": color, "linestyle": '-'}), (-ga_send, {"color": color, "linestyle": '--'})
+        )
+
+    def get_datapoint_delivery_rate(self, keys: tuple[tuple[str, str], tuple[str, str]]):
         counts = {}
         now = int(time.time_ns() / 1_000_000)
         for key in keys:
@@ -602,7 +761,7 @@ class Ui(QtWidgets.QMainWindow):
                     i
                     for i, sample
                     in enumerate(current_data)
-                    if sample > now - PLOTTING_INTERVAL_MS * RATE_SMOOTHING_FACTOR
+                    if sample[0] > now - PLOTTING_INTERVAL_MS * RATE_SMOOTHING_FACTOR
                 ))
                 # discard old samples
                 # print(now, current_data[0])
@@ -615,10 +774,18 @@ class Ui(QtWidgets.QMainWindow):
         else:
             val = counts[keys[0]] / counts[keys[1]]
         val = min(val, 1.0)
-        return val, 0 if self.radio_button_wifi.isChecked() else 1
+        colour = 0 if self.radio_button_wifi.isChecked() else 1
+        return ((val, {"color": colour}), )
+
+    def get_datapoint_delivery_rate_combined(self):
+        colour = 0 if self.radio_button_wifi.isChecked() else 1
+        return (
+            (self.get_datapoint_delivery_rate((('192.168.42.10', 'rx'), ('192.168.42.11', 'tx')))[0][0], {"color": colour, "linestyle": ':', "label": "ag"}),
+            (self.get_datapoint_delivery_rate((('192.168.42.11', 'rx'), ('192.168.42.10', 'tx')))[0][0], {"color": colour, "linestyle": '--', "label": "ga"})
+        )
 
     def get_datapoint_distance(self):
-        return np.linalg.norm(self.uav_pos)
+        return (np.linalg.norm(self.uav_pos), )
 
     @staticmethod
     def path_loss_fs(d: float) -> float:
@@ -629,7 +796,7 @@ class Ui(QtWidgets.QMainWindow):
 
     def get_datapoint_pl_fs(self):
         d = np.linalg.norm(self.uav_pos)
-        return self.path_loss_fs(d)
+        return (self.path_loss_fs(d), )
 
     @staticmethod
     def distance(x, y, z):
@@ -639,7 +806,7 @@ class Ui(QtWidgets.QMainWindow):
         d_xy = self.distance(x, y, 0)
         d_los = self.distance(x, y, z)
         if d_los == 0:
-            return 0
+            return (0, )
         d_ref = self.distance(x, y, z + STATION_Z)
         cos_theta = d_xy / d_ref
         sin_theta = (z + STATION_Z) / d_ref
@@ -650,10 +817,10 @@ class Ui(QtWidgets.QMainWindow):
         e_raised_i_phi = cmath.exp(i_phi)
         interference = (1 / abs((1. + gamma * e_raised_i_phi)))
         if interference == np.inf:
-            return 0
+            return (0, )
         # print(interference)  # TODO
         pl = 20. * np.log10(4. * np.pi * (d_los / LAMBDA) * interference)
-        return -pl
+        return (-pl, )
 
     def get_datapoint_pl_fe2r(self):
         return self.path_loss_fe_2r(self.uav_pos[0], self.uav_pos[1], self.uav_pos[2])
@@ -700,9 +867,13 @@ class Ui(QtWidgets.QMainWindow):
         return taps_real, taps_imag
 
     def on_data_ready_package_counter(self, message):
-        endpoint, direction = str(message).strip(" b'").split(',')
         timestamp = int(time.time_ns() / 1_000_000)
-        self.datapoints[(endpoint, direction)].append(timestamp)
+        # print( timestamp, message)
+        endpoint, direction, len, dscp_priority, next_protocol = str(message).strip(" b'").split(',')
+        len = int(len)
+        dscp_priority = int(dscp_priority)
+        next_protocol = int(next_protocol)
+        self.datapoints[(endpoint, direction)].append((timestamp, len, dscp_priority, next_protocol))
 
     def on_data_ready_position(self, message):
         if message[0] == b'P'[0]:

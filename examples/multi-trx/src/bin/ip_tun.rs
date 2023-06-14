@@ -44,6 +44,7 @@ use futuresdr::soapysdr::Direction::{Rx, Tx};
 use multitrx::MessageSelector;
 
 use multitrx::IPDSCPRewriter;
+use multitrx::MetricsReporter;
 
 use wlan::MAX_PAYLOAD_SIZE;
 use wlan::fft_tag_propagation as wlan_fft_tag_propagation;
@@ -398,6 +399,8 @@ fn main() -> Result<()> {
     // ============================================
     // WLAN RECEIVER
     // ============================================
+
+    let metrics_reporter = fg.add_block(MetricsReporter::new(args.metrics_reporting_socket, args.local_ip.clone()));
     
     let wlan_delay = fg.add_block(WlanDelay::<Complex32>::new(16));
     fg.connect_stream(src_selector, "out0", wlan_delay, "in")?;
@@ -441,6 +444,7 @@ fn main() -> Result<()> {
     fg.connect_message(wlan_decoder, "rx_frames", wlan_message_pipe, "in")?;
     let wlan_blob_to_udp = fg.add_block(futuresdr::blocks::BlobToUdp::new("127.0.0.1:55555"));
     fg.connect_message(wlan_decoder, "rx_frames", wlan_blob_to_udp, "in")?;
+    fg.connect_message(wlan_decoder, "rx_frames", metrics_reporter, "rx_wifi_in")?;
     let wlan_blob_to_udp = fg.add_block(futuresdr::blocks::BlobToUdp::new("127.0.0.1:55556"));
     fg.connect_message(wlan_decoder, "rftap", wlan_blob_to_udp, "in")?;
 
@@ -481,6 +485,7 @@ fn main() -> Result<()> {
     fg.connect_stream(mm, "out", zigbee_decoder, "in")?;
     fg.connect_message(zigbee_decoder, "out", zigbee_mac, "rx")?;
     fg.connect_message(zigbee_mac, "rxed", zigbee_message_pipe, "in")?;
+    fg.connect_message(zigbee_mac, "rxed", metrics_reporter, "rx_in")?;
 
 
     // ========================================
@@ -507,16 +512,17 @@ fn main() -> Result<()> {
     fg.connect_message(message_selector, "out0", wlan_mac, "tx")?;
     fg.connect_message(message_selector, "out1", zigbee_mac, "tx")?;
 
-    //
+    // ========================================
+    // FLOW PRIORITY TO IP DSCP MAPPER
+    // ========================================
 
     let ip_dscp_rewriter = IPDSCPRewriter::new(flow_priority_map);
     let fg_tx_port = ip_dscp_rewriter
         .message_input_name_to_id("in")
         .expect("No message_in port found!");
     let ip_dscp_rewriter = fg.add_block(ip_dscp_rewriter);
+    fg.connect_message(ip_dscp_rewriter, "out", metrics_reporter, "tx_in")?;
     fg.connect_message(ip_dscp_rewriter, "out", message_selector, "message_in")?;
-
-
 
     // ========================================
     // Spectrum
@@ -609,13 +615,13 @@ fn main() -> Result<()> {
     let tun_queue2 = tun_queue1.clone();
     let tun_queue3 = tun_queue1.clone();
 
-    let socket_metrics = block_on(UdpSocket::bind("0.0.0.0:0")).unwrap();
-    block_on(socket_metrics.connect(args.metrics_reporting_socket)).unwrap();
-    let socket_metrics2 = socket_metrics.clone();
-    let socket_metrics3 = socket_metrics.clone();
-    let local_ip1 = args.local_ip.clone();
-    let local_ip2 = args.local_ip.clone();
-    let local_ip3 = args.local_ip.clone();
+    // let socket_metrics = block_on(UdpSocket::bind("0.0.0.0:0")).unwrap();
+    // block_on(socket_metrics.connect(args.metrics_reporting_socket)).unwrap();
+    // let socket_metrics2 = socket_metrics.clone();
+    // let socket_metrics3 = socket_metrics.clone();
+    // let local_ip1 = args.local_ip.clone();
+    // let local_ip2 = args.local_ip.clone();
+    // let local_ip3 = args.local_ip.clone();
 
     rt.spawn_background(async move {
         println!("initialized sender.");
@@ -640,11 +646,11 @@ fn main() -> Result<()> {
                     )
                     .await
                     .unwrap();
-                    if let Ok(_res) = socket_metrics.send(format!("{},tx", local_ip1).as_bytes()).await {
-                        // info!("server sent a frame.")
-                    } else {
-                        warn!("could not send metric update.")
-                    }
+                    // if let Ok(_res) = socket_metrics.send(format!("{},tx,{}", local_ip1, n).as_bytes()).await {
+                    //     // info!("server sent a frame.")
+                    // } else {
+                    //     warn!("could not send metric update.")
+                    // }
                 },
                 Err(err) => panic!("Error: {:?}", err),
             }
@@ -659,11 +665,11 @@ fn main() -> Result<()> {
                     // info!("received frame, size {}", v.len() - 24);
                     print!("r");
                     tun_queue2.send(&v[24..].to_vec()).await.unwrap();
-                    if let Ok(_) = socket_metrics2.send(format!("{},rx", local_ip2).as_bytes()).await {
-                        // info!("server received a frame.")
-                    } else {
-                        warn!("could not send metric update.")
-                    }
+                    // if let Ok(_) = socket_metrics2.send(format!("{},rx", local_ip2).as_bytes()).await {
+                    //     // info!("server received a frame.")
+                    // } else {
+                    //     warn!("could not send metric update.")
+                    // }
                 } else {
                     warn!("pmt to tx was not a blob");
                 }
@@ -681,11 +687,11 @@ fn main() -> Result<()> {
                     // info!("received Zigbee frame size {}", v.len());
                     print!("r");
                     tun_queue3.send(&v.to_vec()).await.unwrap();
-                    if let Ok(_) = socket_metrics3.send(format!("{},rx", local_ip3).as_bytes()).await {
-                        // info!("server received a frame.")
-                    } else {
-                        warn!("could not send metric update.")
-                    }
+                    // if let Ok(_) = socket_metrics3.send(format!("{},rx", local_ip3).as_bytes()).await {
+                    //     // info!("server received a frame.")
+                    // } else {
+                    //     warn!("could not send metric update.")
+                    // }
                 } else {
                     warn!("pmt to tx was not a blob");
                 }

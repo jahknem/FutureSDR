@@ -9,3 +9,5 @@ mod mac_zigbee;
 pub use mac_zigbee::Mac as ZigbeeMac;
 mod ip_dscp_rewriter;
 pub use ip_dscp_rewriter::IPDSCPRewriter;
+mod metrics_reporter;
+pub use metrics_reporter::MetricsReporter;
