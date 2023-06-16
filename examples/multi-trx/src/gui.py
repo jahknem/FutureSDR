@@ -199,7 +199,8 @@ class MyFigureCanvas(FigureCanvas):
             self, x_len: int, interval: int, data_getter_callback: callable,
             y_range: Optional[list], y_label: Optional[str] = None, y_label_pad: int = 0, small: Optional[bool] = False,
             y_scale: str = 'linear', num_lines: int = 1, y_ticks: Optional[Dict[str, list]] = None,
-            legend: Optional[Tuple[list, list]] = None
+            legend: Optional[Tuple[list, list]] = None,
+            background_text: Optional[List[Dict[str, object]]] = None
     ) -> None:
         """
         :param x_len:       The nr of data points shown in one plot.
@@ -239,6 +240,12 @@ class MyFigureCanvas(FigureCanvas):
             self._ax_.draw_artist(self._legend)
         else:
             self._legend = None
+        self.background_texts = []
+        if background_text is not None:
+            for text in background_text:
+                txt = plt.text(**text, transform=self._ax_.transAxes)
+                self.background_texts.append(txt)
+                self._ax_.draw_artist(txt)
         self.draw()  # added
 
         # Initiate the timer
@@ -274,6 +281,8 @@ class MyFigureCanvas(FigureCanvas):
             print(new_val)
 
         self._ax_.draw_artist(self._ax_.patch)
+        for text in self.background_texts:
+            self._ax_.draw_artist(text)
         for line in self.lines:
             line.draw(self._ax_)
         if self._legend is not None:
@@ -393,7 +402,7 @@ class Ui(QtWidgets.QMainWindow):
         uic.loadUi('gui.ui', self)  # Load the .ui file
 
         if call_arg is None:
-            self.tabWidget_2.removeTab(5)
+            self.tabWidget_2.removeTab(6)
         else:
             self.magic_scaling_factor_send.clicked.connect(self.send_magic_scaling_factor)
 
@@ -419,7 +428,25 @@ class Ui(QtWidgets.QMainWindow):
                 "labels": ['sent', 'received'],
                 "loc": "upper left",
                 "bbox_to_anchor": (0.095, 0.95)
-            })
+            }),
+            background_text=[
+                {
+                    "x": 0.5, "y": 0.05,
+                    "horizontalalignment": 'center', "verticalalignment": 'center',
+                    "s": "Priority Traffic",
+                    "fontsize": 'x-large',
+                    "alpha": 0.4,
+                    "weight": 'bold'
+                },
+                {
+                    "x": 0.5, "y": 0.8,
+                    "horizontalalignment": 'center', "verticalalignment": 'center',
+                    "s": "Non-Priority Traffic",
+                    "fontsize": 'x-large',
+                    "alpha": 0.4,
+                    "weight": 'bold'
+                }
+            ]
         )
         self.layout_canvas_delivery_rate_ag_2.addWidget(self.plot_data_rate_ga)
         self.plot_data_rate_ag = MyFigureCanvas(
@@ -433,7 +460,25 @@ class Ui(QtWidgets.QMainWindow):
                 "labels": ['sent', 'received'],
                 "loc": "upper left",
                 "bbox_to_anchor": (0.095, 0.95)
-            })
+            }),
+            background_text=[
+                {
+                    "x": 0.5, "y": 0.05,
+                    "horizontalalignment": 'center', "verticalalignment": 'center',
+                    "s": "Priority Traffic",
+                    "fontsize": 'x-large',
+                    "alpha": 0.4,
+                    "weight": 'bold'
+                },
+                {
+                    "x": 0.5, "y": 0.8,
+                    "horizontalalignment": 'center', "verticalalignment": 'center',
+                    "s": "Non-Priority Traffic",
+                    "fontsize": 'x-large',
+                    "alpha": 0.4,
+                    "weight": 'bold'
+                }
+            ]
         )
         self.layout_canvas_delivery_rate_ga_2.addWidget(self.plot_data_rate_ag)
         # delivery rate tab

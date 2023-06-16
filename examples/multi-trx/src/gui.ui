@@ -18,7 +18,7 @@
     <item>
      <widget class="QTabWidget" name="tabWidget_2">
       <property name="currentIndex">
-       <number>2</number>
+       <number>0</number>
       </property>
       <widget class="QWidget" name="tab_3">
        <attribute name="title">
@@ -415,6 +415,13 @@
        <layout class="QVBoxLayout" name="verticalLayout_11">
         <item>
          <widget class="QGroupBox" name="groupBox_29">
+          <property name="font">
+           <font>
+            <pointsize>13</pointsize>
+            <weight>75</weight>
+            <bold>true</bold>
+           </font>
+          </property>
           <property name="title">
            <string>Air to Ground</string>
           </property>
@@ -439,6 +446,13 @@
         </item>
         <item>
          <widget class="QGroupBox" name="groupBox_28">
+          <property name="font">
+           <font>
+            <pointsize>13</pointsize>
+            <weight>75</weight>
+            <bold>true</bold>
+           </font>
+          </property>
           <property name="title">
            <string>Ground to Air</string>
           </property>
@@ -1810,7 +1824,7 @@
      <x>0</x>
      <y>0</y>
      <width>1134</width>
-     <height>20</height>
+     <height>22</height>
     </rect>
    </property>
   </widget>
