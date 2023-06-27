@@ -2,6 +2,7 @@ use async_net::{TcpListener, TcpStream};
 use futures::AsyncReadExt;
 use futures::AsyncWriteExt;
 use futuresdr::log::{info, debug};
+use std::cmp;
 
 use futuresdr::anyhow::{bail, Context, Result};
 use futuresdr::async_trait::async_trait;
@@ -61,31 +62,33 @@ impl Kernel for Complex32Serializer {
     ) -> Result<()> {
 
         let mut out = sio.output(0).slice::<u8>();
-        debug!("out buffer len: {}", out.len());
         if out.is_empty() {
             return Ok(());
         }
+        println!("out buffer len: {}", out.len());
 
         let input = sio.input(0).slice::<Complex32>();
         if input.len() > 0 {
-            debug!("received {} Complex32s", input.len());
+            println!("received {} Complex32s", input.len());
             // convert Complex32 to bytes
-            let mut n_bytes: usize = 0;
-            for i in 0..input.len() {
-                out[i * 8..i * 8 + 4].copy_from_slice(&input[i].re.to_ne_bytes());
-                out[i * 8 + 4..i * 8 + 8].copy_from_slice(&input[i].im.to_ne_bytes());
-                n_bytes += 8;
+            let n_input_to_produce = cmp::min(input.len(), out.len() / 8);
+            if n_input_to_produce > 0 {
+                let n_bytes_to_produce: usize = n_input_to_produce *8;
+                for i in 0..n_input_to_produce {
+                    out[i * 8..i * 8 + 4].copy_from_slice(&input[i].re.to_ne_bytes());
+                    out[i * 8 + 4..i * 8 + 8].copy_from_slice(&input[i].im.to_ne_bytes());
+                }
+                sio.output(0).produce(n_bytes_to_produce);
+                println!("converted {} Complex32s to {} bytes.", n_input_to_produce, n_bytes_to_produce);
             }
-            sio.output(0).produce(n_bytes);
-
 
             if sio.input(0).finished() {
                 io.finished = true;
             }
 
-            debug!("converted {} Complex32s to {} bytes.", input.len(), n_bytes);
-            sio.input(0).consume(input.len());
+            sio.input(0).consume(n_input_to_produce);
         }
+
 
         Ok(())
     }
@@ -115,27 +118,29 @@ impl Kernel for Complex32Deserializer {
         if out.is_empty() {
             return Ok(());
         }
+        println!("out buffer len: {}", out.len());
 
         let input = sio.input(0).slice::<u8>();
-
         if input.len() > 0 {
-            debug!("received {} Bytes", input.len());
+            println!("received {} Bytes", input.len());
             // convert Complex32 to bytes
-            let num_samples = input.len() / 8_usize;
-            for i in 0..num_samples {
-                out[i] = Complex32::new(
-                    f32::from_ne_bytes(input[i * 8..i * 8 + 4].try_into().expect("does not happen")),
-                    f32::from_ne_bytes(input[i * 8 + 4..i * 8 + 8].try_into().expect("does not happen")),
-                );
+            let n_input_to_produce = cmp::min(input.len(), out.len() * 8);
+            if n_input_to_produce > 0 {
+                let n_output_to_produce: usize = n_input_to_produce / 8;
+                for i in 0..n_output_to_produce {
+                    out[i] = Complex32::new(
+                        f32::from_ne_bytes(input[i * 8..i * 8 + 4].try_into().expect("does not happen")),
+                        f32::from_ne_bytes(input[i * 8 + 4..i * 8 + 8].try_into().expect("does not happen")),
+                    );
+                }
+                sio.output(0).produce(n_output_to_produce);
+                println!("converted {} bytes to {} Complex32s.", n_input_to_produce, n_output_to_produce);
             }
-            sio.output(0).produce(out.len());
-
 
             if sio.input(0).finished() {
                 io.finished = true;
             }
 
-            debug!("converted {} bytes to {} Complex32s.", input.len(), out.len());
             sio.input(0).consume(input.len());
         }
 
@@ -151,10 +156,4 @@ impl Kernel for Complex32Deserializer {
         Ok(())
     }
 }
-
-// thread 'FutureSDR: INFO - converted 0 Complex32s to 32768 bytes.
-// smol-21' panicked at 'FutureSDR: INFO - Acting as IP tunnel from 192.168.42.10 to 192.168.42.11.
-// assertion failed: `(left == right)`
-//   left: `TypeId { t: 9589296137796154101 }`,
-//  right: `TypeId { t: 5574462982184004571 }`', /usr/local/src/FutureSDR/src/runtime/stream_io.rs:229:9
 

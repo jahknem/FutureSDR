@@ -19,20 +19,20 @@ const TCP_EXCHANGER_PORT: u32 = 1592;
 
 /// Push samples into a TCP socket.
 pub struct TcpExchanger {
-    local_ip: String,
     remote_ip: String,
+    is_server: bool,
     socket: Option<TcpStream>,
 }
 
 impl TcpExchanger {
-    pub fn new(local_ip: String, remote_ip: String) -> Block {
+    pub fn new(remote_ip: String, is_server: bool) -> Block {
         Block::new(
             BlockMetaBuilder::new("TcpSource").build(),
             StreamIoBuilder::new().add_input::<u8>("in").add_output::<u8>("out").build(),
             MessageIoBuilder::new().build(),
             TcpExchanger {
-                local_ip,
                 remote_ip,
+                is_server,
                 socket: None,
             },
         )
@@ -101,13 +101,13 @@ impl Kernel for TcpExchanger {
         _mio: &mut MessageIo<Self>,
         _meta: &mut BlockMeta,
     ) -> Result<()> {
-        if self.local_ip < self.remote_ip {
+        if self.is_server {
             info!("acting as tcp exchanger server");
-            let mut listener = Some(TcpListener::bind(format!("{}:{}", self.local_ip, TCP_EXCHANGER_PORT)).await?);
+            let mut listener = Some(TcpListener::bind(format!("0.0.0.0:{}", TCP_EXCHANGER_PORT)).await?);
             let (socket, _) = listener
                 .as_mut()
                 .context("no listener")?
-                .accept()
+                .accept()  // TODO only accept from correct client IP?
                 .await?;
             self.socket = Some(socket);
             info!("remote tcp exchanger accepted connection");

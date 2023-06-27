@@ -142,7 +142,7 @@ fn main() -> Result<()> {
     let taps = [0.5f32, 0.5f32];
     let fir = fg.add_block(FirBuilder::new::<Complex32, Complex32, f32, _>(taps));
 
-    // let tcp_exchanger = fg.add_block(TcpExchanger::new(args.local_ip.clone(), args.remote_ip.clone()));
+    let tcp_exchanger = fg.add_block(TcpExchanger::new(args.remote_ip.clone(), args.local_ip < args.remote_ip));
     let iq_serializer = fg.add_block(Complex32Serializer::new());
     let iq_deserializer = fg.add_block(Complex32Deserializer::new());
 
@@ -155,7 +155,7 @@ fn main() -> Result<()> {
     fg.connect_stream(sink_selector, "out0", fir, "in")?;
 
     fg.connect_stream(fir, "out", iq_serializer, "in")?;
-    // fg.connect_stream(iq_serializer, "out", tcp_exchanger, "in")?;
+    fg.connect_stream(iq_serializer, "out", tcp_exchanger, "in")?;
 
     //source selector
     let src_selector = Selector::<Complex32, 1, 2>::new(args.drop_policy);
@@ -163,9 +163,7 @@ fn main() -> Result<()> {
         .message_input_name_to_id("output_index")
         .expect("No output_index port found!");
     let src_selector = fg.add_block(src_selector);
-    // fg.connect_stream(tcp_exchanger, "out", iq_deserializer, "in")?;
-    fg.connect_stream(iq_serializer, "out", iq_deserializer, "in")?;
-    // fg.connect_stream(iq_serializer, "out", src_selector, "in0")?;
+    fg.connect_stream(tcp_exchanger, "out", iq_deserializer, "in")?;
     fg.connect_stream(iq_deserializer, "out", src_selector, "in0")?;
 
     // ============================================
