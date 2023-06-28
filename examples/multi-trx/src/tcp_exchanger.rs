@@ -1,7 +1,9 @@
 use async_net::{TcpListener, TcpStream};
 use futures::AsyncReadExt;
 use futures::AsyncWriteExt;
-use futuresdr::log::{info, debug};
+use futuresdr::log::{info, warn, debug};
+use std::thread::sleep;
+use std::time::Duration;
 
 use futuresdr::anyhow::{bail, Context, Result};
 use futuresdr::async_trait::async_trait;
@@ -15,24 +17,38 @@ use futuresdr::runtime::StreamIo;
 use futuresdr::runtime::StreamIoBuilder;
 use futuresdr::runtime::WorkIo;
 
-const TCP_EXCHANGER_PORT: u32 = 1592;
-
-/// Push samples into a TCP socket.
-pub struct TcpExchanger {
-    remote_ip: String,
-    is_server: bool,
+pub struct TcpSource {
+    remote_socket: String,
     socket: Option<TcpStream>,
 }
 
-impl TcpExchanger {
-    pub fn new(remote_ip: String, is_server: bool) -> Block {
+pub struct TcpSink {
+    port: u32,
+    socket: Option<TcpStream>,
+}
+
+impl TcpSource {
+    pub fn new(remote_socket: String) -> Block {
         Block::new(
             BlockMetaBuilder::new("TcpSource").build(),
-            StreamIoBuilder::new().add_input::<u8>("in").add_output::<u8>("out").build(),
+            StreamIoBuilder::new().add_output::<u8>("out").build(),
             MessageIoBuilder::new().build(),
-            TcpExchanger {
-                remote_ip,
-                is_server,
+            TcpSource {
+                remote_socket,
+                socket: None,
+            },
+        )
+    }
+}
+
+impl TcpSink {
+    pub fn new(port: u32) -> Block {
+        Block::new(
+            BlockMetaBuilder::new("TcpSink").build(),
+            StreamIoBuilder::new().add_input::<u8>("in").build(),
+            MessageIoBuilder::new().build(),
+            TcpSink {
+                port,
                 socket: None,
             },
         )
@@ -41,7 +57,7 @@ impl TcpExchanger {
 
 #[doc(hidden)]
 #[async_trait]
-impl Kernel for TcpExchanger {
+impl Kernel for TcpSource {
     async fn work(
         &mut self,
         io: &mut WorkIo,
@@ -72,6 +88,40 @@ impl Kernel for TcpExchanger {
             }
         }
 
+        Ok(())
+    }
+
+    async fn init(
+        &mut self,
+        _sio: &mut StreamIo,
+        _mio: &mut MessageIo<Self>,
+        _meta: &mut BlockMeta,
+    ) -> Result<()> {
+        while self.socket.is_none() {
+            if let Ok(socket) = TcpStream::connect(self.remote_socket.clone()).await {
+                self.socket = Some(socket);
+            }
+            else {
+                warn!("could not connect local TCP source to remote TCP sink yet, retrying in 5s...");
+                sleep(Duration::from_secs(5));
+            }
+        }
+        info!("connected local TCP source to remote tcp sink ({})", self.remote_socket);
+        Ok(())
+    }
+}
+
+#[doc(hidden)]
+#[async_trait]
+impl Kernel for TcpSink {
+    async fn work(
+        &mut self,
+        io: &mut WorkIo,
+        sio: &mut StreamIo,
+        _mio: &mut MessageIo<Self>,
+        _meta: &mut BlockMeta,
+    ) -> Result<()> {
+
         let i = sio.input(0).slice::<u8>();
 
         match self
@@ -101,22 +151,14 @@ impl Kernel for TcpExchanger {
         _mio: &mut MessageIo<Self>,
         _meta: &mut BlockMeta,
     ) -> Result<()> {
-        if self.is_server {
-            info!("acting as tcp exchanger server");
-            let mut listener = Some(TcpListener::bind(format!("0.0.0.0:{}", TCP_EXCHANGER_PORT)).await?);
-            let (socket, _) = listener
-                .as_mut()
-                .context("no listener")?
-                .accept()  // TODO only accept from correct client IP?
-                .await?;
-            self.socket = Some(socket);
-            info!("remote tcp exchanger accepted connection");
-        }
-        else {
-            info!("acting as tcp exchanger client");
-            self.socket = Some(TcpStream::connect(format!("{}:{}", self.remote_ip, TCP_EXCHANGER_PORT)).await?);
-            info!("connected remote tcp exchanger");
-        }
+        let mut listener = Some(TcpListener::bind(format!("0.0.0.0:{}", self.port)).await?);
+        let (socket, _) = listener
+            .as_mut()
+            .context("no listener")?
+            .accept()
+            .await?;
+        self.socket = Some(socket);
+        info!("remote tcp exchanger accepted connection");
         Ok(())
     }
 }

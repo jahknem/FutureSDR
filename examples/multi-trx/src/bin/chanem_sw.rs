@@ -1,67 +1,26 @@
-use std::collections::HashMap;
 use std::thread::sleep;
 use clap::Parser;
 use std::time::Duration;
-use async_process::Command;
-use forky_tun::{self, Configuration};
-// use futures::StreamExt;
-// use futures::sink::SinkExt;
-use std::net::Ipv4Addr;
 use tokio;
+use gilrs::{Gilrs, Button, Event, EventType};
+use tokio::sync::mpsc::unbounded_channel;
+use tokio::sync::watch;
+use std::f32::consts::PI;
+use num::complex::Complex;
 
 use futuresdr::anyhow::Result;
-use futuresdr::async_io;
 use futuresdr::async_io::block_on;
-use futuresdr::async_io::Timer;
 use futuresdr::async_net::UdpSocket;
-use futuresdr::blocks::Apply;
-use futuresdr::blocks::Combine;
-use futuresdr::blocks::Fft;
-use futuresdr::blocks::FftDirection;
 use futuresdr::blocks::FirBuilder;
-use futuresdr::blocks::MessagePipe;
-use futuresdr::blocks::Selector;
-use futuresdr::blocks::SelectorDropPolicy as DropPolicy;
-use futuresdr::futures::channel::mpsc;
-use futuresdr::futures::StreamExt;
-use futuresdr::log::info;
-use futuresdr::log::warn;
+use futuresdr::log::{info, warn, debug};
 use futuresdr::num_complex::Complex32;
-use futuresdr::runtime::buffer::circular::Circular;
 use futuresdr::runtime::Flowgraph;
-use futuresdr::runtime::Pmt;
 use futuresdr::runtime::Runtime;
 
-use multitrx::MessageSelector;
-
-use multitrx::IPDSCPRewriter;
-use multitrx::MetricsReporter;
-use multitrx::TcpExchanger;
+use multitrx::TcpSink;
+use multitrx::TcpSource;
 use multitrx::Complex32Serializer;
 use multitrx::Complex32Deserializer;
-
-use wlan::MAX_PAYLOAD_SIZE;
-use wlan::fft_tag_propagation as wlan_fft_tag_propagation;
-use wlan::Decoder as WlanDecoder;
-use wlan::Delay as WlanDelay;
-// use wlan::Encoder as WlanEncoder;
-use multitrx::Encoder as WlanEncoder;
-use wlan::FrameEqualizer as WlanFrameEqualizer;
-use wlan::Mac as WlanMac;
-use wlan::Mapper as WlanMapper;
-use wlan::Mcs as WlanMcs;
-use wlan::MovingAverage as WlanMovingAverage;
-use wlan::Prefix as WlanPrefix;
-use wlan::SyncLong as WlanSyncLong;
-use wlan::SyncShort as WlanSyncShort;
-use wlan::MAX_SYM;
-
-use zigbee::modulator as zigbee_modulator;
-use zigbee::IqDelay as ZigbeeIqDelay;
-// use zigbee::Mac as ZigbeeMac;
-use multitrx::ZigbeeMac;
-use zigbee::ClockRecoveryMm as ZigbeeClockRecoveryMm;
-use zigbee::Decoder as ZigbeeDecoder;
 
 
 const PAD_FRONT: usize = 10000;
@@ -85,12 +44,18 @@ const LAMBDA: f32 = SPEED_OF_LIGHT / 2.45e9;
 #[derive(Parser, Debug)]
 #[clap(version)]
 struct Args {
-    /// TCPExchanger remote server ip
-    #[clap(long, value_parser, default_value = "0.0.0.0")]
-    server_ip: String,
-    /// TCPExchanger remote client ip
+    /// AG TCPExchanger local sink port
     #[clap(long, value_parser)]
-    client_ip: String,
+    local_tcp_sink_port_ag: u32,
+    /// AG TCPExchanger remote sink socket address
+    #[clap(long, value_parser)]
+    remote_tcp_sink_address_ag: String,
+    /// GA TCPExchanger local sink port
+    #[clap(long, value_parser)]
+    local_tcp_sink_port_ga: u32,
+    /// GA TCPExchanger remote sink socket address
+    #[clap(long, value_parser)]
+    remote_tcp_sink_address_ga: String,
     /// UDP port to receive position updates
     #[clap(short, long, default_value_t = 1337)]
     local_udp_port: u32,
@@ -130,7 +95,7 @@ fn calculate_tap_value(dist: f32, magic_scaling_coeff: f32) -> f32 {
 fn calculate_taps_two_ray(
     x: f32, y: f32, z: f32, sample_rate: f32, magic_scaling_coeff: f32
 ) -> [i16; MAX_TAPS * 2] {
-    let delay_per_tap = (1. / sample_rate);
+    let delay_per_tap = 1. / sample_rate;
 
     let mut taps = [0_i16; MAX_TAPS * 2];
 
@@ -187,34 +152,39 @@ fn main() -> Result<()> {
     let mut fg = Flowgraph::new();
 
     //FIR
-    let mut taps = [Complex32::new(0.0_f32, 0.0_f32); MAX_TAPS];
-    taps[0] = Complex32::new(1.0_f32, 0.0_f32);
+    // let mut taps = [Complex32::new(0.0_f32, 0.0_f32); MAX_TAPS];
+    // taps[0] = Complex32::new(1.0_f32, 0.0_f32);
+    let mut taps = [0.0_f32; MAX_TAPS];
+    taps[0] = 1.0_f32;
 
-    let tcp_exchanger_to_uav = fg.add_block(TcpExchanger::new(args.client_ip, true));
-    let tcp_exchanger_to_ground = fg.add_block(TcpExchanger::new(args.server_ip, false));
-    let tcp_exchanger_to_uav = fg.add_block(TcpExchanger::new(args.local_ip.clone(), args.remote_ip.clone()));
+    let tcp_sink_ag = fg.add_block(TcpSink::new(args.local_tcp_sink_port_ag));
+    let tcp_source_ag = fg.add_block(TcpSource::new(args.remote_tcp_sink_address_ag));
     let iq_serializer_ag = fg.add_block(Complex32Serializer::new());
     let iq_deserializer_ag = fg.add_block(Complex32Deserializer::new());
-    let fir_ag = fg.add_block(FirBuilder::new::<Complex32, Complex32, Complex32, _>(taps));
+    // let fir_ag = fg.add_block(FirBuilder::new::<Complex32, Complex32, Complex32, _>(taps));
+    let fir_ag = fg.add_block(FirBuilder::new::<Complex32, Complex32, f32, _>(taps));
+    let tcp_sink_ga = fg.add_block(TcpSink::new(args.local_tcp_sink_port_ga));
+    let tcp_source_ga = fg.add_block(TcpSource::new(args.remote_tcp_sink_address_ga));
     let iq_serializer_ga = fg.add_block(Complex32Serializer::new());
     let iq_deserializer_ga = fg.add_block(Complex32Deserializer::new());
-    let fir_ga = fg.add_block(FirBuilder::new::<Complex32, Complex32, Complex32, _>(taps));
+    // let fir_ga = fg.add_block(FirBuilder::new::<Complex32, Complex32, Complex32, _>(taps));
+    let fir_ga = fg.add_block(FirBuilder::new::<Complex32, Complex32, f32, _>(taps));
 
     // ============================================
     // AG CHANNEL
     // ============================================
-    fg.connect_stream(tcp_exchanger_to_uav, "out", iq_deserializer_ag, "in")?;
+    fg.connect_stream(tcp_source_ag, "out", iq_deserializer_ag, "in")?;
     fg.connect_stream(iq_deserializer_ag, "out", fir_ag, "in")?;
     fg.connect_stream(fir_ag, "out", iq_serializer_ag, "in")?;
-    fg.connect_stream(iq_serializer_ag, "out", tcp_exchanger_to_ground, "in")?;
+    fg.connect_stream(iq_serializer_ag, "out", tcp_sink_ag, "in")?;
 
     // ============================================
     // GA CHANNEL
     // ============================================
-    fg.connect_stream(tcp_exchanger_to_ground, "out", iq_deserializer_ga, "in")?;
+    fg.connect_stream(tcp_source_ga, "out", iq_deserializer_ga, "in")?;
     fg.connect_stream(iq_deserializer_ga, "out", fir_ga, "in")?;
     fg.connect_stream(fir_ga, "out", iq_serializer_ga, "in")?;
-    fg.connect_stream(iq_serializer_ga, "out", tcp_exchanger_to_uav, "in")?;
+    fg.connect_stream(iq_serializer_ga, "out", tcp_sink_ga, "in")?;
 
     // ============================================
     // RUNTIME
@@ -311,7 +281,7 @@ fn main() -> Result<()> {
         }
     });
 
-    tokio::spawn(async move {
+    rt.spawn_background(async move {
         info!("spawning position update receiver, listening on port {}", args.local_udp_port);
         let sock = UdpSocket::bind(format!("0.0.0.0:{}", args.local_udp_port)).await.unwrap();
         let mut buf = [0; 2048];
@@ -327,13 +297,15 @@ fn main() -> Result<()> {
                 let p_rad = f32::from_be_bytes(buf[16..20].try_into().unwrap());
                 let y_rad = f32::from_be_bytes(buf[20..24].try_into().unwrap());
 
-                tx.send(Ev::Value(x, y, z, r_rad, p_rad, y_rad)).unwrap();
+                if let Err(e) = tx.send(Ev::Value(x, y, z, r_rad, p_rad, y_rad)) {
+                    warn!("could not send position update to gu. ({:?})", e)
+                }
                 debug!("received ([{}, {}, {}], [{}, {}, {}])", x, y, z, r_rad, p_rad, y_rad);
 
                 let mut send_buf = buf.to_vec();
                 // prepend 'P' as message type to distinguish between [P]osition, [T]aps, and [M]ode
                 send_buf.insert(0_usize, b'P');
-                to_gui_udp_handler_tx_1.send(send_buf).unwrap();  // TODO
+                to_gui_udp_handler_tx_1.send(send_buf).unwrap();
             }
             else {
                 // erroneous message contains: b'PowerFolder node: [1337]-[AUTJpBd5EcTPnEtSPDkZ]\x00'
@@ -350,7 +322,7 @@ fn main() -> Result<()> {
     });
 
     // udp receiver from gui
-    tokio::spawn(async move {
+    rt.spawn_background(async move {
         let sock = UdpSocket::bind(format!("0.0.0.0:{}", args.model_selection_udp_port)).await.unwrap();
         let mut buf = [0; 1024];
         loop {
@@ -382,7 +354,7 @@ fn main() -> Result<()> {
     });
 
     // udp sender to gui
-    tokio::spawn(async move {
+    rt.spawn_background(async move {
         let sock_tx_to_gui = UdpSocket::bind("0.0.0.0:0").await.unwrap();
         sock_tx_to_gui
             // forward to Host (has .1 address of every docker compose network)
@@ -406,69 +378,74 @@ fn main() -> Result<()> {
 
     let mut pl_model_index = MODEL_INDEX_AUTOMATIC_FREE_SPACE;
     let mut last_manual = 50.0_f32;
-    tokio::spawn(async move {
-        let mut send = false;
-        let mut taps_tmp = [0_f32; MAX_TAPS * 2];
-        if let Some(e) = rx.recv().await {
-            match e {
-                Ev::ModeAutomaticFreeSpace => {
-                    pl_model_index = MODEL_INDEX_AUTOMATIC_FREE_SPACE;
-                    if let Err(e) = mode_channel_gui_to_gamepad_tx.send(MODEL_INDEX_AUTOMATIC_FREE_SPACE) {
-                        warn!("error sending PL model index to gui ({:?})", e);
-                    }
-                },
-                Ev::ModeAutomaticFlatEarthTwoRay => {
-                    pl_model_index = MODEL_INDEX_AUTOMATIC_FLAT_EARTH_TWO_RAY;
-                    if let Err(e) = mode_channel_gui_to_gamepad_tx.send(MODEL_INDEX_AUTOMATIC_FLAT_EARTH_TWO_RAY) {
-                        warn!("error sending PL model index to gui ({:?})", e);
-                    }
-                },
-                Ev::ModeManual(v) => {
-                    pl_model_index = MODEL_INDEX_MANUAL;
-                    if let Err(e) = mode_channel_gui_to_gamepad_tx.send(MODEL_INDEX_MANUAL) {
-                        warn!("error sending PL model index to gui ({:?})", e);
-                    }
-                    if v >= 0. {
-                        last_manual = v;
-                    }
-                    taps.fill(Complex32::new(0.0_f32, 0.0_f32));
-                    taps_tmp.fill(0_f32);
-                    let tap = TAP_VALUE_NO_LOSS / 10.0_f32.powf(last_manual / 20.0_f32) * magic_scaling_coeff;
-                    let tap = (tap as i16).clamp(TAP_VALUE_MIN, TAP_VALUE_MAX);
-                    taps_tmp[0] = tap;
-                    let tap = tap as f32 / TAP_VALUE_MAX;
-                    taps[0] = tap;
-                    send = true;
-                }
-                Ev::Value(x, y, z, _r_rad, _p_rad, _y_rad) => {
-                    if pl_model_index == 1 {
-                        taps_tmp = calculate_taps_two_ray(x, y, z, args.sample_rate as f32, magic_scaling_coeff);
-                    }
-                    // else if pl_model_index == 2 {
-                    //     taps = calculate_taps_two_segment_log_dist(x, y, z, r_rad, p_rad, y_rad);
-                    // }
-                    else if pl_model_index == 0 {
-                        taps_tmp = calculate_taps_freespace(x, y, z, magic_scaling_coeff);
+    rt.spawn_background(async move {
+        loop {
+            let mut send = false;
+            let mut taps_tmp = [0_i16; MAX_TAPS * 2];
+            if let Some(e) = rx.recv().await {
+                match e {
+                    Ev::ModeAutomaticFreeSpace => {
+                        pl_model_index = MODEL_INDEX_AUTOMATIC_FREE_SPACE;
+                        if let Err(e) = mode_channel_gui_to_gamepad_tx.send(MODEL_INDEX_AUTOMATIC_FREE_SPACE) {
+                            warn!("error sending PL model index to gui ({:?})", e);
+                        }
+                    },
+                    Ev::ModeAutomaticFlatEarthTwoRay => {
+                        pl_model_index = MODEL_INDEX_AUTOMATIC_FLAT_EARTH_TWO_RAY;
+                        if let Err(e) = mode_channel_gui_to_gamepad_tx.send(MODEL_INDEX_AUTOMATIC_FLAT_EARTH_TWO_RAY) {
+                            warn!("error sending PL model index to gui ({:?})", e);
+                        }
+                    },
+                    Ev::ModeManual(v) => {
+                        pl_model_index = MODEL_INDEX_MANUAL;
+                        if let Err(e) = mode_channel_gui_to_gamepad_tx.send(MODEL_INDEX_MANUAL) {
+                            warn!("error sending PL model index to gui ({:?})", e);
+                        }
+                        if v >= 0. {
+                            last_manual = v;
+                        }
+                        // taps.fill(Complex32::new(0.0_f32, 0.0_f32));
+                        taps.fill(0.0_f32);
+                        taps_tmp.fill(0_i16);
+                        let tap = TAP_VALUE_NO_LOSS / 10.0_f32.powf(last_manual / 20.0_f32) * magic_scaling_coeff;
+                        let tap = (tap as i16).clamp(TAP_VALUE_MIN, TAP_VALUE_MAX);
+                        taps_tmp[0] = tap;
+                        let tap = tap as f32 / TAP_VALUE_MAX as f32;
+                        // taps[0] = Complex32::new(tap, 0_f32);
+                        taps[0] = tap;
                         send = true;
                     }
-                    for i in 0..MAX_TAPS {
-                        taps[1] = Complex32::new(taps_tmp[i], taps_tmp[MAX_TAPS + i]);
+                    Ev::Value(x, y, z, _r_rad, _p_rad, _y_rad) => {
+                        if pl_model_index == 1 {
+                            taps_tmp = calculate_taps_two_ray(x, y, z, args.sample_rate as f32, magic_scaling_coeff);
+                        }
+                        // else if pl_model_index == 2 {
+                        //     taps = calculate_taps_two_segment_log_dist(x, y, z, r_rad, p_rad, y_rad);
+                        // }
+                        else if pl_model_index == 0 {
+                            taps_tmp = calculate_taps_freespace(x, y, z, magic_scaling_coeff);
+                            send = true;
+                        }
+                        for i in 0..MAX_TAPS {
+                            // taps[i] = Complex32::new(taps_tmp[i] as f32 / TAP_VALUE_MAX as f32, taps_tmp[MAX_TAPS + i] as f32 / TAP_VALUE_MAX as f32);
+                            taps[i] = Complex32::new(taps_tmp[i] as f32 / TAP_VALUE_MAX as f32, taps_tmp[MAX_TAPS + i] as f32 / TAP_VALUE_MAX as f32).norm();
+                        }
+                        send = true;
                     }
-                    send = true;
                 }
-            }
 
-            if send {
-                let mut send_buf = taps
-                    .iter()
-                    .flat_map(|v| v.to_be_bytes())
-                    .collect::<Vec<u8>>();
-                // prepend 'T' as message type to distinguish between [P]osition, [T]aps, and [M]ode
-                send_buf.insert(0_usize, b'T');
-                if let Err(e) = to_gui_udp_handler_tx_2.send(send_buf.clone()) {
-                    warn!("error sending Filter Taps to gui ({:?})", e);
+                if send {
+                    let mut send_buf = taps_tmp
+                        .iter()
+                        .flat_map(|v| v.to_be_bytes())
+                        .collect::<Vec<u8>>();
+                    // prepend 'T' as message type to distinguish between [P]osition, [T]aps, and [M]ode
+                    send_buf.insert(0_usize, b'T');
+                    if let Err(e) = to_gui_udp_handler_tx_2.send(send_buf.clone()) {
+                        warn!("error sending Filter Taps to gui ({:?})", e);
+                    }
+                    debug!("sent message to handler: {:?}", send_buf);
                 }
-                debug!("sent message to handler: {:?}", send_buf);
             }
         }
     });

@@ -46,3 +46,5 @@ futures = "0.3.28"
 tokio = { version = "1.28.1", features = ["full"] }
 async-process = "1.7.0"
 async-net = "1.7.0"
+gilrs = "0.10.2"
+num = "0.4.0"

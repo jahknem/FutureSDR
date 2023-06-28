@@ -1,4 +1,3 @@
-use async_net::{TcpListener, TcpStream};
 use futures::AsyncReadExt;
 use futures::AsyncWriteExt;
 use futuresdr::log::{info, debug};
@@ -65,11 +64,11 @@ impl Kernel for Complex32Serializer {
         if out.is_empty() {
             return Ok(());
         }
-        println!("out buffer len: {}", out.len());
+        debug!("out buffer len: {}", out.len());
 
         let input = sio.input(0).slice::<Complex32>();
         if input.len() > 0 {
-            println!("received {} Complex32s", input.len());
+            debug!("received {} Complex32s", input.len());
             // convert Complex32 to bytes
             let n_input_to_produce = cmp::min(input.len(), out.len() / 8);
             if n_input_to_produce > 0 {
@@ -79,7 +78,7 @@ impl Kernel for Complex32Serializer {
                     out[i * 8 + 4..i * 8 + 8].copy_from_slice(&input[i].im.to_ne_bytes());
                 }
                 sio.output(0).produce(n_bytes_to_produce);
-                println!("converted {} Complex32s to {} bytes.", n_input_to_produce, n_bytes_to_produce);
+                debug!("converted {} Complex32s to {} bytes.", n_input_to_produce, n_bytes_to_produce);
             }
 
             if sio.input(0).finished() {
@@ -118,11 +117,11 @@ impl Kernel for Complex32Deserializer {
         if out.is_empty() {
             return Ok(());
         }
-        println!("out buffer len: {}", out.len());
+        debug!("out buffer len: {}", out.len());
 
         let input = sio.input(0).slice::<u8>();
         if input.len() > 0 {
-            println!("received {} Bytes", input.len());
+            debug!("received {} Bytes", input.len());
             // convert Complex32 to bytes
             let n_input_to_produce = cmp::min(input.len(), out.len() * 8);
             if n_input_to_produce > 0 {
@@ -134,7 +133,7 @@ impl Kernel for Complex32Deserializer {
                     );
                 }
                 sio.output(0).produce(n_output_to_produce);
-                println!("converted {} bytes to {} Complex32s.", n_input_to_produce, n_output_to_produce);
+                debug!("converted {} bytes to {} Complex32s.", n_input_to_produce, n_output_to_produce);
             }
 
             if sio.input(0).finished() {

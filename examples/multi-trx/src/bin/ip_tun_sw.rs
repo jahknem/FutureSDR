@@ -18,7 +18,7 @@ use futuresdr::blocks::Apply;
 use futuresdr::blocks::Combine;
 use futuresdr::blocks::Fft;
 use futuresdr::blocks::FftDirection;
-use futuresdr::blocks::FirBuilder;
+// use futuresdr::blocks::FirBuilder;
 use futuresdr::blocks::MessagePipe;
 use futuresdr::blocks::Selector;
 use futuresdr::blocks::SelectorDropPolicy as DropPolicy;
@@ -36,7 +36,8 @@ use multitrx::MessageSelector;
 
 use multitrx::IPDSCPRewriter;
 use multitrx::MetricsReporter;
-use multitrx::TcpExchanger;
+use multitrx::TcpSink;
+use multitrx::TcpSource;
 use multitrx::Complex32Serializer;
 use multitrx::Complex32Deserializer;
 
@@ -101,6 +102,12 @@ struct Args {
     // #[clap(long, value_parser = parse_flow_priority_json, default_value = "")]
     #[clap(long, value_parser)]
     flow_priority_file: String,
+    /// TCPExchanger local sink port
+    #[clap(long, value_parser)]
+    local_tcp_sink_port: u32,
+    /// TCPExchanger remote sink socket address
+    #[clap(long, value_parser)]
+    remote_tcp_sink_address: String,
 }
 
 const DSCP_EF: u8 = 0b101110 << 2;
@@ -139,10 +146,11 @@ fn main() -> Result<()> {
     let mut fg = Flowgraph::new();
 
     //FIR
-    let taps = [0.5f32, 0.5f32];
+    // let taps = [0.5f32, 0.5f32];
     // let fir = fg.add_block(FirBuilder::new::<Complex32, Complex32, f32, _>(taps));
 
-    let tcp_exchanger = fg.add_block(TcpExchanger::new(args.remote_ip.clone(), args.local_ip < args.remote_ip));
+    let tcp_sink = fg.add_block(TcpSink::new(args.local_tcp_sink_port));
+    let tcp_source = fg.add_block(TcpSource::new(args.remote_tcp_sink_address));
     let iq_serializer = fg.add_block(Complex32Serializer::new());
     let iq_deserializer = fg.add_block(Complex32Deserializer::new());
 
@@ -156,7 +164,7 @@ fn main() -> Result<()> {
 
     // fg.connect_stream(fir, "out", iq_serializer, "in")?;
     fg.connect_stream(sink_selector, "out0", iq_serializer, "in")?;
-    fg.connect_stream(iq_serializer, "out", tcp_exchanger, "in")?;
+    fg.connect_stream(iq_serializer, "out", tcp_sink, "in")?;
 
     //source selector
     let src_selector = Selector::<Complex32, 1, 2>::new(args.drop_policy);
@@ -164,7 +172,7 @@ fn main() -> Result<()> {
         .message_input_name_to_id("output_index")
         .expect("No output_index port found!");
     let src_selector = fg.add_block(src_selector);
-    fg.connect_stream(tcp_exchanger, "out", iq_deserializer, "in")?;
+    fg.connect_stream(tcp_source, "out", iq_deserializer, "in")?;
     fg.connect_stream(iq_deserializer, "out", src_selector, "in0")?;
 
     // ============================================
