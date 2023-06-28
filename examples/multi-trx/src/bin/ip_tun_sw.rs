@@ -140,7 +140,7 @@ fn main() -> Result<()> {
 
     //FIR
     let taps = [0.5f32, 0.5f32];
-    let fir = fg.add_block(FirBuilder::new::<Complex32, Complex32, f32, _>(taps));
+    // let fir = fg.add_block(FirBuilder::new::<Complex32, Complex32, f32, _>(taps));
 
     let tcp_exchanger = fg.add_block(TcpExchanger::new(args.remote_ip.clone(), args.local_ip < args.remote_ip));
     let iq_serializer = fg.add_block(Complex32Serializer::new());
@@ -152,9 +152,10 @@ fn main() -> Result<()> {
         .message_input_name_to_id("input_index")
         .expect("No input_index port found!");
     let sink_selector = fg.add_block(sink_selector);
-    fg.connect_stream(sink_selector, "out0", fir, "in")?;
+    // fg.connect_stream(sink_selector, "out0", fir, "in")?;
 
-    fg.connect_stream(fir, "out", iq_serializer, "in")?;
+    // fg.connect_stream(fir, "out", iq_serializer, "in")?;
+    fg.connect_stream(sink_selector, "out0", iq_serializer, "in")?;
     fg.connect_stream(iq_serializer, "out", tcp_exchanger, "in")?;
 
     //source selector
