@@ -122,8 +122,8 @@ impl Kernel for Complex32Deserializer {
         let input = sio.input(0).slice::<u8>();
         if input.len() > 0 {
             debug!("received {} Bytes", input.len());
-            // convert Complex32 to bytes
-            let n_input_to_produce = cmp::min(input.len(), out.len() * 8);
+            // convert Bytes to Complex32s
+            let n_input_to_produce = cmp::min((input.len() / 8_usize) * 8_usize, out.len() * 8);
             if n_input_to_produce > 0 {
                 let n_output_to_produce: usize = n_input_to_produce / 8;
                 for i in 0..n_output_to_produce {
@@ -140,7 +140,7 @@ impl Kernel for Complex32Deserializer {
                 io.finished = true;
             }
 
-            sio.input(0).consume(input.len());
+            sio.input(0).consume(n_input_to_produce);
         }
 
         Ok(())

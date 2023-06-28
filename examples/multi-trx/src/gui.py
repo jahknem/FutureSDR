@@ -1,3 +1,5 @@
+#!/usr/bin/env python3
+
 import traceback
 import warnings
 from typing import Tuple, List, Dict, Optional

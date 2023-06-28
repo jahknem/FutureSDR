@@ -152,38 +152,40 @@ fn main() -> Result<()> {
     let mut fg = Flowgraph::new();
 
     //FIR
-    // let mut taps = [Complex32::new(0.0_f32, 0.0_f32); MAX_TAPS];
-    // taps[0] = Complex32::new(1.0_f32, 0.0_f32);
-    let mut taps = [0.0_f32; MAX_TAPS];
-    taps[0] = 1.0_f32;
+    let mut taps = [Complex32::new(0.0_f32, 0.0_f32); MAX_TAPS];
+    taps[0] = Complex32::new(1.0_f32, 0.0_f32);
+    // let mut taps = [0.0_f32; MAX_TAPS];
+    // taps[0] = 1.0_f32;
 
     let tcp_sink_ag = fg.add_block(TcpSink::new(args.local_tcp_sink_port_ag));
     let tcp_source_ag = fg.add_block(TcpSource::new(args.remote_tcp_sink_address_ag));
     let iq_serializer_ag = fg.add_block(Complex32Serializer::new());
     let iq_deserializer_ag = fg.add_block(Complex32Deserializer::new());
     // let fir_ag = fg.add_block(FirBuilder::new::<Complex32, Complex32, Complex32, _>(taps));
-    let fir_ag = fg.add_block(FirBuilder::new::<Complex32, Complex32, f32, _>(taps));
+    // let fir_ag = fg.add_block(FirBuilder::new::<Complex32, Complex32, f32, _>(taps));
     let tcp_sink_ga = fg.add_block(TcpSink::new(args.local_tcp_sink_port_ga));
     let tcp_source_ga = fg.add_block(TcpSource::new(args.remote_tcp_sink_address_ga));
     let iq_serializer_ga = fg.add_block(Complex32Serializer::new());
     let iq_deserializer_ga = fg.add_block(Complex32Deserializer::new());
     // let fir_ga = fg.add_block(FirBuilder::new::<Complex32, Complex32, Complex32, _>(taps));
-    let fir_ga = fg.add_block(FirBuilder::new::<Complex32, Complex32, f32, _>(taps));
+    // let fir_ga = fg.add_block(FirBuilder::new::<Complex32, Complex32, f32, _>(taps));
 
     // ============================================
     // AG CHANNEL
     // ============================================
     fg.connect_stream(tcp_source_ag, "out", iq_deserializer_ag, "in")?;
-    fg.connect_stream(iq_deserializer_ag, "out", fir_ag, "in")?;
-    fg.connect_stream(fir_ag, "out", iq_serializer_ag, "in")?;
+    // fg.connect_stream(iq_deserializer_ag, "out", fir_ag, "in")?;
+    // fg.connect_stream(fir_ag, "out", iq_serializer_ag, "in")?;
+    fg.connect_stream(iq_deserializer_ag, "out", iq_serializer_ag, "in")?;
     fg.connect_stream(iq_serializer_ag, "out", tcp_sink_ag, "in")?;
 
     // ============================================
     // GA CHANNEL
     // ============================================
     fg.connect_stream(tcp_source_ga, "out", iq_deserializer_ga, "in")?;
-    fg.connect_stream(iq_deserializer_ga, "out", fir_ga, "in")?;
-    fg.connect_stream(fir_ga, "out", iq_serializer_ga, "in")?;
+    // fg.connect_stream(iq_deserializer_ga, "out", fir_ga, "in")?;
+    // fg.connect_stream(fir_ga, "out", iq_serializer_ga, "in")?;
+    fg.connect_stream(iq_deserializer_ga, "out", iq_serializer_ga, "in")?;
     fg.connect_stream(iq_serializer_ga, "out", tcp_sink_ga, "in")?;
 
     // ============================================
@@ -404,15 +406,16 @@ fn main() -> Result<()> {
                         if v >= 0. {
                             last_manual = v;
                         }
-                        // taps.fill(Complex32::new(0.0_f32, 0.0_f32));
-                        taps.fill(0.0_f32);
+                        taps.fill(Complex32::new(0.0_f32, 0.0_f32));
+                        // taps.fill(0.0_f32);
                         taps_tmp.fill(0_i16);
                         let tap = TAP_VALUE_NO_LOSS / 10.0_f32.powf(last_manual / 20.0_f32) * magic_scaling_coeff;
                         let tap = (tap as i16).clamp(TAP_VALUE_MIN, TAP_VALUE_MAX);
                         taps_tmp[0] = tap;
                         let tap = tap as f32 / TAP_VALUE_MAX as f32;
                         // taps[0] = Complex32::new(tap, 0_f32);
-                        taps[0] = tap;
+                        taps[MAX_TAPS - 1] = Complex32::new(tap, 0_f32);
+                        // taps[0] = tap;
                         send = true;
                     }
                     Ev::Value(x, y, z, _r_rad, _p_rad, _y_rad) => {
@@ -428,13 +431,15 @@ fn main() -> Result<()> {
                         }
                         for i in 0..MAX_TAPS {
                             // taps[i] = Complex32::new(taps_tmp[i] as f32 / TAP_VALUE_MAX as f32, taps_tmp[MAX_TAPS + i] as f32 / TAP_VALUE_MAX as f32);
-                            taps[i] = Complex32::new(taps_tmp[i] as f32 / TAP_VALUE_MAX as f32, taps_tmp[MAX_TAPS + i] as f32 / TAP_VALUE_MAX as f32).norm();
+                            taps[MAX_TAPS - 1 - i] = Complex32::new(taps_tmp[i] as f32 / TAP_VALUE_MAX as f32, taps_tmp[MAX_TAPS + i] as f32 / TAP_VALUE_MAX as f32);
+                            // taps[i] = Complex32::new(taps_tmp[i] as f32 / TAP_VALUE_MAX as f32, taps_tmp[MAX_TAPS + i] as f32 / TAP_VALUE_MAX as f32).norm();
                         }
                         send = true;
                     }
                 }
 
                 if send {
+                    // TODO update FIR filter
                     let mut send_buf = taps_tmp
                         .iter()
                         .flat_map(|v| v.to_be_bytes())
