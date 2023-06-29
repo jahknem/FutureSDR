@@ -45,6 +45,10 @@ where
             _output_type: core::marker::PhantomData,
         }
     }
+
+    pub fn update_taps(mut self, new_taps: TA) {
+        self.taps = new_taps;
+    }
 }
 
 /// Internal helper function to abstract away everything but the core computation.

@@ -50,6 +50,10 @@ where
             },
         )
     }
+
+    pub fn get_core<'a>(&'a self) -> &'a Core {
+        &self.core
+    }
 }
 
 #[doc(hidden)]
