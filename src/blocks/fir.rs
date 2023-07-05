@@ -12,27 +12,32 @@ use futuredsp::fir::*;
 use futuredsp::firdes;
 use futuredsp::{TapsAccessor, UnaryKernel};
 use num_integer;
+use futuresdr_pmt::PmtAny;
+use crate::runtime::Pmt;
 
 /// FIR filter.
-pub struct Fir<InputType, OutputType, TapType, Core>
+pub struct Fir<InputType, OutputType, TapAccessor, TapType, Core>
 where
     InputType: 'static + Send,
     OutputType: 'static + Send,
+    TapAccessor: 'static + Send + TapsAccessor<TapType = TapType> + Clone,
     TapType: 'static + Send,
-    Core: 'static + UnaryKernel<InputType, OutputType> + Send,
+    Core: 'static + UnaryKernel<InputType, OutputType> + Send + futuredsp::fir::UpdateableFirFilterKernel<TapAccessor, TapType>,
 {
     core: Core,
     _input_type: std::marker::PhantomData<InputType>,
     _output_type: std::marker::PhantomData<OutputType>,
     _tap_type: std::marker::PhantomData<TapType>,
+    _tap_accessor: std::marker::PhantomData<TapAccessor>,
 }
 
-impl<InputType, OutputType, TapType, Core> Fir<InputType, OutputType, TapType, Core>
+impl<InputType, OutputType, TapAccessor, TapType, Core> Fir<InputType, OutputType, TapAccessor, TapType, Core>
 where
     InputType: 'static + Send,
     OutputType: 'static + Send,
+    TapAccessor: 'static + Send + TapsAccessor<TapType = TapType> + Clone,
     TapType: 'static + Send,
-    Core: 'static + UnaryKernel<InputType, OutputType> + Send,
+    Core: 'static + UnaryKernel<InputType, OutputType> + Send + futuredsp::fir::UpdateableFirFilterKernel<TapAccessor, TapType>,
 {
     pub fn new(core: Core) -> Block {
         Block::new(
@@ -41,29 +46,46 @@ where
                 .add_input::<InputType>("in")
                 .add_output::<OutputType>("out")
                 .build(),
-            MessageIoBuilder::<Fir<InputType, OutputType, TapType, Core>>::new().build(),
+            MessageIoBuilder::<Fir<InputType, OutputType, TapAccessor, TapType, Core>>::new()
+                .add_input("update_taps", Self::update_taps)
+                .build(),
             Fir {
                 core,
                 _input_type: std::marker::PhantomData,
                 _output_type: std::marker::PhantomData,
                 _tap_type: std::marker::PhantomData,
+                _tap_accessor: std::marker::PhantomData,
             },
         )
     }
 
-    pub fn get_core<'a>(&'a self) -> &'a Core {
-        &self.core
+    #[message_handler]
+    fn update_taps(
+        &mut self,
+        _mio: &mut MessageIo<Fir<InputType, OutputType, TapAccessor, TapType, Core>>,
+        _meta: &mut BlockMeta,
+        p: Pmt
+    ) -> Result<Pmt> {
+        if let Pmt::Any(mut new_taps) = p {
+            // must be called with TapAccessor compliant type in Pmt::Any, else this function will panic with "calling unwrap() on an Empty Enum"
+            self.core.update_taps((*new_taps).as_any_mut().downcast_mut::<TapAccessor>().unwrap().clone());
+            // debug!("Successfully updated Taps!")
+        } else {
+            warn!("FIR update Taps: received wrong PMT type. {:?}", p);
+        }
+        Ok(Pmt::Null)
     }
 }
 
 #[doc(hidden)]
 #[async_trait]
-impl<InputType, OutputType, TapType, Core> Kernel for Fir<InputType, OutputType, TapType, Core>
+impl<InputType, OutputType, TapAccessor, TapType, Core> Kernel for Fir<InputType, OutputType, TapAccessor, TapType, Core>
 where
     InputType: 'static + Send,
     OutputType: 'static + Send,
+    TapAccessor: 'static + Send + TapsAccessor<TapType = TapType> + Clone,
     TapType: 'static + Send,
-    Core: 'static + UnaryKernel<InputType, OutputType> + Send,
+    Core: 'static + UnaryKernel<InputType, OutputType> + Send + futuredsp::fir::UpdateableFirFilterKernel<TapAccessor, TapType>,
 {
     async fn work(
         &mut self,
@@ -134,13 +156,14 @@ impl FirBuilder {
         InputType: 'static + Send,
         OutputType: 'static + Send,
         TapType: 'static + Send,
-        Taps: 'static + TapsAccessor<TapType = TapType> + Send,
+        Taps: 'static + TapsAccessor<TapType = TapType> + Send + Clone,
         NonResamplingFirKernel<InputType, OutputType, Taps, TapType>:
             UnaryKernel<InputType, OutputType> + Send,
     {
         Fir::<
             InputType,
             OutputType,
+            Taps,
             TapType,
             NonResamplingFirKernel<InputType, OutputType, Taps, TapType>,
         >::new(NonResamplingFirKernel::new(taps))
@@ -177,13 +200,14 @@ impl FirBuilder {
         InputType: 'static + Send,
         OutputType: 'static + Send,
         TapType: 'static + Send,
-        Taps: 'static + TapsAccessor<TapType = TapType> + Send,
+        Taps: 'static + TapsAccessor<TapType = TapType> + Send + Clone,
         PolyphaseResamplingFirKernel<InputType, OutputType, Taps, TapType>:
             UnaryKernel<InputType, OutputType> + Send,
     {
         Fir::<
             InputType,
             OutputType,
+            Taps,
             TapType,
             PolyphaseResamplingFirKernel<InputType, OutputType, Taps, TapType>,
         >::new(PolyphaseResamplingFirKernel::new(interp, decim, taps))

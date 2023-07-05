@@ -6,6 +6,15 @@ use crate::{ComputationStatus, TapsAccessor, UnaryKernel};
 use num_complex::Complex;
 use num_traits::{Float, Zero};
 
+pub trait UpdateableFirFilterKernel<TA, TT>
+// pub trait UpdateableFirFilterKernel<TT>
+// where
+//     TA: TapsAccessor<TapType = TT>,
+{
+    // fn update_taps<T>(self, new_taps: T) where T: 'static + TapsAccessor<TapType = TT> + Send ;
+    fn update_taps(&mut self, new_taps: TA);
+}
+
 /// A non-resampling FIR filter. Calling `work()` on this struct always
 /// produces exactly as many samples as it consumes.
 ///
@@ -26,7 +35,7 @@ use num_traits::{Float, Zero};
 /// ```
 pub struct NonResamplingFirKernel<InputType, OutputType, TA, TT>
 where
-    TA: TapsAccessor<TapType = TT>,
+    TA: TapsAccessor<TapType = TT> + Send + 'static,
 {
     taps: TA,
     _input_type: core::marker::PhantomData<InputType>,
@@ -35,7 +44,7 @@ where
 
 impl<InputType, OutputType, TA, TT> NonResamplingFirKernel<InputType, OutputType, TA, TT>
 where
-    TA: TapsAccessor<TapType = TT>,
+    TA: TapsAccessor<TapType = TT> + Send + 'static,
 {
     /// Create a new non-resampling FIR filter using the given taps.
     pub fn new(taps: TA) -> Self {
@@ -45,8 +54,13 @@ where
             _output_type: core::marker::PhantomData,
         }
     }
+}
 
-    pub fn update_taps(mut self, new_taps: TA) {
+impl<InputType, OutputType, TA, TT> UpdateableFirFilterKernel<TA, TT> for NonResamplingFirKernel<InputType, OutputType, TA, TT>
+where
+    TA: TapsAccessor<TapType = TT> + Send + 'static,
+{
+    fn update_taps(&mut self, new_taps: TA){
         self.taps = new_taps;
     }
 }
@@ -277,6 +291,15 @@ where
             _input_type: core::marker::PhantomData,
             _output_type: core::marker::PhantomData,
         }
+    }
+}
+
+impl<InputType, OutputType, TA, TT> UpdateableFirFilterKernel<TA, TT> for PolyphaseResamplingFirKernel<InputType, OutputType, TA, TT>
+where
+    TA: TapsAccessor<TapType = TT> + Send + 'static,
+{
+    fn update_taps(&mut self, new_taps: TA){
+        self.taps = new_taps;
     }
 }
 

@@ -17,6 +17,7 @@ use futuresdr::log::{info, warn, debug};
 use futuresdr::num_complex::Complex32;
 use futuresdr::runtime::Flowgraph;
 use futuresdr::runtime::Runtime;
+use futuresdr::runtime::Pmt;
 
 use multitrx::TcpSink;
 use multitrx::TcpSource;
@@ -161,12 +162,18 @@ fn main() -> Result<()> {
     let iq_serializer_ag = fg.add_block(Complex32Serializer::new());
     let iq_deserializer_ag = fg.add_block(Complex32Deserializer::new());
     let fir_ag_block = FirBuilder::new::<Complex32, Complex32, Complex32, _>(taps);
+    let fir_ag_update_taps_input_port_id = fir_ag_block
+        .message_input_name_to_id("update_taps")
+        .expect("No update_taps port found!");
     let fir_ag = fg.add_block(fir_ag_block);
     let tcp_sink_ga = fg.add_block(TcpSink::new(args.local_tcp_sink_port_ga));
     let tcp_source_ga = fg.add_block(TcpSource::new(args.remote_tcp_sink_address_ga));
     let iq_serializer_ga = fg.add_block(Complex32Serializer::new());
     let iq_deserializer_ga = fg.add_block(Complex32Deserializer::new());
     let fir_ga_block = FirBuilder::new::<Complex32, Complex32, Complex32, _>(taps);
+    let fir_ga_update_taps_input_port_id = fir_ga_block
+        .message_input_name_to_id("update_taps")
+        .expect("No update_taps port found!");
     let fir_ga = fg.add_block(fir_ga_block);
 
     // ============================================
@@ -434,8 +441,16 @@ fn main() -> Result<()> {
                 }
 
                 if send {
-                    let fir_ag_kernel = fg.kernel::<Fir<Complex32, Complex32, Complex32, NonResamplingFirKernel<Complex32, Complex32, _, Complex32>>>(fir_ag).unwrap();
-                    fir_ag_kernel.get_core().update_taps(taps.clone());
+                    input_handle.call(
+                        fir_ag,
+                        fir_ag_update_taps_input_port_id,
+                        Pmt::Any(Box::new(taps.clone()))
+                    ).await;
+                    input_handle.call(
+                        fir_ga,
+                        fir_ga_update_taps_input_port_id,
+                        Pmt::Any(Box::new(taps.clone()))
+                    ).await;
                     // fir_ga_block.core.taps = taps;
                     let mut send_buf = taps_tmp
                         .iter()

@@ -19,8 +19,6 @@ use futuresdr::num_complex::Complex32;
 
 use std::any::TypeId;
 
-const TCP_EXCHANGER_PORT: u32 = 1592;
-
 pub struct Complex32Serializer {
 }
 pub struct Complex32Deserializer {
