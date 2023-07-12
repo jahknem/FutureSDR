@@ -23,6 +23,7 @@ use multitrx::TcpSink;
 use multitrx::TcpSource;
 use multitrx::Complex32Serializer;
 use multitrx::Complex32Deserializer;
+use multitrx::AWGNComplex32;
 
 
 const PAD_FRONT: usize = 10000;
@@ -70,6 +71,9 @@ struct Args {
     /// Sample Rate
     #[clap(long, default_value_t = 200e6)]
     sample_rate: f64,
+    /// Receive noise power
+    #[clap(long, value_parser)]
+    rx_noise_power: f32,
 }
 
 fn distance(x: f32, y: f32, z: f32) -> f32 {
@@ -161,6 +165,7 @@ fn main() -> Result<()> {
     let tcp_source_ag = fg.add_block(TcpSource::new(args.remote_tcp_sink_address_ag));
     let iq_serializer_ag = fg.add_block(Complex32Serializer::new());
     let iq_deserializer_ag = fg.add_block(Complex32Deserializer::new());
+    let rx_noise_ag = fg.add_block(AWGNComplex32::new(args.rx_noise_power));
     let fir_ag_block = FirBuilder::new::<Complex32, Complex32, Complex32, _>(taps);
     let fir_ag_update_taps_input_port_id = fir_ag_block
         .message_input_name_to_id("update_taps")
@@ -170,6 +175,7 @@ fn main() -> Result<()> {
     let tcp_source_ga = fg.add_block(TcpSource::new(args.remote_tcp_sink_address_ga));
     let iq_serializer_ga = fg.add_block(Complex32Serializer::new());
     let iq_deserializer_ga = fg.add_block(Complex32Deserializer::new());
+    let rx_noise_ga = fg.add_block(AWGNComplex32::new(args.rx_noise_power));
     let fir_ga_block = FirBuilder::new::<Complex32, Complex32, Complex32, _>(taps);
     let fir_ga_update_taps_input_port_id = fir_ga_block
         .message_input_name_to_id("update_taps")
@@ -180,7 +186,8 @@ fn main() -> Result<()> {
     // AG CHANNEL
     // ============================================
     fg.connect_stream(tcp_source_ag, "out", iq_deserializer_ag, "in")?;
-    fg.connect_stream(iq_deserializer_ag, "out", fir_ag, "in")?;
+    fg.connect_stream(iq_deserializer_ag, "out", rx_noise_ag, "in")?;
+    fg.connect_stream(rx_noise_ag, "out", fir_ag, "in")?;
     fg.connect_stream(fir_ag, "out", iq_serializer_ag, "in")?;
     fg.connect_stream(iq_serializer_ag, "out", tcp_sink_ag, "in")?;
 
@@ -188,7 +195,8 @@ fn main() -> Result<()> {
     // GA CHANNEL
     // ============================================
     fg.connect_stream(tcp_source_ga, "out", iq_deserializer_ga, "in")?;
-    fg.connect_stream(iq_deserializer_ga, "out", fir_ga, "in")?;
+    fg.connect_stream(iq_deserializer_ga, "out", rx_noise_ga, "in")?;
+    fg.connect_stream(rx_noise_ga, "out", fir_ga, "in")?;
     fg.connect_stream(fir_ga, "out", iq_serializer_ga, "in")?;
     fg.connect_stream(iq_serializer_ga, "out", tcp_sink_ga, "in")?;
 

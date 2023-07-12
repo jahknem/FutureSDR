@@ -16,3 +16,6 @@ pub use tcp_exchanger::{TcpSink, TcpSource};
 mod complex32_serializer;
 pub use complex32_serializer::Complex32Serializer;
 pub use complex32_serializer::Complex32Deserializer;
+mod additive_white_gaussian_noise;
+// pub use additive_white_gaussian_noise::AWGN;
+pub use additive_white_gaussian_noise::AWGNComplex32;

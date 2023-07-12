@@ -40,6 +40,7 @@ use multitrx::TcpSink;
 use multitrx::TcpSource;
 use multitrx::Complex32Serializer;
 use multitrx::Complex32Deserializer;
+use multitrx::AWGNComplex32;
 
 use wlan::MAX_PAYLOAD_SIZE;
 use wlan::fft_tag_propagation as wlan_fft_tag_propagation;
@@ -108,6 +109,9 @@ struct Args {
     /// TCPExchanger remote sink socket address
     #[clap(long, value_parser)]
     remote_tcp_sink_address: String,
+    /// Receive noise power
+    #[clap(long, value_parser)]
+    rx_noise_power: f32,
 }
 
 const DSCP_EF: u8 = 0b101110 << 2;
@@ -145,10 +149,6 @@ fn main() -> Result<()> {
 
     let mut fg = Flowgraph::new();
 
-    //FIR
-    // let taps = [0.5f32, 0.5f32];
-    // let fir = fg.add_block(FirBuilder::new::<Complex32, Complex32, f32, _>(taps));
-
     let tcp_sink = fg.add_block(TcpSink::new(args.local_tcp_sink_port));
     let tcp_source = fg.add_block(TcpSource::new(args.remote_tcp_sink_address));
     let iq_serializer = fg.add_block(Complex32Serializer::new());
@@ -166,6 +166,7 @@ fn main() -> Result<()> {
     fg.connect_stream(sink_selector, "out0", iq_serializer, "in")?;
     fg.connect_stream(iq_serializer, "out", tcp_sink, "in")?;
 
+    let rx_noise = fg.add_block(AWGNComplex32::new(args.rx_noise_power));
     //source selector
     let src_selector = Selector::<Complex32, 1, 2>::new(args.drop_policy);
     let output_index_port_id = src_selector
@@ -173,7 +174,8 @@ fn main() -> Result<()> {
         .expect("No output_index port found!");
     let src_selector = fg.add_block(src_selector);
     fg.connect_stream(tcp_source, "out", iq_deserializer, "in")?;
-    fg.connect_stream(iq_deserializer, "out", src_selector, "in0")?;
+    fg.connect_stream(iq_deserializer, "out", rx_noise, "in")?;
+    fg.connect_stream(rx_noise, "out", src_selector, "in0")?;
 
     // ============================================
     // WLAN TRANSMITTER
