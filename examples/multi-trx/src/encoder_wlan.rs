@@ -52,6 +52,7 @@ impl Encoder {
             StreamIoBuilder::new().add_output::<u8>("out").build(),
             MessageIoBuilder::new()
                 .add_input("tx", Self::transmit)
+                .add_input("flush_queue", Self::flush_queue)
                 .build(),
             Encoder {
                 tx_frames: BoundedDiscretePriorityQueue::new(MAX_FRAMES, &PRIORITY_VALUES),
@@ -69,6 +70,21 @@ impl Encoder {
             },
         )
     }
+
+     pub fn flush_queue<'a>(
+         &'a mut self,
+         mio: &'a mut MessageIo<Encoder>,
+         _meta: &'a mut BlockMeta,
+         p: Pmt,
+     ) -> Pin<Box<dyn Future<Output = Result<Pmt>> + Send + 'a>> {
+         async move {
+             self.tx_frames.flush();
+             Ok(Pmt::Null)
+         }
+         .boxed()
+     }
+
+
 
     fn transmit<'a>(
         &'a mut self,

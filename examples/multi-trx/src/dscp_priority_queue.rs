@@ -2,6 +2,7 @@ use std::collections::{HashMap, VecDeque};
 use std::hash::Hash;
 use std::fmt::{Display, Binary};
 use std::cmp::Ord;
+use futuresdr::futures::SinkExt;
 
 use futuresdr::log::{debug, warn};
 
@@ -19,6 +20,13 @@ impl<T1, T2> BoundedDiscretePriorityQueue<'_, T1, T2> where T1: std::fmt::Debug,
             priority_index_map: HashMap::from_iter(new_priority_values.iter().map(|x| (*x, 0_usize))),
             priority_values: new_priority_values.clone(),
             max_size: new_max_size,
+        }
+    }
+
+    pub fn flush(&mut self) {
+        self.data.clear();
+        for priority_key in self.priority_values {
+            self.priority_index_map.insert(*priority_key, 0_usize);
         }
     }
 

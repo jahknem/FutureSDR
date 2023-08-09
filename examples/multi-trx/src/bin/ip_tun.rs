@@ -195,6 +195,8 @@ struct Args {
 
 const DSCP_EF: u8 = 0b101110 << 2;
 const NUM_PROTOCOLS: usize = 2;
+const PROTOCOL_INDEX_WIFI: usize = 0;
+const PROTOCOL_INDEX_ZIGBEE: usize = 1;
 static MTU_VALUES: [usize; NUM_PROTOCOLS] = [
     MAX_PAYLOAD_SIZE, // WiFi
     256 - 4 - 5 - 2  // Zigbee: 256 bytes max frame size - 4 bytes TUN metadata - 5 bytes mac header - 2 bytes mac footer (checksum)
@@ -366,7 +368,11 @@ fn main() -> Result<()> {
     // WLAN TRANSMITTER
     // ============================================
     let wlan_mac = fg.add_block(WlanMac::new([0x42; 6], [0x23; 6], [0xff; 6]));
-    let wlan_encoder = fg.add_block(WlanEncoder::new(args.wlan_mcs));
+    let wlan_encoder_block = WlanEncoder::new(args.wlan_mcs);
+    let wlan_encoder_queue_flush_input_port_id = wlan_encoder_block
+        .message_input_name_to_id("flush_queue")
+        .expect("No flush_queue port found!");
+    let wlan_encoder = fg.add_block(wlan_encoder_block);
     fg.connect_message(wlan_mac, "tx", wlan_encoder, "tx")?;
     let wlan_mapper = fg.add_block(WlanMapper::new());
     fg.connect_stream(wlan_encoder, "out", wlan_mapper, "in")?;
@@ -476,7 +482,11 @@ fn main() -> Result<()> {
     ));
 
     let zigbee_decoder = fg.add_block(ZigbeeDecoder::new(6));
-    let zigbee_mac = fg.add_block(ZigbeeMac::new());
+    let zigbee_mac_block = ZigbeeMac::new();
+    let zigbee_mac_queue_flush_input_port_id = zigbee_mac_block
+        .message_input_name_to_id("flush_queue")
+        .expect("No flush_queue port found!");
+    let zigbee_mac = fg.add_block(zigbee_mac_block);
     let (zigbee_rxed_sender, mut zigbee_rxed_frames) = mpsc::channel::<Pmt>(100);
     let zigbee_message_pipe = fg.add_block(MessagePipe::new(zigbee_rxed_sender));
 
@@ -827,6 +837,26 @@ fn main() -> Result<()> {
                                     Pmt::U32(new_index)
                                 )
                         ).unwrap();
+                        if new_protocol_index as usize == PROTOCOL_INDEX_ZIGBEE {
+                            async_io::block_on(
+                                input_handle
+                                    .call(
+                                    zigbee_mac,
+                                    zigbee_mac_queue_flush_input_port_id,
+                                    Pmt::Null,
+                                )
+                            ).unwrap();
+                        }
+                        else if new_protocol_index as usize == PROTOCOL_INDEX_WIFI {
+                            async_io::block_on(
+                                input_handle
+                                    .call(
+                                    wlan_encoder,
+                                    wlan_encoder_queue_flush_input_port_id,
+                                    Pmt::Null,
+                                )
+                            ).unwrap();
+                        }
                         async_io::block_on(
                             input_handle
                                 .call(

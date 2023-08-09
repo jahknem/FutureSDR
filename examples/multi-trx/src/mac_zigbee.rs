@@ -60,6 +60,7 @@ impl Mac {
                 .add_input("rx", Self::received)
                 .add_input("tx", Self::transmit)
                 .add_input("stats", Self::stats)
+                .add_input("flush_queue", Self::flush_queue)
                 .add_output("rxed")
                 .add_output("rftap")
                 .build(),
@@ -72,6 +73,19 @@ impl Mac {
                 n_sent: 0,
             },
         )
+    }
+
+    pub fn flush_queue<'a>(
+        &'a mut self,
+        mio: &'a mut MessageIo<Mac>,
+        _meta: &'a mut BlockMeta,
+        p: Pmt,
+    ) -> Pin<Box<dyn Future<Output = Result<Pmt>> + Send + 'a>> {
+        async move {
+            self.tx_frames.flush();
+            Ok(Pmt::Null)
+        }
+        .boxed()
     }
 
     fn calc_crc(data: &[u8]) -> u16 {
