@@ -1,4 +1,7 @@
-#!/usr/bin/env python3
+#!/bin/sh
+"true" '''\'
+exec "$(dirname "$(readlink -f "$0")")"/../../../../../venv/bin/python "$0" "$@"
+'''
 
 import traceback
 import warnings
@@ -19,6 +22,7 @@ import numpy as np
 import struct
 import cmath
 import signal
+from channel_models import get_station_z, distance, calculate_paths_freespace, calculate_paths_two_ray, calculate_paths_ce2r, calculate_paths_9ray_suburban
 
 signal.signal(signal.SIGINT, signal.SIG_DFL)
 
@@ -81,13 +85,27 @@ averages rate over the last x intervals for smoother plotting
 """
 
 SPEED_OF_LIGHT: float = 299_792_458.
+FREQUENCY: float = 2.45e9
 LAMBDA: float = SPEED_OF_LIGHT / 2.45e9
-EPSILON_R: float = 1.02
+# EPSILON_R: float = 1.02
 DELAY_PER_TAP_NS = 5  # 1 / 200e6 seconds
 
-STATION_X: float = 0.0
-STATION_Y: float = 0.0
-STATION_Z: float = 1.5  # TODO 1.5
+def combine_paths(paths: List[Tuple[float, float, float]]) -> float:
+    total_gain = 0+0j
+    for loss_linear, delay, additional_phase_shift in paths:
+        phase_offset = np.exp((2 * np.pi * delay * FREQUENCY + additional_phase_shift) * (0+1j));
+        if loss_linear >= 1:
+            partial_gain = 1 / loss_linear
+        else:
+            partial_gain = 1
+        total_gain += partial_gain * phase_offset
+    if total_gain != 0:
+        total_loss_linear = 1 / total_gain
+    else:
+        total_loss_linear = np.inf
+    total_loss_linear = np.abs(total_loss_linear)
+    loss_db = 20. * np.log10(total_loss_linear)
+    return -loss_db
 
 
 class MyFigureCanvas(FigureCanvas):
@@ -534,21 +552,47 @@ class Ui(QtWidgets.QMainWindow):
             y_label="Path Loss (dB)"
         )
         self.layout_canvas_path_loss_fe2r.addWidget(self.plot_path_loss_fe2r)
-        self.plot_path_loss_2r_dir = MyFigureCanvas(
+        self.plot_path_loss_ce2r = MyFigureCanvas(
+            x_len=120, y_range=[-MAX_PATH_LOSS_FOR_PLOTTING, 0], interval=PLOTTING_INTERVAL_MS,
+            data_getter_callback=self.get_datapoint_pl_ce2r,
+            y_label="Path Loss (dB)"
+        )
+        self.plot_path_loss_ce2r_small = MyFigureCanvas(
+            x_len=60, y_range=[-MAX_PATH_LOSS_FOR_PLOTTING, 0], interval=PLOTTING_INTERVAL_MS,
+            data_getter_callback=self.get_datapoint_pl_ce2r,
+            small=True,
+            y_label="Path Loss (dB)"
+        )
+        self.layout_canvas_path_loss_ce2r.addWidget(self.plot_path_loss_ce2r)
+        self.plot_path_loss_9r = MyFigureCanvas(
+            x_len=120, y_range=[-MAX_PATH_LOSS_FOR_PLOTTING, 0], interval=PLOTTING_INTERVAL_MS,
+            data_getter_callback=self.get_datapoint_pl_9ray_suburban,
+            y_label="Path Loss (dB)"
+        )
+        self.plot_path_loss_9r_small = MyFigureCanvas(
+            x_len=60, y_range=[-MAX_PATH_LOSS_FOR_PLOTTING, 0], interval=PLOTTING_INTERVAL_MS,
+            data_getter_callback=self.get_datapoint_pl_9ray_suburban,
+            small=True,
+            y_label="Path Loss (dB)"
+        )
+        self.layout_canvas_path_loss_9r.addWidget(self.plot_path_loss_9r)
+        self.plot_path_loss_manual = MyFigureCanvas(
             x_len=120, y_range=[-MAX_PATH_LOSS_FOR_PLOTTING, 0], interval=PLOTTING_INTERVAL_MS,
             data_getter_callback=lambda: (-self.manual_path_loss_value, ),
             y_label="Path Loss (dB)"
         )
-        self.plot_path_loss_2r_dir_small = MyFigureCanvas(
+        self.plot_path_loss_manual_small = MyFigureCanvas(
             x_len=60, y_range=[-MAX_PATH_LOSS_FOR_PLOTTING, 0], interval=PLOTTING_INTERVAL_MS,
             data_getter_callback=lambda: (-self.manual_path_loss_value, ),
             small=True,
             y_label="Path Loss (dB)"
         )
-        self.layout_canvas_path_loss_2r_dir.addWidget(self.plot_path_loss_2r_dir)
+        self.layout_canvas_path_loss_2r_dir.addWidget(self.plot_path_loss_manual)
         self.canvas_small_pl_1.addWidget(self.plot_path_loss_freespace_small)
         self.canvas_small_pl_2.addWidget(self.plot_path_loss_fe2r_small)
-        self.canvas_small_pl_3.addWidget(self.plot_path_loss_2r_dir_small)
+        self.canvas_small_pl_3.addWidget(self.plot_path_loss_ce2r_small)
+        self.canvas_small_pl_4.addWidget(self.plot_path_loss_9r_small)
+        self.canvas_small_pl_5.addWidget(self.plot_path_loss_manual_small)
         # position tab
         self.plot_position_distance = MyFigureCanvas(
             x_len=120, y_range=[0, 750], interval=PLOTTING_INTERVAL_MS,
@@ -590,6 +634,8 @@ class Ui(QtWidgets.QMainWindow):
 
         self.pl_reference_plot_fs = FigureCanvas(plt.Figure(tight_layout=True))
         self.pl_reference_plot_fe_2r = FigureCanvas(plt.Figure(tight_layout=True))
+        self.pl_reference_plot_ce_2r = FigureCanvas(plt.Figure(tight_layout=True))
+        self.pl_reference_plot_9r = FigureCanvas(plt.Figure(tight_layout=True))
         self.pl_reference_plot_man = FigureCanvas(plt.Figure(tight_layout=True))
 
         self.horizontalSlider.valueChanged.connect(partial(self.init_reference_plots, init=False))
@@ -627,7 +673,9 @@ class Ui(QtWidgets.QMainWindow):
         self.init_reference_plots(init=True)
         self.canvas_small_ref_1.addWidget(self.pl_reference_plot_fs)
         self.canvas_small_ref_2.addWidget(self.pl_reference_plot_fe_2r)
-        self.canvas_small_ref_3.addWidget(self.pl_reference_plot_man)
+        self.canvas_small_ref_3.addWidget(self.pl_reference_plot_ce_2r)
+        self.canvas_small_ref_4.addWidget(self.pl_reference_plot_9r)
+        self.canvas_small_ref_5.addWidget(self.pl_reference_plot_man)
 
         self.restore_settings()
         self.pushButton_2.clicked.connect(self.restore_settings)
@@ -647,8 +695,14 @@ class Ui(QtWidgets.QMainWindow):
         self.radio_button_path_loss_two_ray.toggled.connect(
             partial(self.select_path_loss_function, new_index=1, invoked_in_gui=True)
         )
-        self.radio_button_path_loss_manual.toggled.connect(
+        self.radio_button_path_loss_ce2r.toggled.connect(
             partial(self.select_path_loss_function, new_index=2, invoked_in_gui=True)
+        )
+        self.radio_button_path_loss_9r.toggled.connect(
+            partial(self.select_path_loss_function, new_index=3, invoked_in_gui=True)
+        )
+        self.radio_button_path_loss_manual.toggled.connect(
+            partial(self.select_path_loss_function, new_index=4, invoked_in_gui=True)
         )
 
         # start background workers
@@ -693,19 +747,31 @@ class Ui(QtWidgets.QMainWindow):
         x_len = self.horizontalSlider.value()
         self.init_reference_plot(
             self.pl_reference_plot_fs,
-            lambda x, y, z: self.path_loss_fs(self.distance(x, y, z)),
+            lambda x, y, z: self.path_loss_fs(x, y, z),
             x_len,
             init
         )
         self.init_reference_plot(
             self.pl_reference_plot_fe_2r,
-            lambda x, y, z: self.path_loss_fe_2r(x, y, z)[0],
+            lambda x, y, z: self.path_loss_fe_2r(x, y, z),
+            x_len,
+            init
+        )
+        self.init_reference_plot(
+            self.pl_reference_plot_ce_2r,
+            lambda x, y, z: self.path_loss_ce_2r(x, y, z),
+            x_len,
+            init
+        )
+        self.init_reference_plot(
+            self.pl_reference_plot_9r,
+            lambda x, y, z: self.path_loss_9ray_suburban(x, y, z),
             x_len,
             init
         )
         self.init_reference_plot(
             self.pl_reference_plot_man,
-            lambda x, y, z: self.manual_path_loss_value,
+            lambda x, y, z: -self.manual_path_loss_value,
             x_len,
             init
         )
@@ -716,8 +782,8 @@ class Ui(QtWidgets.QMainWindow):
             ax = plot.figure.subplots()
         else:
             ax = plot.figure.gca()
-        x = range(100)
-        x = [x_i / 100 * x_len for x_i in x]
+        x = range(1000)
+        x = [x_i / 1000 * x_len for x_i in x]
         y = [data_generation_function(0, x_i, 1.5) for x_i in x]
         ax.clear()
         ax.plot(
@@ -832,70 +898,92 @@ class Ui(QtWidgets.QMainWindow):
         )
 
     def get_datapoint_distance(self):
-        return (np.linalg.norm(self.uav_pos), )
+        return (np.linalg.norm(self.uav_pos - np.array((0, 0, get_station_z()))), )
 
     @staticmethod
-    def path_loss_fs(d: float) -> float:
-        if d == 0:
-            return 0
-        else:
-            return -20. * np.log10(4. * np.pi * (d / LAMBDA))
+    # def path_loss_fs(d: float) -> float:
+    #     if d == 0:
+    #         return 0
+    #     else:
+    #         return -20. * np.log10(4. * np.pi * (d / LAMBDA))
+
+
+    @staticmethod
+    def path_loss_fs(x, y, z) -> float:
+        return combine_paths(calculate_paths_freespace(x, y, z))
 
     def get_datapoint_pl_fs(self):
-        d = np.linalg.norm(self.uav_pos)
-        return (self.path_loss_fs(d), )
+        return (self.path_loss_fs(self.uav_pos[0], self.uav_pos[1], self.uav_pos[2]), )
+
+    # @staticmethod
+    # def distance(x, y, z):
+    #     return np.linalg.norm(np.array((x, y, z)))
+
+    # def path_loss_fe_2r(self, x: float, y: float, z: float) -> float:
+    #     d_xy = self.distance(x, y, 0)
+    #     d_los = self.distance(x, y, z)
+    #     if d_los == 0:
+    #         return (0, )
+    #     d_ref = self.distance(x, y, z + STATION_Z)
+    #     cos_theta = d_xy / d_ref
+    #     sin_theta = (z + STATION_Z) / d_ref
+    #     gamma = np.sqrt(EPSILON_R - cos_theta ** 2)
+    #     gamma = (sin_theta - gamma) / (sin_theta + gamma)
+    #     phi = 2. * np.pi * ((d_ref - d_los) / LAMBDA)
+    #     i_phi = complex(0, 1) * phi
+    #     e_raised_i_phi = cmath.exp(i_phi)
+    #     interference = (1 / abs((1. + gamma * e_raised_i_phi)))
+    #     if interference == np.inf:
+    #         return (0, )
+    #     # print(interference)  # TODO
+    #     pl = 20. * np.log10(4. * np.pi * (d_los / LAMBDA) * interference)
+    #     return (-pl, )
 
     @staticmethod
-    def distance(x, y, z):
-        return np.linalg.norm(np.array((x, y, z)))
-
-    def path_loss_fe_2r(self, x: float, y: float, z: float) -> float:
-        d_xy = self.distance(x, y, 0)
-        d_los = self.distance(x, y, z)
-        if d_los == 0:
-            return (0, )
-        d_ref = self.distance(x, y, z + STATION_Z)
-        cos_theta = d_xy / d_ref
-        sin_theta = (z + STATION_Z) / d_ref
-        gamma = np.sqrt(EPSILON_R - cos_theta ** 2)
-        gamma = (sin_theta - gamma) / (sin_theta + gamma)
-        phi = 2. * np.pi * ((d_ref - d_los) / LAMBDA)
-        i_phi = complex(0, 1) * phi
-        e_raised_i_phi = cmath.exp(i_phi)
-        interference = (1 / abs((1. + gamma * e_raised_i_phi)))
-        if interference == np.inf:
-            return (0, )
-        # print(interference)  # TODO
-        pl = 20. * np.log10(4. * np.pi * (d_los / LAMBDA) * interference)
-        return (-pl, )
+    def path_loss_fe_2r(x: float, y: float, z: float) -> float:
+        return combine_paths(calculate_paths_two_ray(x, y, z))
 
     def get_datapoint_pl_fe2r(self):
-        return self.path_loss_fe_2r(self.uav_pos[0], self.uav_pos[1], self.uav_pos[2])
+        return (self.path_loss_fe_2r(self.uav_pos[0], self.uav_pos[1], self.uav_pos[2]), )
 
-    def path_loss_ce2r(self, x, y, z, r_rad, p_rad, y_rad):
-        d_xy = self.distance(x, y, 0)
-        d_los = self.distance(x, y, z)
-        if d_los == 0:
-            return 0
-        d_nlos = self.distance(x, y, z + STATION_Z)
+    @staticmethod
+    def path_loss_ce_2r(x: float, y: float, z: float) -> float:
+        return combine_paths(calculate_paths_ce2r(x, y, z))
 
-        gain_los = 4. * np.pi * (d_los / LAMBDA)  # TODO
+    def get_datapoint_pl_ce2r(self):
+        return (self.path_loss_ce_2r(self.uav_pos[0], self.uav_pos[1], self.uav_pos[2]), )
 
-        gamma = np.sqrt(EPSILON_R - cos_theta ** 2)
-        gamma = (sin_theta - gamma) / (sin_theta + gamma)
-        phi = 2. * np.pi * ((d_ref - d_los) / LAMBDA)
-        i_phi = complex(0, 1) * phi
-        e_raised_i_phi = cmath.exp(i_phi)
-        interference = (1 / abs((1. + gamma * e_raised_i_phi)))
-        if interference == np.inf:
-            return 0
-        # print(interference)  # TODO
-        pl = 20. * np.log10(4. * np.pi * (d_los / LAMBDA) * interference)
-        return -pl
+    @staticmethod
+    def path_loss_9ray_suburban(x: float, y: float, z: float) -> float:
+        return combine_paths(calculate_paths_9ray_suburban(x, y, z))
 
-    def path_loss_two_segment_log_dist(self, x, y, z, r_rad, p_rad, y_rad):
+    def get_datapoint_pl_9ray_suburban(self):
+        return (self.path_loss_9ray_suburban(self.uav_pos[0], self.uav_pos[1], self.uav_pos[2]), )
 
-        return 0
+    # def path_loss_ce2r(self, x, y, z, r_rad, p_rad, y_rad):
+    #     d_xy = self.distance(x, y, 0)
+    #     d_los = self.distance(x, y, z)
+    #     if d_los == 0:
+    #         return 0
+    #     d_nlos = self.distance(x, y, z + STATION_Z)
+    #
+    #     gain_los = 4. * np.pi * (d_los / LAMBDA)  # TODO
+    #
+    #     gamma = np.sqrt(EPSILON_R - cos_theta ** 2)
+    #     gamma = (sin_theta - gamma) / (sin_theta + gamma)
+    #     phi = 2. * np.pi * ((d_ref - d_los) / LAMBDA)
+    #     i_phi = complex(0, 1) * phi
+    #     e_raised_i_phi = cmath.exp(i_phi)
+    #     interference = (1 / abs((1. + gamma * e_raised_i_phi)))
+    #     if interference == np.inf:
+    #         return 0
+    #     # print(interference)  # TODO
+    #     pl = 20. * np.log10(4. * np.pi * (d_los / LAMBDA) * interference)
+    #     return -pl
+
+    # def path_loss_two_segment_log_dist(self, x, y, z, r_rad, p_rad, y_rad):
+    #
+    #     return 0
 
     def get_datapoint_taps_for_plotting(self):
         taps_complex = [real + 1j * imag for real, imag in zip(self.taps[:41], self.taps[41:])]
@@ -927,7 +1015,7 @@ class Ui(QtWidgets.QMainWindow):
             # received position update
             [x, y, z, r_rad, p_rad, y_rad] = struct.unpack_from('!ffffff', message[1:])
             # print(f"new position update: {[x, y, z, r_rad, p_rad, y_rad]}")
-            self.uav_pos = np.array((x, y, z - STATION_Z))  # TODO
+            self.uav_pos = np.array((x, y, z))  # TODO
             self.uav_orientation = (r_rad, p_rad, y_rad)
         elif message[0] == b'M'[0]:
             # received PL model selection
@@ -1090,6 +1178,8 @@ class Ui(QtWidgets.QMainWindow):
             radio_buttons = (
                 self.radio_button_path_loss_freespace,
                 self.radio_button_path_loss_two_ray,
+                self.radio_button_path_loss_ce2r,
+                self.radio_button_path_loss_9r,
                 self.radio_button_path_loss_manual
             )
             for button in radio_buttons:
@@ -1104,8 +1194,14 @@ class Ui(QtWidgets.QMainWindow):
             self.radio_button_path_loss_two_ray.toggled.connect(
                 partial(self.select_path_loss_function, new_index=1, invoked_in_gui=True)
             )
-            self.radio_button_path_loss_manual.toggled.connect(
+            self.radio_button_path_loss_ce2r.toggled.connect(
                 partial(self.select_path_loss_function, new_index=2, invoked_in_gui=True)
+            )
+            self.radio_button_path_loss_9r.toggled.connect(
+                partial(self.select_path_loss_function, new_index=3, invoked_in_gui=True)
+            )
+            self.radio_button_path_loss_manual.toggled.connect(
+                partial(self.select_path_loss_function, new_index=4, invoked_in_gui=True)
             )
         for i, group_box in enumerate([self.groupBox_14, self.groupBox_13, self.groupBox_16]):
             if i == new_index:
