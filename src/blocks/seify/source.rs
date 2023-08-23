@@ -3,6 +3,7 @@ use seify::DeviceTrait;
 use seify::Direction::Rx;
 use seify::GenericDevice;
 use seify::RxStreamer;
+use seify::Args;
 
 use crate::anyhow::{Context, Result};
 use crate::blocks::seify::builder::BuilderType;
@@ -50,6 +51,7 @@ impl<D: DeviceTrait + Clone> Source<D> {
                 .add_input("gain", Self::gain_handler)
                 .add_input("sample_rate", Self::sample_rate_handler)
                 .add_input("cmd", Self::cmd_handler)
+                .add_input("freq_offset", Self::freq_offset_handler)
                 .build(),
             Source {
                 channels,
@@ -129,6 +131,35 @@ impl<D: DeviceTrait + Clone> Source<D> {
                 Pmt::U64(v) => self.dev.set_sample_rate(Rx, *c, *v as f64)?,
                 _ => return Ok(Pmt::InvalidValue),
             };
+        }
+        Ok(Pmt::Ok)
+    }
+
+    #[message_handler]
+    fn freq_offset_handler(
+        &mut self,
+        _io: &mut WorkIo,
+        _mio: &mut MessageIo<Self>,
+        _meta: &mut BlockMeta,
+        p: Pmt,
+    ) -> Result<Pmt> {  // TODO verify
+        let args = Args::from(
+            vec![
+                (
+                    "Offset",
+                    match &p {
+                        Pmt::F32(v) => *v as f64,
+                        Pmt::F64(v) => *v,
+                        Pmt::U32(v) => *v as f64,
+                        Pmt::U64(v) => *v as f64,
+                        _ => return Ok(Pmt::InvalidValue),
+                    }
+                ),
+            ]
+        ).unwrap();
+        for c in &self.channels {
+            let f = self.dev.frequency(Rx, *c).unwrap();
+            self.dev.set_frequency_with_args(Rx, *c, f, args.clone())?
         }
         Ok(Pmt::Ok)
     }
