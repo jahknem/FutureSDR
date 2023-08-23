@@ -1,8 +1,6 @@
 use futures::channel::mpsc::Sender;
 use futures::channel::oneshot;
 use futures::SinkExt;
-use futuresdr_pmt::BlockDescription;
-use futuresdr_pmt::FlowgraphDescription;
 use std::cmp::{Eq, PartialEq};
 use std::fmt::Debug;
 use std::hash::Hash;
@@ -16,9 +14,10 @@ use crate::runtime::buffer::slab::Slab;
 use crate::runtime::buffer::BufferBuilder;
 use crate::runtime::buffer::BufferWriter;
 use crate::runtime::Block;
-use crate::runtime::BlockDescriptionError;
+use crate::runtime::BlockDescription;
 use crate::runtime::BlockMessage;
-use crate::runtime::CallbackError;
+use crate::runtime::Error;
+use crate::runtime::FlowgraphDescription;
 use crate::runtime::FlowgraphMessage;
 use crate::runtime::Kernel;
 use crate::runtime::Pmt;
@@ -40,10 +39,12 @@ impl Flowgraph {
         }
     }
 
+    /// Add [`Block`] to flowgraph
     pub fn add_block(&mut self, block: Block) -> usize {
         self.topology.as_mut().unwrap().add_block(block)
     }
 
+    /// Make stream connection
     pub fn connect_stream(
         &mut self,
         src_block: usize,
@@ -60,6 +61,7 @@ impl Flowgraph {
         )
     }
 
+    /// Make stream connection, using the given buffer
     pub fn connect_stream_with_type<B: BufferBuilder + Debug + Eq + Hash>(
         &mut self,
         src_block: usize,
@@ -77,6 +79,7 @@ impl Flowgraph {
         )
     }
 
+    /// Make message connection
     pub fn connect_message(
         &mut self,
         src_block: usize,
@@ -92,6 +95,7 @@ impl Flowgraph {
         )
     }
 
+    /// Try to get kernel from given block
     pub fn kernel<T: Kernel + 'static>(&self, id: usize) -> Option<&T> {
         self.topology
             .as_ref()
@@ -99,6 +103,7 @@ impl Flowgraph {
             .and_then(|b| b.kernel())
     }
 
+    /// Try to get kernel mutably from given block
     pub fn kernel_mut<T: Kernel + 'static>(&mut self, id: usize) -> Option<&T> {
         self.topology
             .as_mut()
@@ -113,9 +118,12 @@ impl Default for Flowgraph {
     }
 }
 
+/// Port Identifier
 #[derive(Debug, Clone)]
 pub enum PortId {
+    /// Index
     Index(usize),
+    /// Name
     Name(String),
 }
 
@@ -137,7 +145,8 @@ impl From<String> for PortId {
     }
 }
 
-#[derive(Clone)]
+/// Handle to interact with running [`Flowgraph`]
+#[derive(Debug, Clone)]
 pub struct FlowgraphHandle {
     inbox: Sender<FlowgraphMessage>,
 }
@@ -147,13 +156,14 @@ impl FlowgraphHandle {
         FlowgraphHandle { inbox }
     }
 
+    /// Call message handler, ignoring the result
     pub async fn call(
         &mut self,
         block_id: usize,
         port_id: impl Into<PortId>,
         data: Pmt,
-    ) -> result::Result<(), CallbackError> {
-        let (tx, rx) = oneshot::channel::<result::Result<(), CallbackError>>();
+    ) -> result::Result<(), Error> {
+        let (tx, rx) = oneshot::channel::<result::Result<(), Error>>();
         self.inbox
             .send(FlowgraphMessage::BlockCall {
                 block_id,
@@ -162,17 +172,18 @@ impl FlowgraphHandle {
                 tx,
             })
             .await
-            .map_err(|_| CallbackError::InvalidBlock)?;
-        rx.await.map_err(|_| CallbackError::HandlerError)?
+            .map_err(|_| Error::InvalidBlock)?;
+        rx.await.map_err(|_| Error::HandlerError)?
     }
 
+    /// Call message handler
     pub async fn callback(
         &mut self,
         block_id: usize,
         port_id: impl Into<PortId>,
         data: Pmt,
-    ) -> result::Result<Pmt, CallbackError> {
-        let (tx, rx) = oneshot::channel::<result::Result<Pmt, CallbackError>>();
+    ) -> result::Result<Pmt, Error> {
+        let (tx, rx) = oneshot::channel::<result::Result<Pmt, Error>>();
         self.inbox
             .send(FlowgraphMessage::BlockCallback {
                 block_id,
@@ -181,10 +192,11 @@ impl FlowgraphHandle {
                 tx,
             })
             .await
-            .map_err(|_| CallbackError::InvalidBlock)?;
-        rx.await.map_err(|_| CallbackError::HandlerError)?
+            .map_err(|_| Error::InvalidBlock)?;
+        rx.await.map_err(|_| Error::HandlerError)?
     }
 
+    /// Get [`FlowgraphDescription`]
     pub async fn description(&mut self) -> Result<FlowgraphDescription> {
         let (tx, rx) = oneshot::channel::<FlowgraphDescription>();
         self.inbox
@@ -194,9 +206,9 @@ impl FlowgraphHandle {
         Ok(d)
     }
 
+    /// Get [`BlockDescription`]
     pub async fn block_description(&mut self, block_id: usize) -> Result<BlockDescription> {
-        let (tx, rx) =
-            oneshot::channel::<result::Result<BlockDescription, BlockDescriptionError>>();
+        let (tx, rx) = oneshot::channel::<result::Result<BlockDescription, Error>>();
         self.inbox
             .send(FlowgraphMessage::BlockDescription { block_id, tx })
             .await?;
@@ -204,8 +216,25 @@ impl FlowgraphHandle {
         Ok(d)
     }
 
+    /// Send a terminate message to the [`Flowgraph`]
+    ///
+    /// Does not wait until the [`Flowgraph`] is actually terminated.
     pub async fn terminate(&mut self) -> Result<()> {
         self.inbox.send(FlowgraphMessage::Terminate).await?;
+        Ok(())
+    }
+
+    /// Terminate the [`Flowgraph`]
+    ///
+    /// Send a terminate message to the [`Flowgraph`] and wait until it is shutdown.
+    pub async fn terminate_and_wait(&mut self) -> Result<()> {
+        self.terminate().await?;
+        while !self.inbox.is_closed() {
+            #[cfg(not(target_arch = "wasm32"))]
+            async_io::Timer::after(std::time::Duration::from_millis(200)).await;
+            #[cfg(target_arch = "wasm32")]
+            gloo_timers::future::sleep(std::time::Duration::from_millis(200)).await;
+        }
         Ok(())
     }
 }

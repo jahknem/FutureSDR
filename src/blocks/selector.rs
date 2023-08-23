@@ -3,8 +3,6 @@ use std::fmt;
 use std::ptr;
 use std::str::FromStr;
 
-use futures::FutureExt;
-
 use crate::anyhow::Result;
 use crate::runtime::Block;
 use crate::runtime::BlockMeta;
@@ -17,6 +15,7 @@ use crate::runtime::StreamIo;
 use crate::runtime::StreamIoBuilder;
 use crate::runtime::WorkIo;
 
+/// Drop Policy for [`Selector`] block
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum DropPolicy {
     /// Drop all unselected inputs
@@ -84,6 +83,7 @@ impl<A, const N: usize, const M: usize> Selector<A, N, M>
 where
     A: Send + 'static + Copy,
 {
+    /// Create Selector block
     pub fn new(drop_policy: DropPolicy) -> Block {
         let mut stream_builder = StreamIoBuilder::new();
         for i in 0..N {
@@ -96,40 +96,8 @@ where
             BlockMetaBuilder::new(format!("Selector<{N}, {M}>")).build(),
             stream_builder.build(),
             MessageIoBuilder::<Self>::new()
-                .add_input(
-                    "input_index",
-                    |block: &mut Selector<A, N, M>,
-                     _mio: &mut MessageIo<Selector<A, N, M>>,
-                     _meta: &mut BlockMeta,
-                     p: Pmt| {
-                        async move {
-                            match p {
-                                Pmt::U32(v) => block.input_index = (v as usize) % N,
-                                Pmt::U64(v) => block.input_index = (v as usize) % N,
-                                _ => todo!(),
-                            }
-                            Ok(Pmt::U32(block.input_index as u32))
-                        }
-                        .boxed()
-                    },
-                )
-                .add_input(
-                    "output_index",
-                    |block: &mut Selector<A, N, M>,
-                     _mio: &mut MessageIo<Selector<A, N, M>>,
-                     _meta: &mut BlockMeta,
-                     p: Pmt| {
-                        async move {
-                            match p {
-                                Pmt::U32(v) => block.output_index = (v as usize) % M,
-                                Pmt::U64(v) => block.output_index = (v as usize) % M,
-                                _ => todo!(),
-                            }
-                            Ok(Pmt::U32(block.output_index as u32))
-                        }
-                        .boxed()
-                    },
-                )
+                .add_input("input_index", Self::input_index)
+                .add_input("output_index", Self::output_index)
                 .build(),
             Selector {
                 input_index: 0,
@@ -138,6 +106,38 @@ where
                 _p1: std::marker::PhantomData,
             },
         )
+    }
+
+    #[message_handler]
+    async fn input_index(
+        &mut self,
+        _io: &mut WorkIo,
+        _mio: &mut MessageIo<Self>,
+        _meta: &mut BlockMeta,
+        p: Pmt,
+    ) -> Result<Pmt> {
+        match p {
+            Pmt::U32(v) => self.input_index = (v as usize) % N,
+            Pmt::U64(v) => self.input_index = (v as usize) % N,
+            _ => todo!(),
+        }
+        Ok(Pmt::U32(self.input_index as u32))
+    }
+
+    #[message_handler]
+    async fn output_index(
+        &mut self,
+        _io: &mut WorkIo,
+        _mio: &mut MessageIo<Self>,
+        _meta: &mut BlockMeta,
+        p: Pmt,
+    ) -> Result<Pmt> {
+        match p {
+            Pmt::U32(v) => self.output_index = (v as usize) % M,
+            Pmt::U64(v) => self.output_index = (v as usize) % M,
+            _ => todo!(),
+        }
+        Ok(Pmt::U32(self.output_index as u32))
     }
 }
 

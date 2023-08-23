@@ -9,14 +9,17 @@ use std::net::SocketAddr;
 use std::path::PathBuf;
 use std::str::FromStr;
 
+/// Get global configuration
 pub fn config() -> &'static Config {
     &CONFIG
 }
 
+/// Get value from config
 pub fn get_value(name: &str) -> Option<Value> {
     CONFIG.misc.get(name).cloned()
 }
 
+/// Try to parse value from config string
 pub fn get<T: FromStr>(name: &str) -> Option<T> {
     CONFIG
         .misc
@@ -25,6 +28,7 @@ pub fn get<T: FromStr>(name: &str) -> Option<T> {
         .and_then(|v| v.parse::<T>().ok())
 }
 
+/// Get config value or return default
 pub fn get_or_default<T: FromStr>(name: &str, default: T) -> T {
     get(name).unwrap_or(default)
 }
@@ -60,6 +64,9 @@ static CONFIG: Lazy<Config> = Lazy::new(|| {
                 "buffer_size" => {
                     c.buffer_size = config_parse::<usize>(v);
                 }
+                "stack_size" => {
+                    c.stack_size = config_parse::<usize>(v);
+                }
                 "log_level" => {
                     c.log_level = config_parse::<LevelFilter>(v);
                 }
@@ -86,14 +93,24 @@ static CONFIG: Lazy<Config> = Lazy::new(|| {
 #[cfg(target_arch = "wasm32")]
 static CONFIG: Lazy<Config> = Lazy::new(Config::default);
 
+/// Configuration
 #[derive(Debug)]
 pub struct Config {
+    /// Queue size of inboxes
     pub queue_size: usize,
+    /// Stream buffer size in bytes
     pub buffer_size: usize,
+    /// Thread stack size
+    pub stack_size: usize,
+    /// Slab reserved items
     pub slab_reserved: usize,
+    /// Log level
     pub log_level: LevelFilter,
+    /// Enable control port
     pub ctrlport_enable: bool,
+    /// Control port socket address
     pub ctrlport_bind: Option<SocketAddr>,
+    /// Frontend path for Webserver
     pub frontend_path: Option<PathBuf>,
     misc: HashMap<String, Value>,
 }
@@ -115,6 +132,7 @@ impl Default for Config {
         Config {
             queue_size: 8192,
             buffer_size: 32768,
+            stack_size: 16 * 1024 * 1024,
             slab_reserved: 128,
             log_level: LevelFilter::Debug,
             ctrlport_enable: true,
@@ -129,10 +147,11 @@ impl Default for Config {
         Config {
             queue_size: 8192,
             buffer_size: 32768,
+            stack_size: 16 * 1024 * 1024,
             slab_reserved: 128,
             log_level: LevelFilter::Info,
-            ctrlport_enable: false,
-            ctrlport_bind: None,
+            ctrlport_enable: true,
+            ctrlport_bind: "127.0.0.1:1337".parse::<SocketAddr>().ok(),
             frontend_path: None,
             misc: HashMap::new(),
         }

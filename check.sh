@@ -5,13 +5,16 @@ set -xe
 SCRIPT=$(readlink -f $0)
 SCRIPTPATH=`dirname $SCRIPT`
 
+# cd ${SCRIPTPATH} && find . -name "Cargo.lock" -delete
 ###########################################################
 # FMT
 ###########################################################
 cd ${SCRIPTPATH} && cargo fmt --check
-cd ${SCRIPTPATH}/frontend && cargo fmt --check
-cd ${SCRIPTPATH}/macros && cargo fmt --check
-cd ${SCRIPTPATH}/pmt && cargo fmt --check
+cd ${SCRIPTPATH}/crates/frontend && cargo fmt --check
+cd ${SCRIPTPATH}/crates/futuredsp && cargo fmt --check
+cd ${SCRIPTPATH}/crates/macros && cargo fmt --check
+cd ${SCRIPTPATH}/crates/remote && cargo fmt --check
+cd ${SCRIPTPATH}/crates/types && cargo fmt --check
 
 # perf
 cd ${SCRIPTPATH}/perf/buffer_rand && cargo fmt --check
@@ -26,6 +29,7 @@ cd ${SCRIPTPATH}/perf/wgpu && cargo fmt --check
 cd ${SCRIPTPATH}/perf/zynq && cargo fmt --check
 
 # examples
+cd ${SCRIPTPATH}/examples/adsb && cargo fmt --check
 cd ${SCRIPTPATH}/examples/agc && cargo fmt --check
 cd ${SCRIPTPATH}/examples/android && cargo fmt --check
 cd ${SCRIPTPATH}/examples/android-hw && cargo fmt --check
@@ -51,12 +55,14 @@ cd ${SCRIPTPATH}/examples/zigbee && cargo fmt --check
 ###########################################################
 cd ${SCRIPTPATH} && cargo clippy --all-targets --workspace --features=aaronia,vulkan,zeromq,audio,flow_scheduler,tpb_scheduler,soapy,lttng,zynq,wgpu -- -D warnings
 cd ${SCRIPTPATH} && RUSTFLAGS='--cfg=web_sys_unstable_apis' cargo clippy --lib --workspace --features=audio,wgpu --target=wasm32-unknown-unknown -- -D warnings
-cd ${SCRIPTPATH}/macros && cargo clippy --all-targets -- -D warnings
-cd ${SCRIPTPATH}/macros && cargo clippy --all-targets --target=wasm32-unknown-unknown -- -D warnings
-cd ${SCRIPTPATH}/frontend && cargo clippy --all-targets -- -D warnings
-cd ${SCRIPTPATH}/frontend && cargo clippy --all-targets --target=wasm32-unknown-unknown -- -D warnings
-cd ${SCRIPTPATH}/pmt && cargo clippy --all-targets -- -D warnings
-cd ${SCRIPTPATH}/pmt && cargo clippy --all-targets --target=wasm32-unknown-unknown -- -D warnings
+cd ${SCRIPTPATH}/crates/frontend && cargo clippy --all-targets -- -D warnings
+cd ${SCRIPTPATH}/crates/frontend && cargo clippy --all-targets --target=wasm32-unknown-unknown -- -D warnings
+cd ${SCRIPTPATH}/crates/futuredsp && cargo clippy --all-targets -- -D warnings
+cd ${SCRIPTPATH}/crates/macros && cargo clippy --all-targets -- -D warnings
+cd ${SCRIPTPATH}/crates/macros && cargo clippy --all-targets --target=wasm32-unknown-unknown -- -D warnings
+cd ${SCRIPTPATH}/crates/remote && cargo clippy --all-targets -- -D warnings
+cd ${SCRIPTPATH}/crates/types && cargo clippy --all-targets -- -D warnings
+cd ${SCRIPTPATH}/crates/types && cargo clippy --all-targets --target=wasm32-unknown-unknown -- -D warnings
 
 # perf
 cd ${SCRIPTPATH}/perf/buffer_rand && cargo clippy --all-targets -- -D warnings
@@ -72,6 +78,7 @@ cd ${SCRIPTPATH}/perf/wgpu && RUSTFLAGS='--cfg=web_sys_unstable_apis' cargo clip
 cd ${SCRIPTPATH}/perf/zynq && cargo clippy --all-targets -- -D warnings
 
 # examples
+cd ${SCRIPTPATH}/examples/adsb && cargo clippy --all-targets -- -D warnings
 cd ${SCRIPTPATH}/examples/agc && cargo clippy --all-targets -- -D warnings
 cd ${SCRIPTPATH}/examples/android && cargo clippy --all-targets -- -D warnings
 cd ${SCRIPTPATH}/examples/android-hw && cargo clippy --all-targets -- -D warnings
@@ -101,6 +108,7 @@ cd ${SCRIPTPATH}/examples/zigbee && RUSTFLAGS='--cfg=web_sys_unstable_apis' carg
 # Test
 ###########################################################
 cd ${SCRIPTPATH} && cargo test --all-targets --workspace --features=aaronia,vulkan,zeromq,audio,flow_scheduler,tpb_scheduler,soapy,lttng,zynq,wgpu -j 4
+cd ${SCRIPTPATH}/crates/remote && cargo test --all-targets
 
 # perf
 cd ${SCRIPTPATH}/perf/buffer_rand && cargo test --all-targets
@@ -115,6 +123,7 @@ cd ${SCRIPTPATH}/perf/wgpu && cargo test --all-targets
 cd ${SCRIPTPATH}/perf/zynq && cargo test --all-targets
 
 # examples
+cd ${SCRIPTPATH}/examples/adsb && cargo test --all-targets
 cd ${SCRIPTPATH}/examples/agc && cargo test --all-targets
 cd ${SCRIPTPATH}/examples/android && cargo test --all-targets
 cd ${SCRIPTPATH}/examples/android-hw && cargo test --all-targets

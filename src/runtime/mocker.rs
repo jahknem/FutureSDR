@@ -4,57 +4,69 @@ use std::fmt::Debug;
 
 use crate::runtime::buffer::BufferReaderHost;
 use crate::runtime::buffer::BufferWriterHost;
-use crate::runtime::Block;
 use crate::runtime::BlockMessage;
 use crate::runtime::BufferReader;
 use crate::runtime::BufferWriter;
 use crate::runtime::ItemTag;
+use crate::runtime::Kernel;
+use crate::runtime::TypedBlock;
 use crate::runtime::WorkIo;
 
-pub struct Mocker {
-    block: Block,
+/// Mocker for a block
+///
+/// A harness to run a block without a runtime. Used for unit tests and benchmarking.
+pub struct Mocker<K> {
+    block: TypedBlock<K>,
 }
 
-impl Mocker {
-    pub fn new(block: Block) -> Self {
+impl<K: Kernel + 'static> Mocker<K> {
+    /// Create mocker
+    pub fn new(block: TypedBlock<K>) -> Self {
         Mocker { block }
     }
 
+    /// Add input buffer with given data
     pub fn input<T>(&mut self, id: usize, data: Vec<T>)
     where
         T: Debug + Send + 'static,
     {
         self.block
-            .stream_input_mut(id)
+            .sio
+            .input(id)
             .set_reader(BufferReader::Host(Box::new(MockReader::new(
                 data,
                 Vec::new(),
             ))));
     }
 
+    /// Add input buffer with given data and tags
     pub fn input_with_tags<T>(&mut self, id: usize, data: Vec<T>, tags: Vec<ItemTag>)
     where
         T: Debug + Send + 'static,
     {
         self.block
-            .stream_input_mut(id)
+            .sio
+            .input(id)
             .set_reader(BufferReader::Host(Box::new(MockReader::new(data, tags))));
     }
 
+    /// Initialize output buffer with given size
     pub fn init_output<T>(&mut self, id: usize, size: usize)
     where
         T: Debug + Send + 'static,
     {
         self.block
-            .stream_output_mut(id)
+            .sio
+            .output(id)
             .init(BufferWriter::Host(Box::new(MockWriter::<T>::new(size))));
     }
 
+    /// Get data from output buffer
     pub fn output<T>(&mut self, id: usize) -> Vec<T>
     where
         T: Debug + Send + 'static,
     {
-        let w = self.block.stream_output_mut(id).writer_mut();
+        let w = self.block.sio.output(id).writer_mut();
         if let BufferWriter::Host(w) = w {
             w.as_any().downcast_mut::<MockWriter<T>>().unwrap().get()
         } else {
@@ -62,11 +74,13 @@ impl Mocker {
         }
     }
 
+    /// Run the mocker
     #[cfg(not(target_arch = "wasm32"))]
     pub fn run(&mut self) {
         crate::async_io::block_on(self.run_async());
     }
 
+    /// Run the mocker async
     pub async fn run_async(&mut self) {
         let mut io = WorkIo {
             call_again: false,
@@ -75,8 +89,17 @@ impl Mocker {
         };
 
         loop {
-            self.block.work(&mut io).await.unwrap();
-            self.block.commit();
+            self.block
+                .kernel
+                .work(
+                    &mut io,
+                    &mut self.block.sio,
+                    &mut self.block.mio,
+                    &mut self.block.meta,
+                )
+                .await
+                .unwrap();
+            self.block.sio.commit();
             if !io.call_again {
                 break;
             } else {

@@ -92,8 +92,11 @@ impl Kernel for Prefix {
                 output.iter_mut().take(self.pad_front + std::cmp::max(self.pad_tail, 1) + len * 80 + 320).for_each(|v| *v *= 0.6);  // TODO make scaling optional and configurable
 
                 sio.input(0).consume(len * 64);
+                let produce = self.pad_front + std::cmp::max(self.pad_tail, 1) + len * 80 + 320;
+
                 sio.output(0)
-                    .produce(self.pad_front + std::cmp::max(self.pad_tail, 1) + len * 80 + 320);
+                    .add_tag(0, Tag::NamedUsize("burst_start".to_string(), produce));
+                sio.output(0).produce(produce);
 
                 if sio.input(0).finished() && input.len() < len * 64 {
                     io.finished = true;

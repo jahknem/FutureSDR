@@ -10,7 +10,6 @@ use std::sync::{Arc, Mutex};
 use std::thread;
 
 use crate::runtime::config;
-use crate::runtime::run_block;
 use crate::runtime::scheduler::Scheduler;
 use crate::runtime::BlockMessage;
 use crate::runtime::FlowgraphMessage;
@@ -18,6 +17,9 @@ use crate::runtime::Topology;
 
 static SMOL: Lazy<Mutex<Slab<Arc<Executor<'_>>>>> = Lazy::new(|| Mutex::new(Slab::new()));
 
+/// Smol Scheduler
+///
+/// Default scheduler of the smol async runtime
 #[derive(Clone, Debug)]
 pub struct SmolScheduler {
     inner: Arc<SmolSchedulerInner>,
@@ -46,6 +48,11 @@ impl Drop for SmolSchedulerInner {
 }
 
 impl SmolScheduler {
+    /// Create smol scheduler
+    ///
+    /// ## Parameter
+    /// - `n_executors`: number of worker threads
+    /// - `pin_executors`: pin worker threads to CPUs?
     pub fn new(n_executors: usize, pin_executors: bool) -> SmolScheduler {
         let mut slab = SMOL.lock().unwrap();
         let executor = Arc::new(Executor::new());
@@ -64,6 +71,7 @@ impl SmolScheduler {
             let (sender, receiver) = oneshot::channel::<()>();
 
             let handle = thread::Builder::new()
+                .stack_size(config::config().stack_size)
                 .name(format!("smol-{}", &c.id))
                 .spawn(move || {
                     if pin_executors {
@@ -112,10 +120,10 @@ impl Scheduler for SmolScheduler {
             inboxes[id] = Some(sender);
 
             if block.is_blocking() {
-                self.spawn_blocking(run_block(block, id, main_channel.clone(), receiver))
+                self.spawn_blocking(block.run(id, main_channel.clone(), receiver))
                     .detach();
             } else {
-                self.spawn(run_block(block, id, main_channel.clone(), receiver))
+                self.spawn(block.run(id, main_channel.clone(), receiver))
                     .detach();
             }
         }

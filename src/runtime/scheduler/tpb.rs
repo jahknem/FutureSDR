@@ -9,7 +9,6 @@ use std::sync::{Arc, Mutex};
 use std::thread;
 
 use crate::runtime::config;
-use crate::runtime::run_block;
 use crate::runtime::scheduler::Scheduler;
 use crate::runtime::BlockMessage;
 use crate::runtime::FlowgraphMessage;
@@ -17,6 +16,9 @@ use crate::runtime::Topology;
 
 static TPB: Lazy<Mutex<Slab<Arc<Executor<'_>>>>> = Lazy::new(|| Mutex::new(Slab::new()));
 
+/// Thread-per-Block scheduler
+///
+/// This is mainly for comparision to GNU Radio. Do not use.
 #[derive(Clone, Debug)]
 pub struct TpbScheduler {
     inner: Arc<TpbSchedulerInner>,
@@ -45,6 +47,7 @@ impl Drop for TpbSchedulerInner {
 }
 
 impl TpbScheduler {
+    /// Create Thread-per-Block scheduler
     pub fn new() -> TpbScheduler {
         let mut slab = TPB.lock().unwrap();
         let executor = Arc::new(Executor::new());
@@ -53,6 +56,7 @@ impl TpbScheduler {
         let e = executor.clone();
         let (sender, receiver) = oneshot::channel::<()>();
         let handle = thread::Builder::new()
+            .stack_size(config::config().stack_size)
             .name("tpb-smol".to_string())
             .spawn(move || {
                 let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
@@ -96,7 +100,7 @@ impl Scheduler for TpbScheduler {
             let (sender, receiver) = channel::<BlockMessage>(queue_size);
             inboxes[id] = Some(sender);
 
-            self.spawn_blocking(run_block(block, id, main_channel.clone(), receiver))
+            self.spawn_blocking(block.run(id, main_channel.clone(), receiver))
                 .detach();
         }
 

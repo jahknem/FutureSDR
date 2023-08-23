@@ -1,3 +1,4 @@
+#![warn(missing_docs)]
 #![recursion_limit = "512"]
 #![allow(clippy::new_ret_no_self)]
 #![cfg_attr(not(RUSTC_IS_STABLE), feature(core_intrinsics))]
@@ -44,10 +45,13 @@ pub use anyhow;
 pub use async_io;
 #[cfg(not(target_arch = "wasm32"))]
 pub use async_net;
+/// Async Trait Macro
 #[macro_use]
 pub extern crate async_trait;
+pub use futuredsp;
 pub use futures;
 pub use futures_lite;
+/// Logging macro
 #[macro_use]
 pub extern crate log;
 #[macro_use]
@@ -59,5 +63,5 @@ pub mod macros {
 }
 pub use num_complex;
 pub use num_integer;
-#[cfg(feature = "soapy")]
-pub use soapysdr;
+#[cfg(feature = "seify")]
+pub use seify;

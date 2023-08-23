@@ -17,12 +17,14 @@ use std::task::{Poll, Waker};
 use std::thread;
 
 use crate::runtime::config;
-use crate::runtime::run_block;
 use crate::runtime::scheduler::Scheduler;
 use crate::runtime::BlockMessage;
 use crate::runtime::FlowgraphMessage;
 use crate::runtime::Topology;
 
+/// Flow scheduler
+///
+/// Groups blocks and puts them fixed in local queues of worker threads.
 #[derive(Clone, Debug)]
 pub struct FlowScheduler {
     inner: Arc<FlowSchedulerInner>,
@@ -49,6 +51,7 @@ impl Drop for FlowSchedulerInner {
 }
 
 impl FlowScheduler {
+    /// Create Flow scheduler
     pub fn new() -> FlowScheduler {
         let executor = Arc::new(FlowExecutor::new());
         let mut workers = Vec::new();
@@ -64,6 +67,7 @@ impl FlowScheduler {
             let (sender, receiver) = oneshot::channel::<()>();
 
             let handle = thread::Builder::new()
+                .stack_size(config::config().stack_size)
                 .name(format!("flow-{}", id.id))
                 .spawn(move || {
                     debug!("starting executor thread on core id {}", id.id);
@@ -135,7 +139,7 @@ impl Scheduler for FlowScheduler {
                 self.inner
                     .executor
                     .spawn_executor(
-                        blocking::unblock(move || block_on(run_block(block, id, main, receiver))),
+                        blocking::unblock(move || block_on(block.run(id, main, receiver))),
                         FlowScheduler::map_block(id, n_blocks, n_cores),
                     )
                     .detach();
@@ -143,7 +147,7 @@ impl Scheduler for FlowScheduler {
                 self.inner
                     .executor
                     .spawn_executor(
-                        run_block(block, id, main_channel.clone(), receiver),
+                        block.run(id, main_channel.clone(), receiver),
                         FlowScheduler::map_block(id, n_blocks, n_cores),
                     )
                     .detach();

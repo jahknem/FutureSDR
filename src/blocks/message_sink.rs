@@ -8,6 +8,7 @@ use crate::runtime::MessageIoBuilder;
 use crate::runtime::Pmt;
 use crate::runtime::StreamIo;
 use crate::runtime::StreamIoBuilder;
+use crate::runtime::WorkIo;
 
 /// Black hole for messages.
 pub struct MessageSink {
@@ -15,6 +16,7 @@ pub struct MessageSink {
 }
 
 impl MessageSink {
+    /// Create MessageSink block
     pub fn new() -> Block {
         Block::new(
             BlockMetaBuilder::new("MessageSink").build(),
@@ -29,14 +31,23 @@ impl MessageSink {
     #[message_handler]
     async fn in_port(
         &mut self,
+        io: &mut WorkIo,
         _mio: &mut MessageIo<Self>,
         _meta: &mut BlockMeta,
-        _p: Pmt,
+        p: Pmt,
     ) -> Result<Pmt> {
-        self.n_received += 1;
+        match p {
+            Pmt::Finished => {
+                io.finished = true;
+            }
+            _ => {
+                self.n_received += 1;
+            }
+        }
+
         Ok(Pmt::U64(self.n_received))
     }
-
+    /// Get number of received message.
     pub fn received(&self) -> u64 {
         self.n_received
     }

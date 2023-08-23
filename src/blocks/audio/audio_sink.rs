@@ -4,6 +4,7 @@ use cpal::SampleRate;
 use cpal::Stream;
 use cpal::StreamConfig;
 use futures::channel::mpsc;
+use futures::channel::oneshot;
 use futures::SinkExt;
 
 use crate::anyhow::Result;
@@ -25,6 +26,7 @@ pub struct AudioSink {
     stream: Option<Stream>,
     min_buffer_size: usize,
     vec: Vec<f32>,
+    terminated: Option<oneshot::Receiver<()>>,
     tx: Option<mpsc::Sender<Vec<f32>>>,
 }
 
@@ -36,6 +38,7 @@ const QUEUE_SIZE: usize = 5;
 const STANDARD_RATES: [u32; 4] = [24000, 44100, 48000, 96000];
 
 impl AudioSink {
+    /// Create AudioSink block
     #[allow(clippy::new_ret_no_self)]
     pub fn new(sample_rate: u32, channels: u16) -> Block {
         Block::new(
@@ -48,11 +51,12 @@ impl AudioSink {
                 stream: None,
                 min_buffer_size: 2048,
                 vec: Vec::new(),
+                terminated: None,
                 tx: None,
             },
         )
     }
-
+    /// Get default sample rate
     pub fn default_sample_rate() -> Option<u32> {
         Some(
             cpal::default_host()
@@ -63,7 +67,7 @@ impl AudioSink {
                 .0,
         )
     }
-
+    /// Get supported sample rates
     pub fn supported_sample_rates() -> Vec<u32> {
         if let Some(d) = cpal::default_host().default_output_device() {
             if let Ok(configs) = d.supported_output_configs() {
@@ -109,6 +113,9 @@ impl Kernel for AudioSink {
             buffer_size: BufferSize::Default,
         };
 
+        let (terminate, terminated) = oneshot::channel();
+        let mut terminate = Some(terminate);
+        self.terminated = Some(terminated);
         let (tx, mut rx) = mpsc::channel(QUEUE_SIZE);
         let mut iter: Option<Vec<f32>> = None;
 
@@ -121,12 +128,20 @@ impl Kernel for AudioSink {
                     while let Some(mut v) =
                         iter.take().or_else(|| rx.try_next().ok().and_then(|x| x))
                     {
+                        if v.is_empty() {
+                            if let Some(t) = terminate.take() {
+                                t.send(()).unwrap();
+                            }
+                            return;
+                        }
                         let n = std::cmp::min(v.len(), data.len() - i);
                         data[i..i + n].copy_from_slice(&v[..n]);
                         i += n;
 
                         if n < v.len() {
                             iter = Some(v.split_off(n));
+                            debug_assert!(!iter.as_ref().unwrap().is_empty());
+                            debug_assert_eq!(i, data.len());
                             return;
                         } else if i == data.len() {
                             return;
@@ -136,6 +151,7 @@ impl Kernel for AudioSink {
                 move |err| {
                     panic!("cpal stream error {err:?}");
                 },
+                None,
             )
             .expect("could not build output stream");
         // On Windows there is an issue in cpal with
@@ -157,8 +173,9 @@ impl Kernel for AudioSink {
         _m: &mut MessageIo<Self>,
         _b: &mut BlockMeta,
     ) -> Result<()> {
-        for _ in 0..QUEUE_SIZE {
-            let _ = self.tx.as_mut().unwrap().send(Vec::new()).await;
+        let _ = self.tx.as_mut().unwrap().send(Vec::new()).await;
+        if let Some(t) = self.terminated.take() {
+            _ = t.await;
         }
         Ok(())
     }
@@ -171,9 +188,9 @@ impl Kernel for AudioSink {
         _meta: &mut BlockMeta,
     ) -> Result<()> {
         let i = sio.input(0).slice::<f32>();
-        self.vec.extend_from_slice(i);
 
-        if self.vec.len() >= self.min_buffer_size {
+        self.vec.extend_from_slice(i);
+        if self.vec.len() >= self.min_buffer_size || sio.input(0).finished() {
             self.tx
                 .as_mut()
                 .unwrap()

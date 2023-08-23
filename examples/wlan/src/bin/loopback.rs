@@ -4,7 +4,7 @@ use rand_distr::{Distribution, Normal};
 use std::time::Duration;
 
 use futuresdr::anyhow::Result;
-use futuresdr::async_io::{block_on, Timer};
+use futuresdr::async_io::Timer;
 use futuresdr::blocks::Apply;
 use futuresdr::blocks::Combine;
 use futuresdr::blocks::Fft;
@@ -89,26 +89,9 @@ fn main() -> Result<()> {
     )?;
     let src = noise;
 
-    // let head = fg.add_block(futuresdr::blocks::Head::<Complex32>::new(720));
-    // fg.connect_stream(noise, "out", head, "in")?;
-    // let file_snk = fg.add_block(futuresdr::blocks::FileSink::<Complex32>::new("/home/basti/tmp/frame-fs.cf32"));
-    // fg.connect_stream(head, "out", file_snk, "in")?;
-
     // ========================================
     // Receiver
     // ========================================
-    // let src = fg.add_block(futuresdr::blocks::FileSource::<Complex32>::new("data/bpsk-1-2-15db.cf32", false));
-    // let src = fg.add_block(futuresdr::blocks::FileSource::<Complex32>::new(
-    // "data/all-mcs-30db.cf32", false
-    // ));
-    // let src = fg.add_block(futuresdr::blocks::FileSource::<Complex32>::new("data/bpsk-3-4-30db.cf32", false));
-    // let src = fg.add_block(
-    //     futuresdr::blocks::SoapySourceBuilder::new()
-    //         .freq(5.22e9)
-    //         .sample_rate(20e6)
-    //         .gain(60.0)
-    //         .build(),
-    // );
     let delay = fg.add_block(Delay::<Complex32>::new(16));
     fg.connect_stream(src, "out", delay, "in")?;
 
@@ -155,7 +138,7 @@ fn main() -> Result<()> {
     fg.connect_message(decoder, "rftap", blob_to_udp, "in")?;
 
     let rt = Runtime::new();
-    let (_fg, mut handle) = block_on(rt.start(fg));
+    let (_fg, mut handle) = rt.start_sync(fg);
 
     let mut seq = 0u64;
     rt.spawn_background(async move {

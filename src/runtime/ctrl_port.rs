@@ -1,25 +1,21 @@
 //! Remote Control through REST API
-use axum::extract::{Extension, Path};
+use axum::extract::{Path, State};
 use axum::http::{StatusCode, Uri};
 use axum::response::Redirect;
 use axum::routing::{any, get, get_service};
 use axum::Json;
 use axum::Router;
-use slab::Slab;
 use std::path;
-use std::sync::Arc;
-use std::sync::Mutex;
 use std::thread::JoinHandle;
-use tower_http::add_extension::AddExtensionLayer;
 use tower_http::cors::CorsLayer;
 use tower_http::services::ServeDir;
 
 use crate::runtime::config;
 use crate::runtime::BlockDescription;
 use crate::runtime::FlowgraphDescription;
-use crate::runtime::FlowgraphHandle;
 use crate::runtime::Pmt;
 use crate::runtime::PortId;
+use crate::runtime::RuntimeHandle;
 
 macro_rules! relative {
     ($path:expr) => {
@@ -31,18 +27,15 @@ macro_rules! relative {
     };
 }
 
-async fn flowgraphs(
-    Extension(flowgraphs): Extension<Arc<Mutex<Slab<FlowgraphHandle>>>>,
-) -> Json<usize> {
-    let l = flowgraphs.lock().unwrap().len();
-    Json::from(l)
+async fn flowgraphs(State(rt): State<RuntimeHandle>) -> Json<Vec<usize>> {
+    Json::from(rt.get_flowgraphs())
 }
 
 async fn flowgraph_description(
     Path(fg): Path<usize>,
-    Extension(flowgraphs): Extension<Arc<Mutex<Slab<FlowgraphHandle>>>>,
+    State(rt): State<RuntimeHandle>,
 ) -> Result<Json<FlowgraphDescription>, StatusCode> {
-    let fg = flowgraphs.lock().unwrap().get(fg).cloned();
+    let fg = rt.get_flowgraph(fg);
     if let Some(mut fg) = fg {
         if let Ok(d) = fg.description().await {
             return Ok(Json::from(d));
@@ -53,9 +46,9 @@ async fn flowgraph_description(
 
 async fn block_description(
     Path((fg, blk)): Path<(usize, usize)>,
-    Extension(flowgraphs): Extension<Arc<Mutex<Slab<FlowgraphHandle>>>>,
+    State(rt): State<RuntimeHandle>,
 ) -> Result<Json<BlockDescription>, StatusCode> {
-    let fg = flowgraphs.lock().unwrap().get(fg).cloned();
+    let fg = rt.get_flowgraph(fg);
     if let Some(mut fg) = fg {
         if let Ok(d) = fg.block_description(blk).await {
             return Ok(Json::from(d));
@@ -67,9 +60,9 @@ async fn block_description(
 
 async fn handler_id(
     Path((fg, blk, handler)): Path<(usize, usize, String)>,
-    Extension(flowgraphs): Extension<Arc<Mutex<Slab<FlowgraphHandle>>>>,
+    State(rt): State<RuntimeHandle>,
 ) -> Result<Json<Pmt>, StatusCode> {
-    let fg = flowgraphs.lock().unwrap().get(fg).cloned();
+    let fg = rt.get_flowgraph(fg);
     let handler = match handler.parse::<usize>() {
         Ok(i) => PortId::Index(i),
         Err(_) => PortId::Name(handler),
@@ -85,10 +78,10 @@ async fn handler_id(
 
 async fn handler_id_post(
     Path((fg, blk, handler)): Path<(usize, usize, String)>,
+    State(rt): State<RuntimeHandle>,
     Json(pmt): Json<Pmt>,
-    Extension(flowgraphs): Extension<Arc<Mutex<Slab<FlowgraphHandle>>>>,
 ) -> Result<Json<Pmt>, StatusCode> {
-    let fg = flowgraphs.lock().unwrap().get(fg).cloned();
+    let fg = rt.get_flowgraph(fg);
     let handler = match handler.parse::<usize>() {
         Ok(i) => PortId::Index(i),
         Err(_) => PortId::Name(handler),
@@ -103,32 +96,18 @@ async fn handler_id_post(
 }
 
 pub struct ControlPort {
-    flowgraphs: Arc<Mutex<Slab<FlowgraphHandle>>>,
     thread: Option<JoinHandle<()>>,
+    handle: RuntimeHandle,
 }
 
 impl ControlPort {
-    pub fn new() -> Self {
+    pub fn new(handle: RuntimeHandle, routes: Router) -> Self {
         let mut cp = ControlPort {
-            flowgraphs: Arc::new(Mutex::new(Slab::new())),
-            thread: None,
-        };
-        cp.start(None);
-        cp
-    }
-
-    pub fn with_routes(routes: Router) -> Self {
-        let mut cp = ControlPort {
-            flowgraphs: Arc::new(Mutex::new(Slab::new())),
+            handle,
             thread: None,
         };
         cp.start(Some(routes));
         cp
-    }
-
-    pub fn add_flowgraph(&self, handle: FlowgraphHandle) -> usize {
-        let mut v = self.flowgraphs.lock().unwrap();
-        v.insert(handle)
     }
 
     fn start(&mut self, custom_routes: Option<Router>) {
@@ -152,11 +131,11 @@ impl ControlPort {
                 "/api/block/*foo",
                 any(|uri: Uri| async move {
                     let u = uri.to_string().split_off(11);
-                    Redirect::permanent(&format!("/api/fg/0/block/{u}"))
+                    Redirect::permanent(&format!("/api/fg/0/block/{u}/"))
                 }),
             )
-            .layer(AddExtensionLayer::new(self.flowgraphs.clone()))
-            .layer(CorsLayer::permissive());
+            .layer(CorsLayer::permissive())
+            .with_state(self.handle.clone());
 
         if let Some(c) = custom_routes {
             app = app.nest("/", c);
@@ -164,21 +143,14 @@ impl ControlPort {
 
         let frontend = if let Some(ref p) = config::config().frontend_path {
             Some(ServeDir::new(p))
-        } else if path::Path::new(relative!("frontend/dist")).is_dir() {
-            Some(ServeDir::new(relative!("frontend/dist")))
+        } else if path::Path::new(relative!("crates/frontend/dist")).is_dir() {
+            Some(ServeDir::new(relative!("crates/frontend/dist")))
         } else {
             None
         };
 
         if let Some(service) = frontend {
-            app = app.fallback(get_service(service).handle_error(
-                |error: std::io::Error| async move {
-                    (
-                        StatusCode::INTERNAL_SERVER_ERROR,
-                        format!("Unhandled internal error: {error}"),
-                    )
-                },
-            ));
+            app = app.fallback_service(get_service(service));
         }
 
         let handle = std::thread::spawn(move || {
@@ -199,11 +171,5 @@ impl ControlPort {
         });
 
         self.thread = Some(handle);
-    }
-}
-
-impl Default for ControlPort {
-    fn default() -> Self {
-        Self::new()
     }
 }
