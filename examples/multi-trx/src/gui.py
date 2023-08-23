@@ -1105,6 +1105,13 @@ class Ui(QtWidgets.QMainWindow):
         self.uav_endpoint_controller.set_tx_frequency_offset_config(
             phy=PHY_WIFI, offset=-int(float(self.lineEdit_3.text()) * 1_000_000)
         )
+        # bandwidth probably coupled to sample rate in the background, see:
+        # https://electronics.stackexchange.com/a/120969
+        # and
+        # https://github.com/pothosware/SoapySDR/issues/100
+        # for chanem: only ensure that bandwidth is larger than endpoint sampling rate, then there will be no data loss
+        # , and wider channel emulation won't hurt anything # TODO check
+        # center frequency has to be synchronized though (if wider chanem bandwidth doesn't cover the full range anyways)
         self.uav_endpoint_controller.set_sample_rate_config(
             phy=PHY_WIFI,
             sample_rate=int(float(self.lineEdit.text()) * 1_000_000)
