@@ -1,34 +1,32 @@
-use std::thread::sleep;
 use clap::Parser;
+use gilrs::{Button, Event, EventType, Gilrs};
+use num::complex::Complex;
+use std::f32::consts::PI;
+use std::thread::sleep;
 use std::time::Duration;
 use tokio;
-use gilrs::{Gilrs, Button, Event, EventType};
 use tokio::sync::mpsc::unbounded_channel;
 use tokio::sync::watch;
-use std::f32::consts::PI;
-use num::complex::Complex;
 
+use futuredsp::fir::NonResamplingFirKernel;
 use futuresdr::anyhow::Result;
 use futuresdr::async_io::block_on;
 use futuresdr::async_net::UdpSocket;
 use futuresdr::blocks::{Fir, FirBuilder};
-use futuredsp::fir::NonResamplingFirKernel;
-use futuresdr::log::{info, warn, debug};
+use futuresdr::log::{debug, info, warn};
 use futuresdr::num_complex::Complex32;
 use futuresdr::runtime::Flowgraph;
-use futuresdr::runtime::Runtime;
 use futuresdr::runtime::Pmt;
+use futuresdr::runtime::Runtime;
 
+use multitrx::AWGNComplex32;
+use multitrx::Complex32Deserializer;
+use multitrx::Complex32Serializer;
 use multitrx::TcpSink;
 use multitrx::TcpSource;
-use multitrx::Complex32Serializer;
-use multitrx::Complex32Deserializer;
-use multitrx::AWGNComplex32;
-
 
 const PAD_FRONT: usize = 10000;
 const PAD_TAIL: usize = 10000;
-
 
 const STATION_X: f32 = 0.0;
 const STATION_Y: f32 = 0.0;
@@ -80,7 +78,12 @@ fn distance(x: f32, y: f32, z: f32) -> f32 {
     ((STATION_X - x).powi(2) + (STATION_Y - y).powi(2) + (STATION_Z - z).powi(2)).sqrt()
 }
 
-fn calculate_taps_freespace(x: f32, y: f32, z: f32, magic_scaling_coeff: f32) -> [i16; MAX_TAPS * 2] {
+fn calculate_taps_freespace(
+    x: f32,
+    y: f32,
+    z: f32,
+    magic_scaling_coeff: f32,
+) -> [i16; MAX_TAPS * 2] {
     let mut taps = [0_i16; MAX_TAPS * 2];
 
     let dist = distance(x, y, z);
@@ -99,7 +102,11 @@ fn calculate_tap_value(dist: f32, magic_scaling_coeff: f32) -> f32 {
 }
 
 fn calculate_taps_two_ray(
-    x: f32, y: f32, z: f32, sample_rate: f32, magic_scaling_coeff: f32
+    x: f32,
+    y: f32,
+    z: f32,
+    sample_rate: f32,
+    magic_scaling_coeff: f32,
 ) -> [i16; MAX_TAPS * 2] {
     let delay_per_tap = 1. / sample_rate;
 
@@ -128,7 +135,8 @@ fn calculate_taps_two_ray(
     // taps[MAX_TAPS] = 0_i16;
     if tap_index_second_ray < MAX_TAPS && tap_index_second_ray > 0 {
         taps[0 + tap_index_second_ray] = (tap_nlos.re as i16).clamp(TAP_VALUE_MIN, TAP_VALUE_MAX);
-        taps[MAX_TAPS + tap_index_second_ray] = (tap_nlos.im as i16).clamp(TAP_VALUE_MIN, TAP_VALUE_MAX);
+        taps[MAX_TAPS + tap_index_second_ray] =
+            (tap_nlos.im as i16).clamp(TAP_VALUE_MIN, TAP_VALUE_MAX);
     } else if tap_index_second_ray == 0 {
         let tap_los_combined = Complex::new(tap_los, 0.) + tap_nlos;
         taps[0] = (tap_los_combined.re as i16).clamp(TAP_VALUE_MIN, TAP_VALUE_MAX);
@@ -149,7 +157,6 @@ const NUM_MODES: usize = 3;
 const MODEL_INDEX_AUTOMATIC_FREE_SPACE: usize = 0;
 const MODEL_INDEX_AUTOMATIC_FLAT_EARTH_TWO_RAY: usize = 1;
 const MODEL_INDEX_MANUAL: usize = 2;
-
 
 fn main() -> Result<()> {
     let args = Args::parse();
@@ -220,7 +227,8 @@ fn main() -> Result<()> {
     let to_gui_udp_handler_tx_1 = to_gui_udp_handler_tx.clone();
     let to_gui_udp_handler_tx_2 = to_gui_udp_handler_tx.clone();
 
-    let (mode_channel_gui_to_gamepad_tx, mode_channel_gui_to_gamepad_rx) = watch::channel(MODEL_INDEX_AUTOMATIC_FREE_SPACE);
+    let (mode_channel_gui_to_gamepad_tx, mode_channel_gui_to_gamepad_rx) =
+        watch::channel(MODEL_INDEX_AUTOMATIC_FREE_SPACE);
 
     std::thread::spawn(move || {
         let mut current_value = 50.0_f32;
@@ -247,7 +255,7 @@ fn main() -> Result<()> {
                             info!("mode manual - {}dB", current_value);
                             my_tx.send(Ev::ModeManual(current_value)).unwrap();
                         }
-                        send=true;
+                        send = true;
                     } else if matches!(event, EventType::ButtonReleased(Button::DPadDown, _)) {
                         if pl_model_index == MODEL_INDEX_MANUAL {
                             current_value += 5.0;
@@ -255,7 +263,7 @@ fn main() -> Result<()> {
                             info!("mode manual - {}dB", current_value);
                             my_tx.send(Ev::ModeManual(current_value)).unwrap();
                         }
-                        send=true;
+                        send = true;
                     } else if matches!(event, EventType::ButtonReleased(Button::DPadUp, _)) {
                         if pl_model_index == MODEL_INDEX_MANUAL {
                             current_value -= 5.0;
@@ -263,7 +271,7 @@ fn main() -> Result<()> {
                             info!("mode manual - {}dB", current_value);
                             my_tx.send(Ev::ModeManual(current_value)).unwrap();
                         }
-                        send=true;
+                        send = true;
                     } else if matches!(event, EventType::ButtonPressed(Button::RightTrigger2, _)) {
                         send_control_event = true;
                         control_event = b"ETR";
@@ -296,8 +304,13 @@ fn main() -> Result<()> {
     });
 
     rt.spawn_background(async move {
-        info!("spawning position update receiver, listening on port {}", args.local_udp_port);
-        let sock = UdpSocket::bind(format!("0.0.0.0:{}", args.local_udp_port)).await.unwrap();
+        info!(
+            "spawning position update receiver, listening on port {}",
+            args.local_udp_port
+        );
+        let sock = UdpSocket::bind(format!("0.0.0.0:{}", args.local_udp_port))
+            .await
+            .unwrap();
         let mut buf = [0; 2048];
         loop {
             let (len, addr) = sock.recv_from(&mut buf).await.unwrap();
@@ -314,21 +327,25 @@ fn main() -> Result<()> {
                 if let Err(e) = tx.send(Ev::Value(x, y, z, r_rad, p_rad, y_rad)) {
                     warn!("could not send position update to gu. ({:?})", e)
                 }
-                debug!("received ([{}, {}, {}], [{}, {}, {}])", x, y, z, r_rad, p_rad, y_rad);
+                debug!(
+                    "received ([{}, {}, {}], [{}, {}, {}])",
+                    x, y, z, r_rad, p_rad, y_rad
+                );
 
                 let mut send_buf = buf.to_vec();
                 // prepend 'P' as message type to distinguish between [P]osition, [T]aps, and [M]ode
                 send_buf.insert(0_usize, b'P');
                 to_gui_udp_handler_tx_1.send(send_buf).unwrap();
-            }
-            else {
+            } else {
                 // erroneous message contains: b'PowerFolder node: [1337]-[AUTJpBd5EcTPnEtSPDkZ]\x00'
                 // some external program (PowerFolder, probably connected to HessenBox on some PC in the local network) also uses port 1337 -> ignore this specific message
                 // there might still arrive other malformed packages -> log for further inspection
-                let known_malformed_msg_prefix: [u8; 24] = [80, 111, 119, 101, 114, 70, 111, 108, 100, 101, 114, 32, 110, 111, 100, 101, 58, 32, 91, 49, 51, 51, 55, 93];
+                let known_malformed_msg_prefix: [u8; 24] = [
+                    80, 111, 119, 101, 114, 70, 111, 108, 100, 101, 114, 32, 110, 111, 100, 101,
+                    58, 32, 91, 49, 51, 51, 55, 93,
+                ];
                 if len > 24 && buf[..24] == known_malformed_msg_prefix {
-                }
-                else {
+                } else {
                     info!("WARNING 001: received {:?}", &buf);
                 }
             }
@@ -337,7 +354,9 @@ fn main() -> Result<()> {
 
     // udp receiver from gui
     rt.spawn_background(async move {
-        let sock = UdpSocket::bind(format!("0.0.0.0:{}", args.model_selection_udp_port)).await.unwrap();
+        let sock = UdpSocket::bind(format!("0.0.0.0:{}", args.model_selection_udp_port))
+            .await
+            .unwrap();
         let mut buf = [0; 1024];
         loop {
             let (len, addr) = sock.recv_from(&mut buf).await.unwrap();
@@ -360,7 +379,10 @@ fn main() -> Result<()> {
                 info!("received new pl_model_index: {}", new_pl_model_index);
             } else if len == 4 {
                 magic_scaling_coeff = f32::from_be_bytes(buf[0..4].try_into().unwrap());
-                info!("received new magic scaling coefficient: {}", magic_scaling_coeff);
+                info!(
+                    "received new magic scaling coefficient: {}",
+                    magic_scaling_coeff
+                );
             } else {
                 warn!("received invalid data from GUI: was not of length 1 (u8) or 4 (f32).")
             }
@@ -400,16 +422,20 @@ fn main() -> Result<()> {
                 match e {
                     Ev::ModeAutomaticFreeSpace => {
                         pl_model_index = MODEL_INDEX_AUTOMATIC_FREE_SPACE;
-                        if let Err(e) = mode_channel_gui_to_gamepad_tx.send(MODEL_INDEX_AUTOMATIC_FREE_SPACE) {
+                        if let Err(e) =
+                            mode_channel_gui_to_gamepad_tx.send(MODEL_INDEX_AUTOMATIC_FREE_SPACE)
+                        {
                             warn!("error sending PL model index to gui ({:?})", e);
                         }
-                    },
+                    }
                     Ev::ModeAutomaticFlatEarthTwoRay => {
                         pl_model_index = MODEL_INDEX_AUTOMATIC_FLAT_EARTH_TWO_RAY;
-                        if let Err(e) = mode_channel_gui_to_gamepad_tx.send(MODEL_INDEX_AUTOMATIC_FLAT_EARTH_TWO_RAY) {
+                        if let Err(e) = mode_channel_gui_to_gamepad_tx
+                            .send(MODEL_INDEX_AUTOMATIC_FLAT_EARTH_TWO_RAY)
+                        {
                             warn!("error sending PL model index to gui ({:?})", e);
                         }
-                    },
+                    }
                     Ev::ModeManual(v) => {
                         pl_model_index = MODEL_INDEX_MANUAL;
                         if let Err(e) = mode_channel_gui_to_gamepad_tx.send(MODEL_INDEX_MANUAL) {
@@ -421,7 +447,8 @@ fn main() -> Result<()> {
                         taps.fill(Complex32::new(0.0_f32, 0.0_f32));
                         // taps.fill(0.0_f32);
                         taps_tmp.fill(0_i16);
-                        let tap = TAP_VALUE_NO_LOSS / 10.0_f32.powf(last_manual / 20.0_f32) * magic_scaling_coeff;
+                        let tap = TAP_VALUE_NO_LOSS / 10.0_f32.powf(last_manual / 20.0_f32)
+                            * magic_scaling_coeff;
                         let tap = (tap as i16).clamp(TAP_VALUE_MIN, TAP_VALUE_MAX);
                         taps_tmp[0] = tap;
                         let tap = tap as f32 / TAP_VALUE_MAX as f32;
@@ -431,7 +458,13 @@ fn main() -> Result<()> {
                     }
                     Ev::Value(x, y, z, _r_rad, _p_rad, _y_rad) => {
                         if pl_model_index == 1 {
-                            taps_tmp = calculate_taps_two_ray(x, y, z, args.sample_rate as f32, magic_scaling_coeff);
+                            taps_tmp = calculate_taps_two_ray(
+                                x,
+                                y,
+                                z,
+                                args.sample_rate as f32,
+                                magic_scaling_coeff,
+                            );
                         }
                         // else if pl_model_index == 2 {
                         //     taps = calculate_taps_two_segment_log_dist(x, y, z, r_rad, p_rad, y_rad);
@@ -442,23 +475,30 @@ fn main() -> Result<()> {
                         }
                         for i in 0..MAX_TAPS {
                             // taps[i] = Complex32::new(taps_tmp[i] as f32 / TAP_VALUE_MAX as f32, taps_tmp[MAX_TAPS + i] as f32 / TAP_VALUE_MAX as f32);
-                            taps[MAX_TAPS - 1 - i] = Complex32::new(taps_tmp[i] as f32 / TAP_VALUE_MAX as f32, taps_tmp[MAX_TAPS + i] as f32 / TAP_VALUE_MAX as f32);
+                            taps[MAX_TAPS - 1 - i] = Complex32::new(
+                                taps_tmp[i] as f32 / TAP_VALUE_MAX as f32,
+                                taps_tmp[MAX_TAPS + i] as f32 / TAP_VALUE_MAX as f32,
+                            );
                         }
                         send = true;
                     }
                 }
 
                 if send {
-                    input_handle.call(
-                        fir_ag,
-                        fir_ag_update_taps_input_port_id,
-                        Pmt::Any(Box::new(taps.clone()))
-                    ).await;
-                    input_handle.call(
-                        fir_ga,
-                        fir_ga_update_taps_input_port_id,
-                        Pmt::Any(Box::new(taps.clone()))
-                    ).await;
+                    input_handle
+                        .call(
+                            fir_ag,
+                            fir_ag_update_taps_input_port_id,
+                            Pmt::Any(Box::new(taps.clone())),
+                        )
+                        .await;
+                    input_handle
+                        .call(
+                            fir_ga,
+                            fir_ga_update_taps_input_port_id,
+                            Pmt::Any(Box::new(taps.clone())),
+                        )
+                        .await;
                     // fir_ga_block.core.taps = taps;
                     let mut send_buf = taps_tmp
                         .iter()
@@ -474,9 +514,7 @@ fn main() -> Result<()> {
             }
         }
     });
-    loop{
+    loop {
         sleep(Duration::from_secs(5));
     }
 }
-
-

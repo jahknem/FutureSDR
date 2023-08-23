@@ -60,11 +60,12 @@ where
     }
 }
 
-impl<InputType, OutputType, TA, TT> UpdateableFirFilterKernel<TA, TT> for NonResamplingFirKernel<InputType, OutputType, TA, TT>
+impl<InputType, OutputType, TA, TT> UpdateableFirFilterKernel<TA, TT>
+    for NonResamplingFirKernel<InputType, OutputType, TA, TT>
 where
     TA: TapsAccessor<TapType = TT> + Send + 'static,
 {
-    fn update_taps(&mut self, new_taps: TA){
+    fn update_taps(&mut self, new_taps: TA) {
         self.taps = new_taps;
     }
 }
@@ -298,11 +299,12 @@ where
     }
 }
 
-impl<InputType, OutputType, TA, TT> UpdateableFirFilterKernel<TA, TT> for PolyphaseResamplingFirKernel<InputType, OutputType, TA, TT>
+impl<InputType, OutputType, TA, TT> UpdateableFirFilterKernel<TA, TT>
+    for PolyphaseResamplingFirKernel<InputType, OutputType, TA, TT>
 where
     TA: TapsAccessor<TapType = TT> + Send + 'static,
 {
-    fn update_taps(&mut self, new_taps: TA){
+    fn update_taps(&mut self, new_taps: TA) {
         self.taps = new_taps;
     }
 }

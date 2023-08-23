@@ -20,13 +20,14 @@ use futuresdr::runtime::StreamIo;
 use futuresdr::runtime::StreamIoBuilder;
 use futuresdr::runtime::Tag;
 use futuresdr::runtime::WorkIo;
+use futuresdr::macros::message_handler;
 use std::future::Future;
 use std::pin::Pin;
 
 const MAX_FRAMES: usize = 1000;
 
 fn get_dscp_priority(data: &Vec<u8>) -> u8 {
-    let dscp_index = 24 + 4 + 1;  // mac header length + 4 bytes added by TUN adapter + offset in IP header
+    let dscp_index = 24 + 4 + 1; // mac header length + 4 bytes added by TUN adapter + offset in IP header
     data[dscp_index]
 }
 
@@ -71,66 +72,65 @@ impl Encoder {
         )
     }
 
-     pub fn flush_queue<'a>(
-         &'a mut self,
-         mio: &'a mut MessageIo<Encoder>,
-         _meta: &'a mut BlockMeta,
-         p: Pmt,
-     ) -> Pin<Box<dyn Future<Output = Result<Pmt>> + Send + 'a>> {
-         async move {
-             self.tx_frames.flush();
-             Ok(Pmt::Null)
-         }
-         .boxed()
-     }
-
-
-
-    fn transmit<'a>(
+    #[message_handler]
+    pub fn flush_queue<'a>(
         &'a mut self,
-        _mio: &'a mut MessageIo<Encoder>,
+        _io: &'a mut WorkIo,
+        _mio: &'a mut MessageIo<Self>,
         _meta: &'a mut BlockMeta,
         p: Pmt,
-    ) -> Pin<Box<dyn Future<Output = Result<Pmt>> + Send + 'a>> {
-        async move {
-            match p {
-                Pmt::Blob(data) => {
+    ) -> Result<Pmt> {
+        self.tx_frames.flush();
+        Ok(Pmt::Null)
+    }
+
+    #[message_handler]
+    fn transmit<'a>(
+        &'a mut self,
+        _io: &'a mut WorkIo,
+        _mio: &'a mut MessageIo<Self>,
+        _meta: &'a mut BlockMeta,
+        p: Pmt,
+    ) -> Result<Pmt> {
+        match p {
+            Pmt::Blob(data) => {
+                if data.len() > MAX_PSDU_SIZE {
+                    warn!(
+                        "WLAN Encoder: TX frame too large ({}, max {}). Dropping.",
+                        data.len(),
+                        MAX_PSDU_SIZE
+                    );
+                } else {
+                    let priority = get_dscp_priority(&data);
+                    self.tx_frames.push_back((data, self.default_mcs), priority);
+                }
+            }
+            Pmt::Any(a) => {
+                if let Some((data, mcs)) = a.downcast_ref::<(Vec<u8>, Option<Mcs>)>() {
+                    let data = data.clone();
                     if data.len() > MAX_PSDU_SIZE {
                         warn!(
                             "WLAN Encoder: TX frame too large ({}, max {}). Dropping.",
                             data.len(),
                             MAX_PSDU_SIZE
                         );
+                    } else if let Some(m) = mcs {
+                        let priority = get_dscp_priority(&data);
+                        self.tx_frames.push_back((data, *m), priority);
                     } else {
                         let priority = get_dscp_priority(&data);
                         self.tx_frames.push_back((data, self.default_mcs), priority);
                     }
                 }
-                Pmt::Any(a) => {
-                    if let Some((data, mcs)) = a.downcast_ref::<(Vec<u8>, Option<Mcs>)>() {
-                        let data = data.clone();
-                        if data.len() > MAX_PSDU_SIZE {
-                            warn!(
-                                "WLAN Encoder: TX frame too large ({}, max {}). Dropping.",
-                                data.len(),
-                                MAX_PSDU_SIZE
-                            );
-                        } else if let Some(m) = mcs {
-                            let priority = get_dscp_priority(&data);
-                            self.tx_frames.push_back((data, *m), priority);
-                        } else {
-                            let priority = get_dscp_priority(&data);
-                            self.tx_frames.push_back((data, self.default_mcs), priority);
-                        }
-                    }
-                }
-                x => {
-                    warn!("WLAN Encoder: received wrong PMT type in TX callback. {:?}", x);
-                }
             }
-            Ok(Pmt::Null)
+            x => {
+                warn!(
+                    "WLAN Encoder: received wrong PMT type in TX callback. {:?}",
+                    x
+                );
+            }
         }
-        .boxed()
+        Ok(Pmt::Null)
     }
 
     fn generate_bits(&mut self, data: &Vec<u8>) {

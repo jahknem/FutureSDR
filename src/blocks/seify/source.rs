@@ -1,9 +1,9 @@
+use seify::Args;
 use seify::Device;
 use seify::DeviceTrait;
 use seify::Direction::Rx;
 use seify::GenericDevice;
 use seify::RxStreamer;
-use seify::Args;
 
 use crate::anyhow::{Context, Result};
 use crate::blocks::seify::builder::BuilderType;
@@ -142,21 +142,17 @@ impl<D: DeviceTrait + Clone> Source<D> {
         _mio: &mut MessageIo<Self>,
         _meta: &mut BlockMeta,
         p: Pmt,
-    ) -> Result<Pmt> {  // TODO verify
-        let args = Args::from(
-            vec![
-                (
-                    "Offset",
-                    match &p {
-                        Pmt::F32(v) => *v as f64,
-                        Pmt::F64(v) => *v,
-                        Pmt::U32(v) => *v as f64,
-                        Pmt::U64(v) => *v as f64,
-                        _ => return Ok(Pmt::InvalidValue),
-                    }
-                ),
-            ]
-        ).unwrap();
+    ) -> Result<Pmt> {
+        // TODO verify
+        let mut args = Args::new();
+        let offset = match &p {
+            Pmt::F32(v) => *v as f64,
+            Pmt::F64(v) => *v,
+            Pmt::U32(v) => *v as f64,
+            Pmt::U64(v) => *v as f64,
+            _ => return Ok(Pmt::InvalidValue),
+        };
+        args.set("Offset", offset.to_string());
         for c in &self.channels {
             let f = self.dev.frequency(Rx, *c).unwrap();
             self.dev.set_frequency_with_args(Rx, *c, f, args.clone())?

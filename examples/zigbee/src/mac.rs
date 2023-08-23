@@ -106,37 +106,35 @@ impl Mac {
                     #[cfg(target_arch = "wasm32")]
                     rxed_frame(data.clone());
 
-                        let mut rftap = vec![0; data.len() + 12];
-                        rftap[0..4].copy_from_slice("RFta".as_bytes());
-                        rftap[4..6].copy_from_slice(&3u16.to_le_bytes());
-                        rftap[6..8].copy_from_slice(&1u16.to_le_bytes());
-                        rftap[8..12].copy_from_slice(&195u32.to_le_bytes());
-                        rftap[12..].copy_from_slice(&data);
-                        mio.output_mut(1).post(Pmt::Blob(rftap)).await;
+                    let mut rftap = vec![0; data.len() + 12];
+                    rftap[0..4].copy_from_slice("RFta".as_bytes());
+                    rftap[4..6].copy_from_slice(&3u16.to_le_bytes());
+                    rftap[6..8].copy_from_slice(&1u16.to_le_bytes());
+                    rftap[8..12].copy_from_slice(&195u32.to_le_bytes());
+                    rftap[12..].copy_from_slice(&data);
+                    mio.output_mut(1).post(Pmt::Blob(rftap)).await;
 
-                        self.n_received += 1;
-                        let s = String::from_iter(
-                            data.iter()
-                                .map(|x| char::from(*x))
-                                .map(|x| if x.is_ascii() { x } else { '.' })
-                                .map(|x| {
-                                    if ['\x0b', '\x0c', '\n', '\t', '\r'].contains(&x) {
-                                        '.'
-                                    } else {
-                                        x
-                                    }
-                                }),
-                        );
-                        debug!("{}", s);
-                        mio.output_mut(0).post(Pmt::Blob(data)).await;
-                    } else {
-                        debug!("received frame, crc wrong");
-                    }
-                }
-                _ => {
-                    warn!(
-                        "ZigBee Mac: received wrong PMT type in RX callback (expected Pmt::Blob)"
+                    self.n_received += 1;
+                    let s = String::from_iter(
+                        data.iter()
+                            .map(|x| char::from(*x))
+                            .map(|x| if x.is_ascii() { x } else { '.' })
+                            .map(|x| {
+                                if ['\x0b', '\x0c', '\n', '\t', '\r'].contains(&x) {
+                                    '.'
+                                } else {
+                                    x
+                                }
+                            }),
                     );
+                    debug!("{}", s);
+                    mio.output_mut(0).post(Pmt::Blob(data)).await;
+                } else {
+                    debug!("received frame, crc wrong");
+                }
+            }
+            _ => {
+                warn!("ZigBee Mac: received wrong PMT type in RX callback (expected Pmt::Blob)");
             }
         }
         Ok(Pmt::Ok)

@@ -14,8 +14,8 @@ use futuresdr::blocks::SelectorDropPolicy as DropPolicy;
 use futuresdr::blocks::SoapySourceBuilder;
 use futuresdr::num_complex::Complex32;
 use futuresdr::runtime::Flowgraph;
-use futuresdr::runtime::Runtime;
 use futuresdr::runtime::Pmt;
+use futuresdr::runtime::Runtime;
 
 use wlan::fft_tag_propagation as wlan_fft_tag_propagation;
 use wlan::parse_channel as wlan_parse_channel;
@@ -60,7 +60,7 @@ struct Args {
     drop_policy: DropPolicy,
 }
 
-fn main() -> Result<()>{
+fn main() -> Result<()> {
     let args = Args::parse();
     println!("Configuration {:?}", args);
 
@@ -69,13 +69,13 @@ fn main() -> Result<()>{
     let sample_rate = [args.wlan_sample_rate, args.zigbee_sample_rate];
 
     let mut fg = Flowgraph::new();
-    
+
     let selector = Selector::<Complex32, 1, 2>::new(args.drop_policy);
     let output_index_port_id = selector
         .message_input_name_to_id("output_index")
         .expect("No output_index port found!");
     let selector = fg.add_block(selector);
-    
+
     let mut soapy = SoapySourceBuilder::new()
         .freq(freq[0])
         .sample_rate(sample_rate[0])
@@ -90,17 +90,15 @@ fn main() -> Result<()>{
 
     //message handler to change frequency and sample rate during runtime
     let freq_input_port_id = soapy
-        .message_input_name_to_id("freq") 
+        .message_input_name_to_id("freq")
         .expect("No freq port found!");
     let sample_rate_input_port_id = soapy
         .message_input_name_to_id("sample_rate")
         .expect("No sample_rate port found!");
     let src = fg.add_block(soapy);
-    
+
     fg.connect_stream(src, "out", selector, "in0")?;
-    
-    
-    
+
     // ========================================
     // WLAN RECEIVER
     // ========================================
@@ -148,9 +146,7 @@ fn main() -> Result<()>{
     fg.connect_message(wlan_decoder, "rx_frames", wlan_blob_to_udp, "in")?;
     let wlan_blob_to_udp = fg.add_block(futuresdr::blocks::BlobToUdp::new("127.0.0.1:55556"));
     fg.connect_message(wlan_decoder, "rftap", wlan_blob_to_udp, "in")?;
-    
-    
-    
+
     // ========================================
     // ZIGBEE RECEIVER
     // ========================================
@@ -188,11 +184,11 @@ fn main() -> Result<()>{
     fg.connect_stream(zigbee_mac, "out", zigbee_snk, "in")?;
     fg.connect_message(zigbee_decoder, "out", zigbee_mac, "rx")?;
     fg.connect_message(zigbee_decoder, "out", zigbee_blob_to_udp, "in")?;
-    
+
     // Start the flowgraph and save the handle
     let rt = Runtime::new();
     let (_res, mut handle) = async_io::block_on(rt.start(fg));
-    
+
     //WLAN frame received message currently intterupts user input to select source
     rt.spawn_background(async move {
         while let Some(x) = wlan_rx_frame.next().await {
@@ -204,7 +200,6 @@ fn main() -> Result<()>{
             }
         }
     });
-    
 
     // Keep asking user for the selection
     loop {
@@ -219,33 +214,19 @@ fn main() -> Result<()>{
         // If the user entered a valid number, set the new frequency and sample rate by sending a message to the `FlowgraphHandle`
         if let Ok(new_index) = input.parse::<u32>() {
             println!("Setting source index to {}", input);
-            async_io::block_on(
-                handle
-                .call(
-                    src, 
-                    freq_input_port_id, 
-                    Pmt::F64(freq[new_index as usize])
-                )
-            )?;
-            async_io::block_on(
-                handle
-                .call(
-                    src, 
-                    sample_rate_input_port_id, 
-                    Pmt::F64(sample_rate[new_index as usize])
-                )
-            )?;
-            async_io::block_on(
-                handle
-                .call(
-                    selector, 
-                    output_index_port_id, 
-                    Pmt::U32(new_index)
-                )
-            )?;
+            async_io::block_on(handle.call(
+                src,
+                freq_input_port_id,
+                Pmt::F64(freq[new_index as usize]),
+            ))?;
+            async_io::block_on(handle.call(
+                src,
+                sample_rate_input_port_id,
+                Pmt::F64(sample_rate[new_index as usize]),
+            ))?;
+            async_io::block_on(handle.call(selector, output_index_port_id, Pmt::U32(new_index)))?;
         } else {
             println!("Input not parsable: {}", input);
         }
     }
-    
 }

@@ -1,14 +1,12 @@
-use std::thread::sleep;
-use clap::Parser;
-use std::time::Duration;
 use atty::Stream;
-use futuresdr::blocks::soapy::SoapyDevSpec::Dev;
+use clap::Parser;
 use futuresdr::anyhow::Result;
 use futuresdr::async_io;
 use futuresdr::async_io::block_on;
 use futuresdr::async_io::Timer;
 use futuresdr::async_net::SocketAddr;
 use futuresdr::async_net::UdpSocket;
+use futuresdr::blocks::soapy::SoapyDevSpec::Dev;
 use futuresdr::blocks::Apply;
 use futuresdr::blocks::Combine;
 use futuresdr::blocks::Fft;
@@ -18,6 +16,8 @@ use futuresdr::blocks::Selector;
 use futuresdr::blocks::SelectorDropPolicy as DropPolicy;
 use futuresdr::blocks::SoapySinkBuilder;
 use futuresdr::blocks::SoapySourceBuilder;
+use std::thread::sleep;
+use std::time::Duration;
 //use futuresdr::blocks::WebsocketSinkBuilder;
 //use futuresdr::blocks::WebsocketSinkMode;
 use futuresdr::futures::channel::mpsc;
@@ -52,13 +52,12 @@ use wlan::SyncLong as WlanSyncLong;
 use wlan::SyncShort as WlanSyncShort;
 use wlan::MAX_SYM;
 
-use zigbee::parse_channel as zigbee_parse_channel;
 use zigbee::modulator as zigbee_modulator;
-use zigbee::IqDelay as ZigbeeIqDelay;
-use zigbee::Mac as ZigbeeMac;
+use zigbee::parse_channel as zigbee_parse_channel;
 use zigbee::ClockRecoveryMm as ZigbeeClockRecoveryMm;
 use zigbee::Decoder as ZigbeeDecoder;
-
+use zigbee::IqDelay as ZigbeeIqDelay;
+use zigbee::Mac as ZigbeeMac;
 
 const PAD_FRONT: usize = 10000;
 const PAD_TAIL: usize = 10000;
@@ -180,18 +179,16 @@ fn main() -> Result<()> {
         size += 4096
     };
 
-    
     let rx_freq = [args.wlan_rx_channel, args.zigbee_rx_channel];
     let tx_freq = [args.wlan_tx_channel, args.zigbee_tx_channel];
     let center_freq = [args.wlan_center_freq, args.zigbee_center_freq];
     let rx_freq_offset = [args.wlan_rx_freq_offset, args.zigbee_rx_freq_offset];
     let tx_freq_offset = [args.wlan_tx_freq_offset, args.zigbee_tx_freq_offset];
     let rx_gain = [args.wlan_rx_gain, args.zigbee_rx_gain];
-    let tx_gain = [args.wlan_tx_gain, args.zigbee_tx_gain];  
+    let tx_gain = [args.wlan_tx_gain, args.zigbee_tx_gain];
     let sample_rate = [args.wlan_sample_rate, args.zigbee_sample_rate];
 
     let mut fg = Flowgraph::new();
-
 
     // ==========================================
     // Device, Source, and Sink
@@ -213,7 +210,9 @@ fn main() -> Result<()> {
         .unwrap();
 
     // set tx and rx frequencies
-    if let (Some(tx_frequency_from_channel), Some(rx_frequency_from_channel)) = (tx_freq[0], rx_freq[0]) {
+    if let (Some(tx_frequency_from_channel), Some(rx_frequency_from_channel)) =
+        (tx_freq[0], rx_freq[0])
+    {
         // if channel has been provided, use channel center frequency from lookup-table
         soapy_dev
             .set_frequency(Tx, args.soapy_tx_channel, tx_frequency_from_channel, "")
@@ -221,8 +220,7 @@ fn main() -> Result<()> {
         soapy_dev
             .set_frequency(Rx, args.soapy_rx_channel, rx_frequency_from_channel, "")
             .unwrap();
-    }
-    else {
+    } else {
         // else use specified center frequency and offset
         soapy_dev
             .set_component_frequency(Tx, args.soapy_tx_channel, "RF", center_freq[0], "")
@@ -237,7 +235,6 @@ fn main() -> Result<()> {
             .set_component_frequency(Rx, args.soapy_rx_channel, "BB", rx_freq_offset[0], "")
             .unwrap();
     }
-
 
     let mut sink = SoapySinkBuilder::new()
         .device(Dev(soapy_dev.clone()))
@@ -334,7 +331,7 @@ fn main() -> Result<()> {
         "in",
         Circular::with_size(prefix_in_size),
     )?;
-    
+
     fg.connect_stream_with_type(
         wlan_prefix,
         "out",
@@ -346,7 +343,7 @@ fn main() -> Result<()> {
     // ============================================
     // WLAN RECEIVER
     // ============================================
-    
+
     let wlan_delay = fg.add_block(WlanDelay::<Complex32>::new(16));
     fg.connect_stream(src_selector, "out0", wlan_delay, "in")?;
 
@@ -392,7 +389,6 @@ fn main() -> Result<()> {
     let wlan_blob_to_udp = fg.add_block(futuresdr::blocks::BlobToUdp::new("127.0.0.1:55556"));
     fg.connect_message(wlan_decoder, "rftap", wlan_blob_to_udp, "in")?;
 
-
     // ========================================
     // ZIGBEE RECEIVER
     // ========================================
@@ -430,7 +426,6 @@ fn main() -> Result<()> {
     fg.connect_message(zigbee_decoder, "out", zigbee_mac, "rx")?;
     fg.connect_message(zigbee_mac, "rxed", zigbee_message_pipe, "in")?;
 
-
     // ========================================
     // ZIGBEE TRANSMITTER
     // ========================================
@@ -454,8 +449,6 @@ fn main() -> Result<()> {
     let message_selector = fg.add_block(message_selector);
     fg.connect_message(message_selector, "out0", wlan_mac, "tx")?;
     fg.connect_message(message_selector, "out1", zigbee_mac, "tx")?;
-
-
 
     // ========================================
     // Spectrum
@@ -502,17 +495,26 @@ fn main() -> Result<()> {
         });
     }
 
-
     if let Some(remote) = args.remote_udp {
         info!("Acting as UDP client.");
-        let socket = block_on(UdpSocket::bind(format!("{}:{}", args.local_ip, if let Some(port) = args.local_port {port} else {0}))).unwrap();
+        let socket = block_on(UdpSocket::bind(format!(
+            "{}:{}",
+            args.local_ip,
+            if let Some(port) = args.local_port {
+                port
+            } else {
+                0
+            }
+        )))
+        .unwrap();
         println!("opened socket {:?}", socket);
         block_on(socket.connect(remote)).unwrap();
         println!("bound socket {:?}", socket);
         let socket2 = socket.clone();
         let socket3 = socket.clone();
         let socket_metrics = block_on(UdpSocket::bind(format!("{}:{}", args.local_ip, 0))).unwrap();
-        block_on(socket_metrics.connect(format!("{}:{}", args.metrics_ip, args.metrics_port))).unwrap();
+        block_on(socket_metrics.connect(format!("{}:{}", args.metrics_ip, args.metrics_port)))
+            .unwrap();
         let socket_metrics2 = socket_metrics.clone();
         let socket_metrics3 = socket_metrics.clone();
 
@@ -527,7 +529,7 @@ fn main() -> Result<()> {
                             .call(
                                 message_selector,
                                 message_in_port_id,
-                                Pmt::Blob(buf[0..n].to_vec())
+                                Pmt::Blob(buf[0..n].to_vec()),
                             )
                             .await
                             .unwrap();
@@ -558,7 +560,7 @@ fn main() -> Result<()> {
                         warn!("pmt to tx was not a blob");
                     }
                 } else {
-                     warn!("cannot read from MessagePipe receiver");
+                    warn!("cannot read from MessagePipe receiver");
                 }
             }
         });
@@ -580,12 +582,9 @@ fn main() -> Result<()> {
                     }
                 } else {
                     warn!("cannot read from MessagePipe receiver");
-               }
-
+                }
             }
         });
-
-
     }
     // we are the udp server
     else if let Some(port) = args.local_port {
@@ -596,7 +595,8 @@ fn main() -> Result<()> {
         let socket2 = socket.clone();
         let socket3 = socket.clone();
         let socket_metrics = block_on(UdpSocket::bind(format!("{}:{}", args.local_ip, 0))).unwrap();
-        block_on(socket_metrics.connect(format!("{}:{}", args.metrics_ip, args.metrics_port))).unwrap();
+        block_on(socket_metrics.connect(format!("{}:{}", args.metrics_ip, args.metrics_port)))
+            .unwrap();
         let socket_metrics2 = socket_metrics.clone();
         let socket_metrics3 = socket_metrics.clone();
 
@@ -608,7 +608,8 @@ fn main() -> Result<()> {
                 .call(
                     message_selector,
                     message_in_port_id,
-                    Pmt::Blob(buf[0..n].to_vec()))
+                    Pmt::Blob(buf[0..n].to_vec()),
+                )
                 .await
                 .unwrap();
             tx_endpoint.send(e).unwrap();
@@ -618,12 +619,13 @@ fn main() -> Result<()> {
                 let (n, _) = socket.recv_from(&mut buf).await.unwrap();
                 print!("s");
                 handle
-                .call(
-                    message_selector,
-                    message_in_port_id,
-                    Pmt::Blob(buf[0..n].to_vec()))
-                .await
-                .unwrap();
+                    .call(
+                        message_selector,
+                        message_in_port_id,
+                        Pmt::Blob(buf[0..n].to_vec()),
+                    )
+                    .await
+                    .unwrap();
                 if let Ok(res) = socket_metrics.send(b"server,tx").await {
                     // info!("server sent a frame.")
                 } else {
@@ -674,8 +676,7 @@ fn main() -> Result<()> {
                     }
                 } else {
                     warn!("cannot read from MessagePipe receiver");
-               }
-
+                }
             }
         });
     } else {
@@ -696,8 +697,15 @@ fn main() -> Result<()> {
     }
 
     // protocol switching message handler:
-    info!("listening for protocol switch on port {}.", args.protocol_switching_ctrl_port);
-    let socket = block_on(UdpSocket::bind(format!("{}:{}", args.local_ip, args.protocol_switching_ctrl_port))).unwrap();
+    info!(
+        "listening for protocol switch on port {}.",
+        args.protocol_switching_ctrl_port
+    );
+    let socket = block_on(UdpSocket::bind(format!(
+        "{}:{}",
+        args.local_ip, args.protocol_switching_ctrl_port
+    )))
+    .unwrap();
 
     rt.spawn_background(async move {
         let mut buf = vec![0u8; 1024];
@@ -711,116 +719,95 @@ fn main() -> Result<()> {
                     if (the_number as usize) < tx_freq.len() {
                         let new_index = the_number as u32;
                         println!("Setting source index to {}", new_index);
-                        if let (Some(tx_frequency_from_channel), Some(rx_frequency_from_channel)) = (tx_freq[new_index as usize], rx_freq[new_index as usize]) {
-                            async_io::block_on(
-                                input_handle
-                                    .call(
-                                        src,
-                                        src_freq_input_port_id,
-                                        Pmt::VecPmt(vec![Pmt::F64(rx_frequency_from_channel), Pmt::U32(args.soapy_rx_channel as u32)])
-                                    )
-                            );
-                            async_io::block_on(
-                                input_handle
-                                    .call(
-                                        sink,
-                                        sink_freq_input_port_id,
-                                        Pmt::VecPmt(vec![Pmt::F64(tx_frequency_from_channel), Pmt::U32(args.soapy_tx_channel as u32)])
-                                    )
-                            );
+                        if let (Some(tx_frequency_from_channel), Some(rx_frequency_from_channel)) =
+                            (tx_freq[new_index as usize], rx_freq[new_index as usize])
+                        {
+                            async_io::block_on(input_handle.call(
+                                src,
+                                src_freq_input_port_id,
+                                Pmt::VecPmt(vec![
+                                    Pmt::F64(rx_frequency_from_channel),
+                                    Pmt::U32(args.soapy_rx_channel as u32),
+                                ]),
+                            ));
+                            async_io::block_on(input_handle.call(
+                                sink,
+                                sink_freq_input_port_id,
+                                Pmt::VecPmt(vec![
+                                    Pmt::F64(tx_frequency_from_channel),
+                                    Pmt::U32(args.soapy_tx_channel as u32),
+                                ]),
+                            ));
                         } else {
-                            async_io::block_on(
-                                input_handle
-                                    .call(
-                                        src,
-                                        src_center_freq_input_port_id,
-                                        Pmt::VecPmt(vec![Pmt::F64(center_freq[new_index as usize]), Pmt::U32(args.soapy_rx_channel as u32)])
-                                    )
-                            );
-                            async_io::block_on(
-                                input_handle
-                                    .call(
-                                        sink,
-                                        sink_center_freq_input_port_id,
-                                        Pmt::VecPmt(vec![Pmt::F64(center_freq[new_index as usize]), Pmt::U32(args.soapy_tx_channel as u32)])
-                                    )
-                                
-                            );
-                            async_io::block_on(
-                                input_handle
-                                    .call(
-                                        src,
-                                        src_freq_offset_input_port_id,
-                                        Pmt::VecPmt(vec![Pmt::F64(rx_freq_offset[new_index as usize]), Pmt::U32(args.soapy_rx_channel as u32)])
-                                    )
-                            );
-                            async_io::block_on(
-                                input_handle
-                                    .call(
-                                        sink,
-                                        sink_freq_offset_input_port_id,
-                                        Pmt::VecPmt(vec![Pmt::F64(tx_freq_offset[new_index as usize]), Pmt::U32(args.soapy_tx_channel as u32)])
-                                    )
-                            );
+                            async_io::block_on(input_handle.call(
+                                src,
+                                src_center_freq_input_port_id,
+                                Pmt::VecPmt(vec![
+                                    Pmt::F64(center_freq[new_index as usize]),
+                                    Pmt::U32(args.soapy_rx_channel as u32),
+                                ]),
+                            ));
+                            async_io::block_on(input_handle.call(
+                                sink,
+                                sink_center_freq_input_port_id,
+                                Pmt::VecPmt(vec![
+                                    Pmt::F64(center_freq[new_index as usize]),
+                                    Pmt::U32(args.soapy_tx_channel as u32),
+                                ]),
+                            ));
+                            async_io::block_on(input_handle.call(
+                                src,
+                                src_freq_offset_input_port_id,
+                                Pmt::VecPmt(vec![
+                                    Pmt::F64(rx_freq_offset[new_index as usize]),
+                                    Pmt::U32(args.soapy_rx_channel as u32),
+                                ]),
+                            ));
+                            async_io::block_on(input_handle.call(
+                                sink,
+                                sink_freq_offset_input_port_id,
+                                Pmt::VecPmt(vec![
+                                    Pmt::F64(tx_freq_offset[new_index as usize]),
+                                    Pmt::U32(args.soapy_tx_channel as u32),
+                                ]),
+                            ));
                         }
-                        async_io::block_on(
-                            input_handle
-                                .call(
-                                    src,
-                                    src_sample_rate_input_port_id,
-                                    Pmt::F64(sample_rate[new_index as usize])
-                                )
-                        );
-                        async_io::block_on(
-                            input_handle
-                                .call(
-                                    src,
-                                    src_gain_input_port_id,
-                                    Pmt::F64(rx_gain[new_index as usize])
-                                )
-                        );
-                        async_io::block_on(
-                            input_handle
-                                .call(
-                                    src_selector,
-                                    output_index_port_id,
-                                    Pmt::U32(new_index)
-                                )
-                        );
-                        async_io::block_on(
-                            input_handle
-                                .call(
-                                    sink,
-                                    sink_sample_rate_input_port_id,
-                                    Pmt::F64(sample_rate[new_index as usize])
-                                )
-                        );
-                        async_io::block_on(
-                            input_handle
-                                .call(
-                                    sink,
-                                    sink_gain_input_port_id,
-                                    Pmt::F64(tx_gain[new_index as usize])
-                                )
-                        );
-                        async_io::block_on(
-                            input_handle
-                                .call(
-                                    sink_selector,
-                                    input_index_port_id,
-                                    Pmt::U32(new_index)
-                                )
-                        );
-                        async_io::block_on(
-                            input_handle
-                                .call(
-                                    message_selector,
-                                    output_selector_port_id,
-                                    Pmt::U32(new_index)
-                                )
-                        );
-                    }
-                    else {
+                        async_io::block_on(input_handle.call(
+                            src,
+                            src_sample_rate_input_port_id,
+                            Pmt::F64(sample_rate[new_index as usize]),
+                        ));
+                        async_io::block_on(input_handle.call(
+                            src,
+                            src_gain_input_port_id,
+                            Pmt::F64(rx_gain[new_index as usize]),
+                        ));
+                        async_io::block_on(input_handle.call(
+                            src_selector,
+                            output_index_port_id,
+                            Pmt::U32(new_index),
+                        ));
+                        async_io::block_on(input_handle.call(
+                            sink,
+                            sink_sample_rate_input_port_id,
+                            Pmt::F64(sample_rate[new_index as usize]),
+                        ));
+                        async_io::block_on(input_handle.call(
+                            sink,
+                            sink_gain_input_port_id,
+                            Pmt::F64(tx_gain[new_index as usize]),
+                        ));
+                        async_io::block_on(input_handle.call(
+                            sink_selector,
+                            input_index_port_id,
+                            Pmt::U32(new_index),
+                        ));
+                        async_io::block_on(input_handle.call(
+                            message_selector,
+                            output_selector_port_id,
+                            Pmt::U32(new_index),
+                        ));
+                    } else {
                         println!("Invalid protocol index.")
                     }
                 }
@@ -829,7 +816,8 @@ fn main() -> Result<()> {
         }
     });
 
-    let socket_protocol_num = block_on(UdpSocket::bind(format!("{}:{}", args.local_ip, 0))).unwrap();
+    let socket_protocol_num =
+        block_on(UdpSocket::bind(format!("{}:{}", args.local_ip, 0))).unwrap();
 
     // // if this program is running in an interactive terminal
     // if atty::is(atty::Stream::Stdin) {
@@ -853,5 +841,4 @@ fn main() -> Result<()> {
         sleep(Duration::from_secs(5));
     }
     // }
-
 }

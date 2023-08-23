@@ -103,7 +103,7 @@ pub enum Pmt {
     /// Wrap anything that implements [`Any`](std::any::Any) in a Pmt. Use
     /// `downcast_ref/mut()` to extract.
     #[serde(skip)]
-    Any(Box<dyn PmtAny>),    
+    Any(Box<dyn PmtAny>),
 }
 
 impl PartialEq for Pmt {

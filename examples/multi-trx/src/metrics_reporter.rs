@@ -1,7 +1,8 @@
-
-use futuresdr::log::warn;
 use futuresdr::anyhow::Result;
+use futuresdr::async_io::block_on;
+use futuresdr::async_net::UdpSocket;
 use futuresdr::async_trait::async_trait;
+use futuresdr::log::warn;
 use futuresdr::macros::message_handler;
 use futuresdr::runtime::Block;
 use futuresdr::runtime::BlockMeta;
@@ -11,8 +12,7 @@ use futuresdr::runtime::MessageIo;
 use futuresdr::runtime::MessageIoBuilder;
 use futuresdr::runtime::Pmt;
 use futuresdr::runtime::StreamIoBuilder;
-use futuresdr::async_net::UdpSocket;
-use futuresdr::async_io::block_on;
+use futuresdr::runtime::WorkIo;
 
 static TUN_INTERFACE_HEADER_LEN: usize = 4;
 
@@ -29,20 +29,21 @@ impl MetricsReporter {
             BlockMetaBuilder::new("MetricsReporter").build(),
             StreamIoBuilder::new().build(),
             MessageIoBuilder::new()
-                    .add_input("rx_in", Self::message_in_rx)
-                    .add_input("rx_wifi_in", Self::message_in_rx_wifi)
-                    .add_input("tx_in", Self::message_in_tx)
-                    .build(),
+                .add_input("rx_in", Self::message_in_rx)
+                .add_input("rx_wifi_in", Self::message_in_rx_wifi)
+                .add_input("tx_in", Self::message_in_tx)
+                .build(),
             MetricsReporter {
                 socket_metrics: socket_metrics,
                 local_ip: local_ip,
-            }
+            },
         )
     }
 
     #[message_handler]
     async fn message_in_rx(
         &mut self,
+        _io: &mut WorkIo,
         _mio: &mut MessageIo<Self>,
         _meta: &mut BlockMeta,
         p: Pmt,
@@ -53,12 +54,14 @@ impl MetricsReporter {
     #[message_handler]
     async fn message_in_rx_wifi(
         &mut self,
+        _io: &mut WorkIo,
         _mio: &mut MessageIo<Self>,
         _meta: &mut BlockMeta,
         p: Pmt,
     ) -> Result<Pmt> {
         if let Pmt::Blob(buf) = p {
-            self.message_in(_mio, _meta, Pmt::Blob(buf[24..].to_vec()), "rx").await
+            self.message_in(_mio, _meta, Pmt::Blob(buf[24..].to_vec()), "rx")
+                .await
         } else {
             warn!("pmt to tx was not a blob");
             Ok(Pmt::Null)
@@ -68,6 +71,7 @@ impl MetricsReporter {
     #[message_handler]
     async fn message_in_tx(
         &mut self,
+        _io: &mut WorkIo,
         _mio: &mut MessageIo<Self>,
         _meta: &mut BlockMeta,
         p: Pmt,
@@ -85,8 +89,22 @@ impl MetricsReporter {
         if let Pmt::Blob(buf) = p {
             let dscp_val = buf[TUN_INTERFACE_HEADER_LEN + 1];
             let next_protocol = buf[TUN_INTERFACE_HEADER_LEN + 9];
-            if let Err(_) = self.socket_metrics.send(format!("{},{},{},{},{}", self.local_ip, direction, buf.len(), dscp_val, next_protocol).as_bytes()).await {
-            // if let Err(_) = self.socket_metrics.send(format!("{},{}", self.local_ip, direction).as_bytes()).await {
+            if let Err(_) = self
+                .socket_metrics
+                .send(
+                    format!(
+                        "{},{},{},{},{}",
+                        self.local_ip,
+                        direction,
+                        buf.len(),
+                        dscp_val,
+                        next_protocol
+                    )
+                    .as_bytes(),
+                )
+                .await
+            {
+                // if let Err(_) = self.socket_metrics.send(format!("{},{}", self.local_ip, direction).as_bytes()).await {
                 warn!("could not send metric update.");
             }
         } else {
@@ -97,4 +115,4 @@ impl MetricsReporter {
 }
 
 #[async_trait]
-impl Kernel for MetricsReporter{}
+impl Kernel for MetricsReporter {}

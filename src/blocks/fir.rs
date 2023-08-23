@@ -5,15 +5,15 @@ use crate::runtime::BlockMetaBuilder;
 use crate::runtime::Kernel;
 use crate::runtime::MessageIo;
 use crate::runtime::MessageIoBuilder;
+use crate::runtime::Pmt;
 use crate::runtime::StreamIo;
 use crate::runtime::StreamIoBuilder;
 use crate::runtime::WorkIo;
 use futuredsp::fir::*;
 use futuredsp::firdes;
 use futuredsp::{TapsAccessor, UnaryKernel};
+use futuresdr_types::PmtAny;
 use num_integer;
-use futuresdr_pmt::PmtAny;
-use crate::runtime::Pmt;
 
 /// FIR filter.
 pub struct Fir<InputType, OutputType, TapAccessor, TapType, Core>
@@ -22,7 +22,10 @@ where
     OutputType: 'static + Send,
     TapAccessor: 'static + Send + TapsAccessor<TapType = TapType> + Clone,
     TapType: 'static + Send,
-    Core: 'static + UnaryKernel<InputType, OutputType> + Send + futuredsp::fir::UpdateableFirFilterKernel<TapAccessor, TapType>,
+    Core: 'static
+        + UnaryKernel<InputType, OutputType>
+        + Send
+        + futuredsp::fir::UpdateableFirFilterKernel<TapAccessor, TapType>,
 {
     core: Core,
     _input_type: std::marker::PhantomData<InputType>,
@@ -31,13 +34,17 @@ where
     _tap_accessor: std::marker::PhantomData<TapAccessor>,
 }
 
-impl<InputType, OutputType, TapAccessor, TapType, Core> Fir<InputType, OutputType, TapAccessor, TapType, Core>
+impl<InputType, OutputType, TapAccessor, TapType, Core>
+    Fir<InputType, OutputType, TapAccessor, TapType, Core>
 where
     InputType: 'static + Send,
     OutputType: 'static + Send,
     TapAccessor: 'static + Send + TapsAccessor<TapType = TapType> + Clone,
     TapType: 'static + Send,
-    Core: 'static + UnaryKernel<InputType, OutputType> + Send + futuredsp::fir::UpdateableFirFilterKernel<TapAccessor, TapType>,
+    Core: 'static
+        + UnaryKernel<InputType, OutputType>
+        + Send
+        + futuredsp::fir::UpdateableFirFilterKernel<TapAccessor, TapType>,
 {
     /// Create FIR block
     pub fn new(core: Core) -> Block {
@@ -63,13 +70,20 @@ where
     #[message_handler]
     fn update_taps(
         &mut self,
+        _io: &mut WorkIo,
         _mio: &mut MessageIo<Fir<InputType, OutputType, TapAccessor, TapType, Core>>,
         _meta: &mut BlockMeta,
-        p: Pmt
+        p: Pmt,
     ) -> Result<Pmt> {
         if let Pmt::Any(mut new_taps) = p {
             // must be called with TapAccessor compliant type in Pmt::Any, else this function will panic with "calling unwrap() on an Empty Enum"
-            self.core.update_taps((*new_taps).as_any_mut().downcast_mut::<TapAccessor>().unwrap().clone());
+            self.core.update_taps(
+                (*new_taps)
+                    .as_any_mut()
+                    .downcast_mut::<TapAccessor>()
+                    .unwrap()
+                    .clone(),
+            );
             // debug!("Successfully updated Taps!")
         } else {
             warn!("FIR update Taps: received wrong PMT type. {:?}", p);
@@ -80,13 +94,17 @@ where
 
 #[doc(hidden)]
 #[async_trait]
-impl<InputType, OutputType, TapAccessor, TapType, Core> Kernel for Fir<InputType, OutputType, TapAccessor, TapType, Core>
+impl<InputType, OutputType, TapAccessor, TapType, Core> Kernel
+    for Fir<InputType, OutputType, TapAccessor, TapType, Core>
 where
     InputType: 'static + Send,
     OutputType: 'static + Send,
     TapAccessor: 'static + Send + TapsAccessor<TapType = TapType> + Clone,
     TapType: 'static + Send,
-    Core: 'static + UnaryKernel<InputType, OutputType> + Send + futuredsp::fir::UpdateableFirFilterKernel<TapAccessor, TapType>,
+    Core: 'static
+        + UnaryKernel<InputType, OutputType>
+        + Send
+        + futuredsp::fir::UpdateableFirFilterKernel<TapAccessor, TapType>,
 {
     async fn work(
         &mut self,

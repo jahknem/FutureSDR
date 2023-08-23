@@ -39,19 +39,17 @@ use wlan::SyncLong as WlanSyncLong;
 use wlan::SyncShort as WlanSyncShort;
 
 use zigbee::modulator as zigbee_modulator;
-use zigbee::IqDelay as ZigbeeIqDelay;
-use zigbee::Mac as ZigbeeMac;
 use zigbee::ClockRecoveryMm as ZigbeeClockRecoveryMm;
 use zigbee::Decoder as ZigbeeDecoder;
+use zigbee::IqDelay as ZigbeeIqDelay;
+use zigbee::Mac as ZigbeeMac;
 
 #[derive(Parser, Debug)]
 #[clap(version)]
 struct Args {
-
     // Drop policy to apply on the selector.
     #[clap(short, long, default_value = "none")]
     drop_policy: DropPolicy,
-
 }
 
 use wlan::MAX_SYM;
@@ -63,7 +61,6 @@ fn main() -> Result<()> {
     println!("Configuration: {:?}", args);
 
     let mut fg = Flowgraph::new();
-    
 
     //FIR
     let taps = [0.5f32, 0.5f32];
@@ -84,8 +81,6 @@ fn main() -> Result<()> {
         .expect("No output_index port found!");
     let src_selector = fg.add_block(src_selector);
     fg.connect_stream(fir, "out", src_selector, "in0")?;
-
-
 
     // ========================================
     // WLAN RECEIVER
@@ -134,9 +129,7 @@ fn main() -> Result<()> {
     fg.connect_message(wlan_decoder, "rx_frames", wlan_blob_to_udp, "in")?;
     //let wlan_blob_to_udp = fg.add_block(futuresdr::blocks::BlobToUdp::new("127.0.0.1:55556"));
     //fg.connect_message(wlan_decoder, "rftap", wlan_blob_to_udp, "in")?;
-    
-    
-    
+
     // ========================================
     // ZIGBEE RECEIVER
     // ========================================
@@ -174,7 +167,6 @@ fn main() -> Result<()> {
     fg.connect_stream(zigbee_mac, "out", zigbee_snk, "in")?;
     fg.connect_message(zigbee_decoder, "out", zigbee_mac, "rx")?;
     fg.connect_message(zigbee_decoder, "out", zigbee_blob_to_udp, "in")?;
-
 
     // ========================================
     // WLAN TRANSMITTER
@@ -239,7 +231,6 @@ fn main() -> Result<()> {
     fg.connect_stream(zigbee_modulator, "out", zigbee_iq_delay, "in")?;
     fg.connect_stream(zigbee_iq_delay, "out", sink_selector, "in1")?;
 
-
     // message input selector
     let message_selector = MessageSelector::new();
     let message_in_port_id = message_selector
@@ -252,13 +243,10 @@ fn main() -> Result<()> {
     fg.connect_message(message_selector, "out0", wlan_mac, "tx")?;
     fg.connect_message(message_selector, "out1", zigbee_mac, "tx")?;
 
-
-
     let rt = Runtime::new();
     let (_fg, mut handle) = block_on(rt.start(fg));
 
-
-     //WLAN frame received message currently intterupts user input to select source
+    //WLAN frame received message currently intterupts user input to select source
     rt.spawn_background(async move {
         while let Some(x) = wlan_rx_frame.next().await {
             match x {
@@ -269,7 +257,6 @@ fn main() -> Result<()> {
             }
         }
     });
-
 
     let mut seq = 0u64;
     let mut input_handle = handle.clone();
@@ -303,36 +290,24 @@ fn main() -> Result<()> {
         if let Ok(new_index) = input.parse::<u32>() {
             println!("Setting source index to {}", input);
 
-            async_io::block_on(
-                input_handle
-                .call(
-                    src_selector, 
-                    output_index_port_id, 
-                    Pmt::U32(new_index)
-                )
-            )?;
+            async_io::block_on(input_handle.call(
+                src_selector,
+                output_index_port_id,
+                Pmt::U32(new_index),
+            ))?;
 
-            async_io::block_on(
-                input_handle
-                    .call(
-                        sink_selector, 
-                        input_index_port_id, 
-                        Pmt::U32(new_index)
-                    )
-            )?;
-            async_io::block_on(
-                input_handle
-                    .call(
-                        message_selector, 
-                        output_selector_port_id, 
-                        Pmt::U32(new_index)
-                    )
-            )?;
+            async_io::block_on(input_handle.call(
+                sink_selector,
+                input_index_port_id,
+                Pmt::U32(new_index),
+            ))?;
+            async_io::block_on(input_handle.call(
+                message_selector,
+                output_selector_port_id,
+                Pmt::U32(new_index),
+            ))?;
         } else {
             println!("Input not parsable: {}", input);
         }
     }
-    
-
-
 }

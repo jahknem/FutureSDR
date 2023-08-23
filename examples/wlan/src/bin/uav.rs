@@ -168,16 +168,40 @@ fn main() -> Result<()> {
         .set_sample_rate(Direction::Tx, args.soapy_tx_channel, args.sample_rate)
         .unwrap();
     soapy_dev
-        .set_component_frequency(Direction::Tx, args.soapy_tx_channel, "RF", args.tx_center_freq, "")
+        .set_component_frequency(
+            Direction::Tx,
+            args.soapy_tx_channel,
+            "RF",
+            args.tx_center_freq,
+            "",
+        )
         .unwrap();
     soapy_dev
-        .set_component_frequency(Direction::Tx, args.soapy_tx_channel, "BB", args.tx_freq_offset, "")
+        .set_component_frequency(
+            Direction::Tx,
+            args.soapy_tx_channel,
+            "BB",
+            args.tx_freq_offset,
+            "",
+        )
         .unwrap();
     soapy_dev
-        .set_component_frequency(Direction::Rx, args.soapy_rx_channel, "RF", args.rx_center_freq, "")
+        .set_component_frequency(
+            Direction::Rx,
+            args.soapy_rx_channel,
+            "RF",
+            args.rx_center_freq,
+            "",
+        )
         .unwrap();
     soapy_dev
-        .set_component_frequency(Direction::Rx, args.soapy_rx_channel, "BB", args.rx_freq_offset, "")
+        .set_component_frequency(
+            Direction::Rx,
+            args.soapy_rx_channel,
+            "BB",
+            args.rx_freq_offset,
+            "",
+        )
         .unwrap();
     //soapy_dev.set_frequency(Direction::Tx, args.soapy_tx_channel, 2.45e9+4e6, "").unwrap();
     //soapy_dev.set_frequency(Direction::Rx, args.soapy_rx_channel, 2.45e9-4e6, "").unwrap();

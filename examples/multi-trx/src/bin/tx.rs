@@ -13,8 +13,8 @@ use futuresdr::blocks::SoapySinkBuilder;
 use futuresdr::num_complex::Complex32;
 use futuresdr::runtime::buffer::circular::Circular;
 use futuresdr::runtime::Flowgraph;
-use futuresdr::runtime::Runtime;
 use futuresdr::runtime::Pmt;
+use futuresdr::runtime::Runtime;
 
 use wlan::fft_tag_propagation as wlan_fft_tag_propagation;
 use wlan::parse_channel as wlan_parse_channel;
@@ -24,8 +24,8 @@ use wlan::Mapper as WlanMapper;
 use wlan::Mcs as WlanMcs;
 use wlan::Prefix as WlanPrefix;
 
-use zigbee::parse_channel as zigbee_parse_channel;
 use zigbee::modulator as zigbee_modulator;
+use zigbee::parse_channel as zigbee_parse_channel;
 use zigbee::IqDelay as ZigbeeIqDelay;
 use zigbee::Mac as ZigbeeMac;
 
@@ -62,8 +62,7 @@ use wlan::MAX_SYM;
 const PAD_FRONT: usize = 5000;
 const PAD_TAIL: usize = 5000;
 
-
-fn main() -> Result<()>{
+fn main() -> Result<()> {
     let args = Args::parse();
     println!("Configuration {:?}", args);
 
@@ -72,13 +71,13 @@ fn main() -> Result<()>{
     let sample_rate = [args.wlan_sample_rate, args.zigbee_sample_rate];
 
     let mut fg = Flowgraph::new();
-    
+
     let selector = Selector::<Complex32, 2, 1>::new(args.drop_policy);
     let input_index_port_id = selector
         .message_input_name_to_id("input_index")
         .expect("No input_index port found!");
     let selector = fg.add_block(selector);
-    
+
     let mut soapy = SoapySinkBuilder::new()
         .freq(freq[0])
         .sample_rate(sample_rate[0])
@@ -93,13 +92,13 @@ fn main() -> Result<()>{
 
     //message handler to change frequency and sample rate during runtime
     let freq_input_port_id = soapy
-        .message_input_name_to_id("freq") 
+        .message_input_name_to_id("freq")
         .expect("No freq port found!");
     let sample_rate_input_port_id = soapy
         .message_input_name_to_id("sample_rate")
         .expect("No sample_rate port found!");
     let sink = fg.add_block(soapy);
-    
+
     fg.connect_stream(selector, "out0", sink, "in")?;
 
     // ========================================
@@ -173,14 +172,14 @@ fn main() -> Result<()>{
 
     let mut input_handle = handle.clone();
 
-    let (sender, receiver) = channel();    
+    let (sender, receiver) = channel();
 
     let mut mode = 0;
 
     rt.spawn_background(async move {
         loop {
             Timer::after(Duration::from_secs_f32(0.8)).await;
-            if let Some(new_mode) = receiver.try_recv().ok(){
+            if let Some(new_mode) = receiver.try_recv().ok() {
                 mode = new_mode;
             }
             println!("Mode {:?}", mode);
@@ -196,7 +195,7 @@ fn main() -> Result<()>{
                         ))),
                     )
                     .await
-                    .unwrap();   
+                    .unwrap();
             }
             //Zigbee message
             if mode == 1 {
@@ -212,7 +211,7 @@ fn main() -> Result<()>{
             seq += 1;
         }
     });
-    
+
     // Keep asking user for the selection
     loop {
         println!("Enter a new Input index");
@@ -225,38 +224,28 @@ fn main() -> Result<()>{
 
         // If the user entered a valid number, set the new frequency and sample rate by sending a message to the `FlowgraphHandle`
         if let Ok(new_index) = input.parse::<u32>() {
-
             sender.send(new_index)?;
             println!("Setting source index to {}", input);
 
-            async_io::block_on(
-                input_handle
-                    .call(
-                        sink, 
-                        freq_input_port_id, 
-                        Pmt::F64(freq[new_index as usize])
-                    )
-                )?;
+            async_io::block_on(input_handle.call(
+                sink,
+                freq_input_port_id,
+                Pmt::F64(freq[new_index as usize]),
+            ))?;
             println!("Set frequency to {:?}", freq[new_index as usize]);
-            
-            async_io::block_on(
-                input_handle
-                    .call(
-                        sink, 
-                        sample_rate_input_port_id, 
-                        Pmt::F64(sample_rate[new_index as usize])
-                    )
-                )?;
+
+            async_io::block_on(input_handle.call(
+                sink,
+                sample_rate_input_port_id,
+                Pmt::F64(sample_rate[new_index as usize]),
+            ))?;
             println!("Set  sample rate to {:?}", sample_rate[new_index as usize]);
-            
-            async_io::block_on(
-                input_handle
-                    .call(
-                        selector, 
-                        input_index_port_id, 
-                        Pmt::U32(new_index)
-                    )
-                )?;
+
+            async_io::block_on(input_handle.call(
+                selector,
+                input_index_port_id,
+                Pmt::U32(new_index),
+            ))?;
             println!("Set selector input to {:?}", new_index);
         } else {
             println!("Input not parsable: {}", input);

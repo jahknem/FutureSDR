@@ -89,7 +89,10 @@ impl Kernel for Prefix {
                 output[out_offset + 1..out_offset + std::cmp::max(self.pad_tail, 1)]
                     .fill(Complex32::new(0.0, 0.0));
 
-                output.iter_mut().take(self.pad_front + std::cmp::max(self.pad_tail, 1) + len * 80 + 320).for_each(|v| *v *= 0.6);  // TODO make scaling optional and configurable
+                output
+                    .iter_mut()
+                    .take(self.pad_front + std::cmp::max(self.pad_tail, 1) + len * 80 + 320)
+                    .for_each(|v| *v *= 0.6); // TODO make scaling optional and configurable
 
                 sio.input(0).consume(len * 64);
                 let produce = self.pad_front + std::cmp::max(self.pad_tail, 1) + len * 80 + 320;

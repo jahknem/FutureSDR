@@ -1,10 +1,11 @@
 use futures::AsyncReadExt;
 use futures::AsyncWriteExt;
-use futuresdr::log::{info, debug};
+use futuresdr::log::{debug, info};
 use std::cmp;
 
 use futuresdr::anyhow::{bail, Context, Result};
 use futuresdr::async_trait::async_trait;
+use futuresdr::num_complex::Complex32;
 use futuresdr::runtime::Block;
 use futuresdr::runtime::BlockMeta;
 use futuresdr::runtime::BlockMetaBuilder;
@@ -14,24 +15,22 @@ use futuresdr::runtime::MessageIoBuilder;
 use futuresdr::runtime::StreamIo;
 use futuresdr::runtime::StreamIoBuilder;
 use futuresdr::runtime::WorkIo;
-use futuresdr::num_complex::Complex32;
-
 
 use std::any::TypeId;
 
-pub struct Complex32Serializer {
-}
-pub struct Complex32Deserializer {
-}
+pub struct Complex32Serializer {}
+pub struct Complex32Deserializer {}
 
 impl Complex32Serializer {
     pub fn new() -> Block {
         Block::new(
             BlockMetaBuilder::new("Complex32Serializer").build(),
-            StreamIoBuilder::new().add_input::<Complex32>("in").add_output::<u8>("out").build(),
+            StreamIoBuilder::new()
+                .add_input::<Complex32>("in")
+                .add_output::<u8>("out")
+                .build(),
             MessageIoBuilder::new().build(),
-            Complex32Serializer {
-            },
+            Complex32Serializer {},
         )
     }
 }
@@ -39,10 +38,12 @@ impl Complex32Deserializer {
     pub fn new() -> Block {
         Block::new(
             BlockMetaBuilder::new("Complex32Deserializer").build(),
-            StreamIoBuilder::new().add_input::<u8>("in").add_output::<Complex32>("out").build(),
+            StreamIoBuilder::new()
+                .add_input::<u8>("in")
+                .add_output::<Complex32>("out")
+                .build(),
             MessageIoBuilder::new().build(),
-            Complex32Deserializer {
-            },
+            Complex32Deserializer {},
         )
     }
 }
@@ -57,7 +58,6 @@ impl Kernel for Complex32Serializer {
         _mio: &mut MessageIo<Self>,
         _meta: &mut BlockMeta,
     ) -> Result<()> {
-
         let mut out = sio.output(0).slice::<u8>();
         if out.is_empty() {
             return Ok(());
@@ -70,13 +70,16 @@ impl Kernel for Complex32Serializer {
             // convert Complex32 to bytes
             let n_input_to_produce = cmp::min(input.len(), out.len() / 8);
             if n_input_to_produce > 0 {
-                let n_bytes_to_produce: usize = n_input_to_produce *8;
+                let n_bytes_to_produce: usize = n_input_to_produce * 8;
                 for i in 0..n_input_to_produce {
                     out[i * 8..i * 8 + 4].copy_from_slice(&input[i].re.to_ne_bytes());
                     out[i * 8 + 4..i * 8 + 8].copy_from_slice(&input[i].im.to_ne_bytes());
                 }
                 sio.output(0).produce(n_bytes_to_produce);
-                debug!("converted {} Complex32s to {} bytes.", n_input_to_produce, n_bytes_to_produce);
+                debug!(
+                    "converted {} Complex32s to {} bytes.",
+                    n_input_to_produce, n_bytes_to_produce
+                );
             }
 
             if sio.input(0).finished() {
@@ -85,7 +88,6 @@ impl Kernel for Complex32Serializer {
 
             sio.input(0).consume(n_input_to_produce);
         }
-
 
         Ok(())
     }
@@ -110,7 +112,6 @@ impl Kernel for Complex32Deserializer {
         _mio: &mut MessageIo<Self>,
         _meta: &mut BlockMeta,
     ) -> Result<()> {
-
         let mut out = sio.output(0).slice::<Complex32>();
         if out.is_empty() {
             return Ok(());
@@ -126,12 +127,21 @@ impl Kernel for Complex32Deserializer {
                 let n_output_to_produce: usize = n_input_to_produce / 8;
                 for i in 0..n_output_to_produce {
                     out[i] = Complex32::new(
-                        f32::from_ne_bytes(input[i * 8..i * 8 + 4].try_into().expect("does not happen")),
-                        f32::from_ne_bytes(input[i * 8 + 4..i * 8 + 8].try_into().expect("does not happen")),
+                        f32::from_ne_bytes(
+                            input[i * 8..i * 8 + 4].try_into().expect("does not happen"),
+                        ),
+                        f32::from_ne_bytes(
+                            input[i * 8 + 4..i * 8 + 8]
+                                .try_into()
+                                .expect("does not happen"),
+                        ),
                     );
                 }
                 sio.output(0).produce(n_output_to_produce);
-                debug!("converted {} bytes to {} Complex32s.", n_input_to_produce, n_output_to_produce);
+                debug!(
+                    "converted {} bytes to {} Complex32s.",
+                    n_input_to_produce, n_output_to_produce
+                );
             }
 
             if sio.input(0).finished() {
@@ -153,4 +163,3 @@ impl Kernel for Complex32Deserializer {
         Ok(())
     }
 }
-

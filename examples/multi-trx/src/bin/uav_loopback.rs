@@ -43,11 +43,10 @@ use wlan::SyncShort as WlanSyncShort;
 use wlan::MAX_SYM;
 
 use zigbee::modulator as zigbee_modulator;
-use zigbee::IqDelay as ZigbeeIqDelay;
-use zigbee::Mac as ZigbeeMac;
 use zigbee::ClockRecoveryMm as ZigbeeClockRecoveryMm;
 use zigbee::Decoder as ZigbeeDecoder;
-
+use zigbee::IqDelay as ZigbeeIqDelay;
+use zigbee::Mac as ZigbeeMac;
 
 const PAD_FRONT: usize = 10000;
 const PAD_TAIL: usize = 10000;
@@ -141,7 +140,7 @@ fn main() -> Result<()> {
         "in",
         Circular::with_size(prefix_in_size),
     )?;
-    
+
     fg.connect_stream_with_type(
         wlan_prefix,
         "out",
@@ -153,7 +152,7 @@ fn main() -> Result<()> {
     // ============================================
     // WLAN RECEIVER
     // ============================================
-    
+
     let wlan_delay = fg.add_block(WlanDelay::<Complex32>::new(16));
     fg.connect_stream(src_selector, "out0", wlan_delay, "in")?;
 
@@ -199,7 +198,6 @@ fn main() -> Result<()> {
     let wlan_blob_to_udp = fg.add_block(futuresdr::blocks::BlobToUdp::new("127.0.0.1:55556"));
     fg.connect_message(wlan_decoder, "rftap", wlan_blob_to_udp, "in")?;
 
-
     // ========================================
     // ZIGBEE RECEIVER
     // ========================================
@@ -241,7 +239,6 @@ fn main() -> Result<()> {
     //fg.connect_stream(zigbee_mac, "out", null_sink, "in")?;
     //fg.connect_message(zigbee_mac, "out", zigbee_blob_to_udp, "in")?;
 
-
     // ========================================
     // ZIGBEE TRANSMITTER
     // ========================================
@@ -265,7 +262,6 @@ fn main() -> Result<()> {
     let message_selector = fg.add_block(message_selector);
     fg.connect_message(message_selector, "out0", wlan_mac, "tx")?;
     fg.connect_message(message_selector, "out1", zigbee_mac, "tx")?;
-
 
     // ========================================
     // Spectrum
@@ -327,9 +323,10 @@ fn main() -> Result<()> {
             let (n, e) = socket.recv_from(&mut buf).await.unwrap();
             handle
                 .call(
-                    message_selector, 
-                    message_in_port_id, 
-                    Pmt::Blob(buf[0..n].to_vec()))
+                    message_selector,
+                    message_in_port_id,
+                    Pmt::Blob(buf[0..n].to_vec()),
+                )
                 .await
                 .unwrap();
             tx_endpoint.send(e).unwrap();
@@ -338,12 +335,13 @@ fn main() -> Result<()> {
             loop {
                 let (n, _) = socket.recv_from(&mut buf).await.unwrap();
                 handle
-                .call(
-                    message_selector, 
-                    message_in_port_id, 
-                    Pmt::Blob(buf[0..n].to_vec()))
-                .await
-                .unwrap();
+                    .call(
+                        message_selector,
+                        message_in_port_id,
+                        Pmt::Blob(buf[0..n].to_vec()),
+                    )
+                    .await
+                    .unwrap();
             }
         });
 
@@ -361,7 +359,7 @@ fn main() -> Result<()> {
                     }
                 } else {
                     warn!("cannot read from MessagePipe receiver");
-                }    
+                }
             }
         });
 
@@ -377,8 +375,7 @@ fn main() -> Result<()> {
                     }
                 } else {
                     warn!("cannot read from MessagePipe receiver");
-               }   
-                
+                }
             }
         });
     } else if let Some(remote) = args.remote_udp {
@@ -398,7 +395,7 @@ fn main() -> Result<()> {
                             .call(
                                 message_selector,
                                 message_in_port_id,
-                                Pmt::Blob(buf[0..n].to_vec())
+                                Pmt::Blob(buf[0..n].to_vec()),
                             )
                             .await
                             .unwrap();
@@ -418,7 +415,7 @@ fn main() -> Result<()> {
                         warn!("pmt to tx was not a blob");
                     }
                 } else {
-                     warn!("cannot read from MessagePipe receiver");
+                    warn!("cannot read from MessagePipe receiver");
                 }
             }
         });
@@ -434,12 +431,9 @@ fn main() -> Result<()> {
                     }
                 } else {
                     warn!("cannot read from MessagePipe receiver");
-               }   
-                
+                }
             }
         });
-
-        
     } else {
         info!("No UDP forwarding configured");
         rt.spawn_background(async move {
@@ -470,33 +464,23 @@ fn main() -> Result<()> {
         // If the user entered a valid number, set the new frequency, gain and sample rate by sending a message to the `FlowgraphHandle`
         if let Ok(new_index) = input.parse::<u32>() {
             println!("Setting source index to {}", input);
-            async_io::block_on(
-                input_handle
-                    .call(
-                        src_selector, 
-                        output_index_port_id, 
-                        Pmt::U32(new_index)
-                )
-            )?;
-            async_io::block_on(
-                input_handle
-                    .call(
-                        sink_selector, 
-                        input_index_port_id, 
-                        Pmt::U32(new_index)
-                    )
-            )?;
-            async_io::block_on(
-                input_handle
-                    .call(
-                        message_selector, 
-                        output_selector_port_id, 
-                        Pmt::U32(new_index)
-                    )
-            )?;
+            async_io::block_on(input_handle.call(
+                src_selector,
+                output_index_port_id,
+                Pmt::U32(new_index),
+            ))?;
+            async_io::block_on(input_handle.call(
+                sink_selector,
+                input_index_port_id,
+                Pmt::U32(new_index),
+            ))?;
+            async_io::block_on(input_handle.call(
+                message_selector,
+                output_selector_port_id,
+                Pmt::U32(new_index),
+            ))?;
         } else {
             println!("Input not parsable: {}", input);
         }
     }
-
 }

@@ -1,7 +1,7 @@
 use async_net::{TcpListener, TcpStream};
 use futures::AsyncReadExt;
 use futures::AsyncWriteExt;
-use futuresdr::log::{info, warn, debug};
+use futuresdr::log::{debug, info, warn};
 use std::thread::sleep;
 use std::time::Duration;
 
@@ -47,10 +47,7 @@ impl TcpSink {
             BlockMetaBuilder::new("TcpSink").build(),
             StreamIoBuilder::new().add_input::<u8>("in").build(),
             MessageIoBuilder::new().build(),
-            TcpSink {
-                port,
-                socket: None,
-            },
+            TcpSink { port, socket: None },
         )
     }
 }
@@ -65,7 +62,6 @@ impl Kernel for TcpSource {
         _mio: &mut MessageIo<Self>,
         _meta: &mut BlockMeta,
     ) -> Result<()> {
-
         let out = sio.output(0).slice::<u8>();
         if out.is_empty() {
             return Ok(());
@@ -100,13 +96,17 @@ impl Kernel for TcpSource {
         while self.socket.is_none() {
             if let Ok(socket) = TcpStream::connect(self.remote_socket.clone()).await {
                 self.socket = Some(socket);
-            }
-            else {
-                warn!("could not connect local TCP source to remote TCP sink yet, retrying in 5s...");
+            } else {
+                warn!(
+                    "could not connect local TCP source to remote TCP sink yet, retrying in 5s..."
+                );
                 sleep(Duration::from_secs(5));
             }
         }
-        info!("connected local TCP source to remote tcp sink ({})", self.remote_socket);
+        info!(
+            "connected local TCP source to remote tcp sink ({})",
+            self.remote_socket
+        );
         Ok(())
     }
 }
@@ -121,7 +121,6 @@ impl Kernel for TcpSink {
         _mio: &mut MessageIo<Self>,
         _meta: &mut BlockMeta,
     ) -> Result<()> {
-
         let i = sio.input(0).slice::<u8>();
 
         match self
@@ -152,11 +151,7 @@ impl Kernel for TcpSink {
         _meta: &mut BlockMeta,
     ) -> Result<()> {
         let mut listener = Some(TcpListener::bind(format!("0.0.0.0:{}", self.port)).await?);
-        let (socket, _) = listener
-            .as_mut()
-            .context("no listener")?
-            .accept()
-            .await?;
+        let (socket, _) = listener.as_mut().context("no listener")?.accept().await?;
         self.socket = Some(socket);
         info!("remote tcp exchanger accepted connection");
         Ok(())

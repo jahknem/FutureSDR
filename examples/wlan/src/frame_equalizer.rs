@@ -1,11 +1,11 @@
 use futuresdr::log::warn;
 
-use crate::{FrameParam, MAX_PAYLOAD_SIZE};
 use crate::Mcs;
 use crate::Modulation;
 use crate::ViterbiDecoder;
 use crate::LONG;
 use crate::POLARITY;
+use crate::{FrameParam, MAX_PAYLOAD_SIZE};
 
 use futuresdr::anyhow::Result;
 use futuresdr::async_trait::async_trait;

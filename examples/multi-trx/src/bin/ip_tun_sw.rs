@@ -1,9 +1,9 @@
+use async_process::Command;
+use clap::Parser;
+use forky_tun::{self, Configuration};
 use std::collections::HashMap;
 use std::thread::sleep;
-use clap::Parser;
 use std::time::Duration;
-use async_process::Command;
-use forky_tun::{self, Configuration};
 // use futures::StreamExt;
 // use futures::sink::SinkExt;
 use std::net::Ipv4Addr;
@@ -34,18 +34,18 @@ use futuresdr::runtime::Runtime;
 
 use multitrx::MessageSelector;
 
+use multitrx::AWGNComplex32;
+use multitrx::Complex32Deserializer;
+use multitrx::Complex32Serializer;
 use multitrx::IPDSCPRewriter;
 use multitrx::MetricsReporter;
 use multitrx::TcpSink;
 use multitrx::TcpSource;
-use multitrx::Complex32Serializer;
-use multitrx::Complex32Deserializer;
-use multitrx::AWGNComplex32;
 
-use wlan::MAX_PAYLOAD_SIZE;
 use wlan::fft_tag_propagation as wlan_fft_tag_propagation;
 use wlan::Decoder as WlanDecoder;
 use wlan::Delay as WlanDelay;
+use wlan::MAX_PAYLOAD_SIZE;
 // use wlan::Encoder as WlanEncoder;
 use multitrx::Encoder as WlanEncoder;
 use wlan::FrameEqualizer as WlanFrameEqualizer;
@@ -64,7 +64,6 @@ use zigbee::IqDelay as ZigbeeIqDelay;
 use multitrx::ZigbeeMac;
 use zigbee::ClockRecoveryMm as ZigbeeClockRecoveryMm;
 use zigbee::Decoder as ZigbeeDecoder;
-
 
 const PAD_FRONT: usize = 10000;
 const PAD_TAIL: usize = 10000;
@@ -118,7 +117,7 @@ const DSCP_EF: u8 = 0b101110 << 2;
 const NUM_PROTOCOLS: usize = 2;
 static MTU_VALUES: [usize; NUM_PROTOCOLS] = [
     MAX_PAYLOAD_SIZE, // WiFi
-    256 - 4 - 5 - 2  // Zigbee: 256 bytes max frame size - 4 bytes TUN metadata - 5 bytes mac header - 2 bytes mac footer (checksum)
+    256 - 4 - 5 - 2, // Zigbee: 256 bytes max frame size - 4 bytes TUN metadata - 5 bytes mac header - 2 bytes mac footer (checksum)
 ];
 
 fn main() -> Result<()> {
@@ -128,9 +127,9 @@ fn main() -> Result<()> {
     let flow_priority_map: HashMap<u16, u8> = HashMap::from([
         (14550, DSCP_EF),
         (18570, DSCP_EF),
-        (10317, DSCP_EF),  // https://gazebosim.org/api/transport/11.0/envvars.html
+        (10317, DSCP_EF), // https://gazebosim.org/api/transport/11.0/envvars.html
         (10318, DSCP_EF),
-    ]);  // TODO
+    ]); // TODO
 
     let mut size = 4096;
     let prefix_in_size = loop {
@@ -202,7 +201,7 @@ fn main() -> Result<()> {
         "in",
         Circular::with_size(prefix_in_size),
     )?;
-    
+
     fg.connect_stream_with_type(
         wlan_prefix,
         "out",
@@ -215,8 +214,11 @@ fn main() -> Result<()> {
     // WLAN RECEIVER
     // ============================================
 
-    let metrics_reporter = fg.add_block(MetricsReporter::new(args.metrics_reporting_socket, args.local_ip.clone()));
-    
+    let metrics_reporter = fg.add_block(MetricsReporter::new(
+        args.metrics_reporting_socket,
+        args.local_ip.clone(),
+    ));
+
     let wlan_delay = fg.add_block(WlanDelay::<Complex32>::new(16));
     fg.connect_stream(src_selector, "out0", wlan_delay, "in")?;
 
@@ -263,7 +265,6 @@ fn main() -> Result<()> {
     let wlan_blob_to_udp = fg.add_block(futuresdr::blocks::BlobToUdp::new("127.0.0.1:55556"));
     fg.connect_message(wlan_decoder, "rftap", wlan_blob_to_udp, "in")?;
 
-
     // ========================================
     // ZIGBEE RECEIVER
     // ========================================
@@ -306,7 +307,6 @@ fn main() -> Result<()> {
     //fg.connect_stream(zigbee_mac, "out", null_sink, "in")?;
     //fg.connect_message(zigbee_mac, "out", zigbee_blob_to_udp, "in")?;
 
-
     // ========================================
     // ZIGBEE TRANSMITTER
     // ========================================
@@ -346,7 +346,6 @@ fn main() -> Result<()> {
     let ip_dscp_rewriter = fg.add_block(ip_dscp_rewriter);
     fg.connect_message(ip_dscp_rewriter, "out", metrics_reporter, "tx_in")?;
     fg.connect_message(ip_dscp_rewriter, "out", message_selector, "message_in")?;
-
 
     // ========================================
     // Spectrum
@@ -393,20 +392,24 @@ fn main() -> Result<()> {
         });
     }
 
-    info!("Acting as IP tunnel from {} to {}.", args.local_ip.clone(), args.remote_ip);
+    info!(
+        "Acting as IP tunnel from {} to {}.",
+        args.local_ip.clone(),
+        args.remote_ip
+    );
     let mut tun_config = Configuration::default();
-        tun_config
-            .name("chanem")
-            .address(args.local_ip.clone())
-            .netmask((255, 255, 255, 0))
-            .destination(args.remote_ip.clone())
-            .queues(1)
-            .mtu(MTU_VALUES[0].try_into().unwrap())
-            .up();
-        #[cfg(target_os = "linux")]
-        tun_config.platform(|tun_config| {
-            tun_config.packet_information(true);
-        });
+    tun_config
+        .name("chanem")
+        .address(args.local_ip.clone())
+        .netmask((255, 255, 255, 0))
+        .destination(args.remote_ip.clone())
+        .queues(1)
+        .mtu(MTU_VALUES[0].try_into().unwrap())
+        .up();
+    #[cfg(target_os = "linux")]
+    tun_config.platform(|tun_config| {
+        tun_config.packet_information(true);
+    });
 
     let rt_tokio = tokio::runtime::Runtime::new().unwrap();
     let (tx_tun_dev1, mut rx_tun_dev1) = tokio::sync::mpsc::channel(1);
@@ -421,7 +424,7 @@ fn main() -> Result<()> {
         // let tun_queue3 = tun_queues.remove(0);
         // println!("{:?}", tun_queue2.get_ref().tun);
         match tx_tun_dev1.send(tun_queue1).await {
-            Ok(_) => {},
+            Ok(_) => {}
             Err(_) => panic!("could not send TUN interface handle out of async creation context."),
         }
         // println!("{:?}", tun_queue2.get_ref().as_raw_fd());
@@ -431,7 +434,8 @@ fn main() -> Result<()> {
     });
 
     println!("receiving TUN queue");
-    let tun_queue1: std::sync::Arc<forky_tun::AsyncQueue> = std::sync::Arc::new(rx_tun_dev1.blocking_recv().unwrap());
+    let tun_queue1: std::sync::Arc<forky_tun::AsyncQueue> =
+        std::sync::Arc::new(rx_tun_dev1.blocking_recv().unwrap());
     println!("received TUN queue");
     rx_tun_dev1.close();
     let tun_queue2 = tun_queue1.clone();
@@ -453,19 +457,15 @@ fn main() -> Result<()> {
 
                     print!("s");
                     handle
-                    .call(
-                        ip_dscp_rewriter,
-                        fg_tx_port,
-                        Pmt::Blob(buf[0..n].to_vec())
-                    )
-                    .await
-                    .unwrap();
+                        .call(ip_dscp_rewriter, fg_tx_port, Pmt::Blob(buf[0..n].to_vec()))
+                        .await
+                        .unwrap();
                     // if let Ok(_res) = socket_metrics.send(format!("{},tx,{}", local_ip1, n).as_bytes()).await {
                     //     // info!("server sent a frame.")
                     // } else {
                     //     warn!("could not send metric update.")
                     // }
-                },
+                }
                 Err(err) => panic!("Error: {:?}", err),
             }
         }
@@ -511,14 +511,20 @@ fn main() -> Result<()> {
                 }
             } else {
                 warn!("cannot read from MessagePipe receiver");
-           }
-
+            }
         }
     });
 
     // protocol switching message handler:
-    info!("listening for protocol switch on port {}.", args.protocol_switching_ctrl_port);
-    let socket = block_on(UdpSocket::bind((Ipv4Addr::UNSPECIFIED, args.protocol_switching_ctrl_port as u16))).unwrap();
+    info!(
+        "listening for protocol switch on port {}.",
+        args.protocol_switching_ctrl_port
+    );
+    let socket = block_on(UdpSocket::bind((
+        Ipv4Addr::UNSPECIFIED,
+        args.protocol_switching_ctrl_port as u16,
+    )))
+    .unwrap();
 
     rt.spawn_background(async move {
         let mut current_mtu = MTU_VALUES[0];
@@ -586,5 +592,4 @@ fn main() -> Result<()> {
     loop {
         sleep(Duration::from_secs(5));
     }
-
 }

@@ -1,10 +1,11 @@
 use futures::AsyncReadExt;
 use futures::AsyncWriteExt;
-use futuresdr::log::{info, debug};
+use futuresdr::log::{debug, info};
 use std::cmp;
 
 use futuresdr::anyhow::{bail, Context, Result};
 use futuresdr::async_trait::async_trait;
+use futuresdr::num_complex::Complex32;
 use futuresdr::runtime::Block;
 use futuresdr::runtime::BlockMeta;
 use futuresdr::runtime::BlockMetaBuilder;
@@ -14,9 +15,8 @@ use futuresdr::runtime::MessageIoBuilder;
 use futuresdr::runtime::StreamIo;
 use futuresdr::runtime::StreamIoBuilder;
 use futuresdr::runtime::WorkIo;
-use futuresdr::num_complex::Complex32;
-use rand_distr::{Distribution, Normal};
 use rand::prelude::thread_rng;
+use rand_distr::{Distribution, Normal};
 use std::f32::consts::SQRT_2;
 
 // use std::any::TypeId;
@@ -24,20 +24,23 @@ use std::f32::consts::SQRT_2;
 // use std::ops::Add;
 
 // pub struct AWGN<T> where T: Copy + Add, Standard: Distribution<T>{
-pub struct AWGNComplex32{
+pub struct AWGNComplex32 {
     power: f32,
     power_sqrt: f32,
     distribution: Normal<f32>,
 }
 
 // impl AWGN<T> where T: Copy + Add {
-impl AWGNComplex32 where {
+impl AWGNComplex32 {
     pub fn new(power: f32) -> Block {
         Block::new(
             // BlockMetaBuilder::new("AWGN").build(),
             BlockMetaBuilder::new("AWGNComplex32").build(),
             // StreamIoBuilder::new().add_input::<T>("in").add_output::<T>("out").build(),
-            StreamIoBuilder::new().add_input::<Complex32>("in").add_output::<Complex32>("out").build(),
+            StreamIoBuilder::new()
+                .add_input::<Complex32>("in")
+                .add_output::<Complex32>("out")
+                .build(),
             MessageIoBuilder::new().build(),
             // AWGN<T> {
             AWGNComplex32 {
@@ -58,7 +61,6 @@ impl AWGNComplex32 where {
         let sample = self.power_sqrt * sample;
         return sample;
     }
-
 }
 
 #[doc(hidden)]
@@ -71,7 +73,6 @@ impl Kernel for AWGNComplex32 {
         _mio: &mut MessageIo<Self>,
         _meta: &mut BlockMeta,
     ) -> Result<()> {
-
         let mut out = sio.output(0).slice::<Complex32>();
         if out.is_empty() {
             return Ok(());
@@ -97,7 +98,6 @@ impl Kernel for AWGNComplex32 {
 
             sio.input(0).consume(n_samples_to_produce);
         }
-
 
         Ok(())
     }

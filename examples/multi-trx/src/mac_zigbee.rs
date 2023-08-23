@@ -20,6 +20,7 @@ use futuresdr::runtime::StreamIo;
 use futuresdr::runtime::StreamIoBuilder;
 use futuresdr::runtime::Tag;
 use futuresdr::runtime::WorkIo;
+use futuresdr::macros::message_handler;
 
 #[cfg(target_arch = "wasm32")]
 #[wasm_bindgen]
@@ -31,7 +32,7 @@ const MAX_FRAMES: usize = 128;
 const MAX_FRAME_SIZE: usize = 256;
 
 fn get_dscp_priority(data: &Vec<u8>) -> u8 {
-    let dscp_index = 4 + 1;  // 4 bytes added by TUN adapter + offset in IP header
+    let dscp_index = 4 + 1; // 4 bytes added by TUN adapter + offset in IP header
     data[dscp_index]
 }
 
@@ -75,17 +76,16 @@ impl Mac {
         )
     }
 
+    #[message_handler]
     pub fn flush_queue<'a>(
         &'a mut self,
-        mio: &'a mut MessageIo<Mac>,
+        _io: &'a mut WorkIo,
+        _mio: &'a mut MessageIo<Self>,
         _meta: &'a mut BlockMeta,
         p: Pmt,
-    ) -> Pin<Box<dyn Future<Output = Result<Pmt>> + Send + 'a>> {
-        async move {
-            self.tx_frames.flush();
-            Ok(Pmt::Null)
-        }
-        .boxed()
+    ) -> Result<Pmt> {
+        self.tx_frames.flush();
+        Ok(Pmt::Null)
     }
 
     fn calc_crc(data: &[u8]) -> u16 {
@@ -113,97 +113,97 @@ impl Mac {
         Self::calc_crc(data) == 0
     }
 
+    #[message_handler]
     fn received<'a>(
         &'a mut self,
-        mio: &'a mut MessageIo<Mac>,
+        _io: &'a mut WorkIo,
+        mio: &'a mut MessageIo<Self>,
         _meta: &'a mut BlockMeta,
         p: Pmt,
-    ) -> Pin<Box<dyn Future<Output = Result<Pmt>> + Send + 'a>> {
-        async move {
-            match p {
-                Pmt::Blob(data) => {
-                    if Self::check_crc(&data) && data.len() > 2 {
-                        debug!("received frame, crc correct, payload length {}", data.len());
-                        #[cfg(target_arch = "wasm32")]
-                        rxed_frame(data.clone());
+    ) -> Result<Pmt> {
+        match p {
+            Pmt::Blob(data) => {
+                if Self::check_crc(&data) && data.len() > 2 {
+                    debug!("received frame, crc correct, payload length {}", data.len());
+                    #[cfg(target_arch = "wasm32")]
+                    rxed_frame(data.clone());
 
-                        let mut rftap = vec![0; data.len() + 12];
-                        rftap[0..4].copy_from_slice("RFta".as_bytes());
-                        rftap[4..6].copy_from_slice(&3u16.to_le_bytes());
-                        rftap[6..8].copy_from_slice(&1u16.to_le_bytes());
-                        rftap[8..12].copy_from_slice(&195u32.to_le_bytes());
-                        rftap[12..].copy_from_slice(&data);
-                        mio.output_mut(1).post(Pmt::Blob(rftap)).await;
+                    let mut rftap = vec![0; data.len() + 12];
+                    rftap[0..4].copy_from_slice("RFta".as_bytes());
+                    rftap[4..6].copy_from_slice(&3u16.to_le_bytes());
+                    rftap[6..8].copy_from_slice(&1u16.to_le_bytes());
+                    rftap[8..12].copy_from_slice(&195u32.to_le_bytes());
+                    rftap[12..].copy_from_slice(&data);
+                    mio.output_mut(1).post(Pmt::Blob(rftap)).await;
 
-                        self.n_received += 1;
-                        let s = String::from_iter(
-                            data.iter()
-                                .map(|x| char::from(*x))
-                                .map(|x| if x.is_ascii() { x } else { '.' })
-                                .map(|x| {
-                                    if ['\x0b', '\x0c', '\n', '\t', '\r'].contains(&x) {
-                                        '.'
-                                    } else {
-                                        x
-                                    }
-                                }),
-                        );
-                        debug!("{}", s);
-                        mio.output_mut(0).post(Pmt::Blob(data)).await;
-                    } else {
-                        debug!("received frame, crc wrong");
-                    }
-                }
-                _ => {
-                    warn!(
-                        "ZigBee Mac: received wrong PMT type in RX callback (expected Pmt::Blob)"
+                    self.n_received += 1;
+                    let s = String::from_iter(
+                        data.iter()
+                            .map(|x| char::from(*x))
+                            .map(|x| if x.is_ascii() { x } else { '.' })
+                            .map(|x| {
+                                if ['\x0b', '\x0c', '\n', '\t', '\r'].contains(&x) {
+                                    '.'
+                                } else {
+                                    x
+                                }
+                            }),
                     );
+                    debug!("{}", s);
+                    mio.output_mut(0).post(Pmt::Blob(data)).await;
+                } else {
+                    debug!("received frame, crc wrong");
                 }
             }
-            Ok(Pmt::Null)
+            _ => {
+                warn!(
+                    "ZigBee Mac: received wrong PMT type in RX callback (expected Pmt::Blob)"
+                );
+            }
         }
-        .boxed()
+        Ok(Pmt::Null)
     }
 
+    #[message_handler]
     fn transmit<'a>(
         &'a mut self,
-        _mio: &'a mut MessageIo<Mac>,
+        _io: &'a mut WorkIo,
+        _mio: &'a mut MessageIo<Self>,
         _meta: &'a mut BlockMeta,
         p: Pmt,
-    ) -> Pin<Box<dyn Future<Output = Result<Pmt>> + Send + 'a>> {
-        async move {
-            match p {
-                Pmt::Blob(data) => {
-                    // 2 crc
-                    if data.len() > MAX_FRAME_SIZE - 5 {
-                        warn!(
-                            "ZigBee Mac: TX frame too large ({}, max {}). Dropping.",
-                            data.len(),
-                            MAX_FRAME_SIZE - 5
-                        );
-                    } else {
-                        let priority = get_dscp_priority(&data);
-                        self.tx_frames.push_back(data, priority);
-                    }
-                }
-                _ => {
+    ) -> Result<Pmt> {
+        match p {
+            Pmt::Blob(data) => {
+                // 2 crc
+                if data.len() > MAX_FRAME_SIZE - 5 {
                     warn!(
-                        "ZigBee Mac: received wrong PMT type in TX callback (expected Pmt::Blob)"
+                        "ZigBee Mac: TX frame too large ({}, max {}). Dropping.",
+                        data.len(),
+                        MAX_FRAME_SIZE - 5
                     );
+                } else {
+                    let priority = get_dscp_priority(&data);
+                    self.tx_frames.push_back(data, priority);
                 }
             }
-            Ok(Pmt::Null)
+            _ => {
+                warn!(
+                    "ZigBee Mac: received wrong PMT type in TX callback (expected Pmt::Blob)"
+                );
+            }
         }
-        .boxed()
+        Ok(Pmt::Null)
     }
 
+    #[message_handler]
     fn stats<'a>(
         &'a mut self,
-        _mio: &'a mut MessageIo<Mac>,
+        _io: &'a mut WorkIo,
+        _mio: &'a mut MessageIo<Self>,
         _meta: &'a mut BlockMeta,
-        _p: Pmt,
-    ) -> Pin<Box<dyn Future<Output = Result<Pmt>> + Send + 'a>> {
-        async move { Ok(Pmt::VecU64(vec![self.n_sent, self.n_received])) }.boxed()
+        p: Pmt,
+    ) -> Result<Pmt> {
+        Ok(Pmt::VecU64(vec![self.n_sent, self.n_received]))
     }
 }
 
