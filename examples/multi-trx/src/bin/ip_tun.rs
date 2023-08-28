@@ -35,6 +35,7 @@ use futuresdr::futures::channel::mpsc;
 use futuresdr::futures::StreamExt;
 use futuresdr::log::info;
 use futuresdr::log::warn;
+use futuresdr::log::debug;
 use futuresdr::num_complex::Complex32;
 use futuresdr::runtime::buffer::circular::Circular;
 use futuresdr::runtime::Flowgraph;
@@ -77,6 +78,8 @@ use zigbee::IqDelay as ZigbeeIqDelay;
 use multitrx::ZigbeeMac;
 use zigbee::ClockRecoveryMm as ZigbeeClockRecoveryMm;
 use zigbee::Decoder as ZigbeeDecoder;
+
+
 
 // const PAD_FRONT: usize = 10000;
 // const PAD_TAIL: usize = 10000;
@@ -197,6 +200,8 @@ struct Args {
     flow_priority_file: String,
 }
 
+const LARGE_ENOUGH_BUFFER_SIZE_FOR_AARONIA_BURST: usize = 1122580;
+
 const DSCP_EF: u8 = 0b101110 << 2;
 const NUM_PROTOCOLS: usize = 2;
 const PROTOCOL_INDEX_WIFI: usize = 0;
@@ -256,7 +261,10 @@ fn main() -> Result<()> {
     // ==========================================
 
     let filter = args.device_filter.unwrap_or_else(|| "".to_string());
+    let is_soapy_dev = filter.clone().contains("driver=soapy");
+    println!("is_soapy_dev: {}", is_soapy_dev);
     let seify_dev = Device::from_args(&*filter).unwrap();
+
     seify_dev
         .set_sample_rate(Rx, args.soapy_rx_channel, sample_rate[0])
         .unwrap();
@@ -271,10 +279,12 @@ fn main() -> Result<()> {
     //     .set_dc_offset_mode(Rx, args.soapy_rx_channel, true)
     //     .unwrap();
 
+
     // set tx and rx frequencies
     if let (Some(tx_frequency_from_channel), Some(rx_frequency_from_channel)) =
         (tx_freq[0], rx_freq[0])
     {
+
         // if channel has been provided, use channel center frequency from lookup-table
         seify_dev
             .set_frequency(Tx, args.soapy_tx_channel, tx_frequency_from_channel)
@@ -282,7 +292,9 @@ fn main() -> Result<()> {
         seify_dev
             .set_frequency(Rx, args.soapy_rx_channel, rx_frequency_from_channel)
             .unwrap();
-    } else {
+    } else if is_soapy_dev {
+
+        info!("setting soapy frequencies");
         // else use specified center frequency and offset
         seify_dev
             .set_component_frequency(Tx, args.soapy_tx_channel, "RF", center_freq[0])
@@ -295,6 +307,18 @@ fn main() -> Result<()> {
             .unwrap();
         seify_dev
             .set_component_frequency(Rx, args.soapy_rx_channel, "BB", rx_freq_offset[0])
+            .unwrap();
+    } else {  // is aaronia device, no offset for TX and only one real center freq, tx center freq has to be set as center_freq+offset; also other component names
+
+        info!("setting aaronia frequencies");
+        seify_dev
+            .set_component_frequency(Tx, args.soapy_tx_channel, "RF", center_freq[0] + tx_freq_offset[0])
+            .unwrap();
+        seify_dev
+            .set_component_frequency(Rx, args.soapy_rx_channel, "RF", center_freq[0])
+            .unwrap();
+        seify_dev
+            .set_component_frequency(Rx, args.soapy_rx_channel, "DEMOD", -rx_freq_offset[0])
             .unwrap();
     }
 
@@ -352,7 +376,15 @@ fn main() -> Result<()> {
         .message_input_name_to_id("input_index")
         .expect("No input_index port found!");
     let sink_selector = fg.add_block(sink_selector);
-    fg.connect_stream(sink_selector, "out0", sink, "in")?;
+    fg.connect_stream_with_type(
+        sink_selector, "out0",
+        sink, "in",
+        Circular::with_size(LARGE_ENOUGH_BUFFER_SIZE_FOR_AARONIA_BURST),
+    )?;
+    // fg.connect_stream(
+    //     sink_selector, "out0",
+    //     sink, "in",
+    // )?;
 
     //source selector
     let src_selector = Selector::<Complex32, 1, 2>::new(args.drop_policy);
@@ -507,7 +539,14 @@ fn main() -> Result<()> {
 
     fg.connect_stream(zigbee_mac, "out", zigbee_modulator, "in")?;
     fg.connect_stream(zigbee_modulator, "out", zigbee_iq_delay, "in")?;
-    fg.connect_stream(zigbee_iq_delay, "out", sink_selector, "in1")?;
+    // fg.connect_stream(zigbee_iq_delay, "out", sink_selector, "in1")?;
+    fg.connect_stream_with_type(
+        zigbee_iq_delay,
+        "out",
+        sink_selector,
+        "in1",
+        Circular::with_size(LARGE_ENOUGH_BUFFER_SIZE_FOR_AARONIA_BURST),
+    )?;
 
     // ========================================
     // MESSAGE INPUT SELECTOR
@@ -565,14 +604,17 @@ fn main() -> Result<()> {
         rt.spawn_background(async move {
             loop {
                 Timer::after(Duration::from_secs_f32(tx_interval)).await;
+                let dummy_packet = b"\x00\x00\x00\x00\x45\x00\x00\x34\xaf\xf4\x40\x00\x40\x06\x8c\xcd\x7f\x00\x00\x01\x7f\x00\x00\x01\x99\xe2\x9f\xd7\xa6\x79\xa6\xd9\xc9\x3a\x0c\xb4\x80\x10\x02\x00\xfe\x28\x00\x00\x01\x01\x08\x0a\xc2\x08\x96\x5c\xc2\x08\x96\x2f".to_vec();
                 myhandle
                     .call(
                         ip_dscp_rewriter,
                         fg_tx_port,
-                        Pmt::Blob(format!("FutureSDR {}", seq).as_bytes().to_vec()),
+                        Pmt::Blob(dummy_packet),
+                        // Pmt::Blob(format!("FutureSDR {}", seq).as_bytes().to_vec()),
                     )
                     .await
                     .unwrap();
+                debug!("sending sample packet.");
                 seq += 1;
             }
         });

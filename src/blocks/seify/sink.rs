@@ -201,6 +201,7 @@ impl<D: DeviceTrait + Clone> Kernel for Sink<D> {
         io.finished = sio.inputs().iter().any(|x| x.finished());
 
         let consumed = if let Some(len) = t {
+            // debug!("sending in burst mode");
             if n >= len {
                 // send burst
                 let bufs: Vec<&[Complex32]> = bufs.iter().map(|b| &b[0..len]).collect();
@@ -208,15 +209,18 @@ impl<D: DeviceTrait + Clone> Kernel for Sink<D> {
                 debug_assert_eq!(ret, len);
                 ret
             } else {
+                debug!("sink [burst-mode]: waiting for more samples before sending.");
                 // wait for more samples
                 0
             }
         } else {
+            // debug!("sending in non-burst mode");
             // send in non-burst mode
             let ret = streamer.write(&bufs, None, false, 2_000_000)?;
             if ret != n {
                 io.call_again = true;
             }
+            println!("consumed: {}", ret);
             ret
         };
 

@@ -14,6 +14,8 @@ use crate::runtime::Pmt;
 use crate::runtime::StreamIo;
 use crate::runtime::StreamIoBuilder;
 use crate::runtime::WorkIo;
+use crate::runtime::ItemTag;
+use crate::runtime::Tag;
 
 /// Drop Policy for [`Selector`] block
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -67,6 +69,12 @@ impl fmt::Display for DropPolicy {
     }
 }
 
+#[derive(PartialEq, Eq)]
+enum State {
+    FrameStart,
+    Copy(usize),
+}
+
 /// Forward the input stream with a given index to the output stream with a
 /// given index.
 pub struct Selector<A, const N: usize, const M: usize>
@@ -77,6 +85,7 @@ where
     output_index: usize,
     drop_policy: DropPolicy,
     _p1: std::marker::PhantomData<A>,
+    state: State,
 }
 
 impl<A, const N: usize, const M: usize> Selector<A, N, M>
@@ -104,6 +113,7 @@ where
                 output_index: 0,
                 drop_policy,
                 _p1: std::marker::PhantomData,
+                state: State::FrameStart,
             },
         )
     }
@@ -154,26 +164,92 @@ where
         _mio: &mut MessageIo<Self>,
         _meta: &mut BlockMeta,
     ) -> Result<()> {
-        let i = sio.input(self.input_index).slice_unchecked::<u8>();
-        let o = sio.output(self.output_index).slice_unchecked::<u8>();
         let item_size = std::mem::size_of::<A>();
 
-        let m = cmp::min(i.len(), o.len());
-        if m > 0 {
-            unsafe {
-                ptr::copy_nonoverlapping(i.as_ptr(), o.as_mut_ptr(), m);
-            }
-            //     for (v, r) in i.iter().zip(o.iter_mut()) {
-            //         *r = *v;
-            //     }
+        // let m = cmp::min(i.len(), o.len());
+        // if m > 0 {
+        //     unsafe {
+        //         ptr::copy_nonoverlapping(i.as_ptr(), o.as_mut_ptr(), m);
+        //     }
+        //     //     for (v, r) in i.iter().zip(o.iter_mut()) {
+        //     //         *r = *v;
+        //     //     }
+        //
+        // }
 
-            sio.input(self.input_index).consume(m / item_size);
-            sio.output(self.output_index).produce(m / item_size);
+
+
+
+        // TODO handle item_size correctly
+        let i = sio.input(self.input_index).slice_unchecked::<A>();
+        let o = sio.output(self.output_index).slice_unchecked::<A>();
+
+        let mut consumed = 0;
+        let mut produced = 0;
+
+        while produced < o.len() {
+            match self.state {
+                State::FrameStart => {
+                    // println!("www i.len() {}", i.len());
+                    // println!("www o.len() {}", o.len());
+                    // println!("www produced {}", produced);
+                    // println!("www consumed {}", consumed);
+                    // println!("www {:?}", sio
+                    //     .input(self.input_index)
+                    //     .tags().clone());
+                    if consumed == i.len() {
+                        break;
+                    } else if let Some(ItemTag {
+                                    tag: Tag::NamedUsize(name, burst_size), ..
+                                }) = sio
+                        .input(self.input_index)
+                        .tags()
+                        .iter()
+                        .find(|x| x.index == consumed)
+                        .cloned()
+                    {
+                        assert_eq!(name, "burst_start");
+                        self.state = State::Copy(burst_size);
+                        sio.output(0).add_tag(
+                            produced,
+                            Tag::NamedUsize(
+                                "burst_start".to_string(),
+                                burst_size,
+                            ),
+                        );
+                    } else {
+                        debug!("wait for rest of burst befor sending..");
+                        break;  // wait for rest of burst to be written into in buffer (start tag is written at end of burst..)
+                        // panic!("no frame start tag");
+                    }
+                }
+                State::Copy(left) => {
+                    if left == 0 {
+                        self.state = State::FrameStart;
+                    } else if consumed == i.len() {
+                        break;
+                    } else {
+                        let n_to_produce = cmp::min(cmp::min(i.len(), o.len()), left);
+                        unsafe {
+                            ptr::copy_nonoverlapping(i.as_ptr().add(consumed), o.as_mut_ptr().add(produced), n_to_produce);
+                        }
+                        produced += n_to_produce;
+                        consumed += n_to_produce;
+                        self.state = State::Copy(left - n_to_produce);
+                    }
+                }
+            }
         }
+
+        // println!("ddd produced {}", produced);
+        // println!("ddd consumed {}", consumed);
+        sio.input(self.input_index).consume(consumed);
+        sio.output(self.output_index).produce(produced);
+
 
         if self.drop_policy != DropPolicy::NoDrop {
             let nb_drop = if self.drop_policy == DropPolicy::SameRate {
-                m / item_size // Drop at the same rate as the selected one
+                consumed / item_size // Drop at the same rate as the selected one
             } else {
                 std::usize::MAX // Drops all other inputs
             };
@@ -186,7 +262,7 @@ where
         }
 
         // Maybe this should be configurable behaviour? finish on current finish? when all input have finished?
-        if sio.input(self.input_index).finished() && m == i.len() {
+        if sio.input(self.input_index).finished() && consumed == i.len() {
             io.finished = true;
         }
 

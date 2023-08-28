@@ -36,7 +36,7 @@ path = "src/bin/uav_loopback.rs"
 [dependencies]
 clap = { version = "3.1.18", features = ["derive"] }
 soapysdr = { version = "0.3.2", optional = true }
-futuresdr = { path = "../.."}
+futuresdr = { path = "../..", features = ["aaronia_http", "soapy"]}
 #futuredsp = { path = "../../futuredsp", version = "0.0.6" }
 zigbee = { path = "../zigbee"}
 wlan = { path = "../wlan"}
@@ -52,3 +52,5 @@ num = "0.4.0"
 rand = "0.8.5"
 rand_distr = "0.4.3"
 seify = { version = "0.8.0", features = ["aaronia_http"] }
+packet-builder = "0.7.0"
+pnet = "0.34.0"
