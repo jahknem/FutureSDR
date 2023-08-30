@@ -179,7 +179,6 @@ where
 
 
 
-
         // TODO handle item_size correctly
         let i = sio.input(self.input_index).slice_unchecked::<A>();
         let o = sio.output(self.output_index).slice_unchecked::<A>();
@@ -200,15 +199,27 @@ where
                     if consumed == i.len() {
                         break;
                     } else if let Some(ItemTag {
-                                    tag: Tag::NamedUsize(name, burst_size), ..
+                                    tag: Tag::NamedUsize(name, burst_size), index: burst_start_index
                                 }) = sio
                         .input(self.input_index)
                         .tags()
                         .iter()
-                        .find(|x| x.index == consumed)
+                        .next()
                         .cloned()
                     {
                         assert_eq!(name, "burst_start");
+                        if burst_start_index != consumed {
+                            // forward all untagged samples in non-burst mode up to the beginning of the found burst tag.
+                            let n_to_produce = cmp::min(burst_start_index - consumed,cmp::min(i.len() - consumed, o.len() - produced));
+                            unsafe {
+                                ptr::copy_nonoverlapping(i.as_ptr().add(consumed), o.as_mut_ptr().add(produced), n_to_produce);
+                            }
+                            produced += n_to_produce;
+                            consumed += n_to_produce;
+                            if sio.inputs().len() > 1 {
+                                warn!("sending {} untagged samples preceding tagged burst, but expected only tagged burst-mode data on outgoing flowgraph..", burst_start_index - consumed);
+                            }
+                        }
                         self.state = State::Copy(burst_size);
                         sio.output(0).add_tag(
                             produced,
@@ -218,18 +229,28 @@ where
                             ),
                         );
                     } else {
-                        debug!("wait for rest of burst befor sending..");
-                        break;  // wait for rest of burst to be written into in buffer (start tag is written at end of burst..)
+                        // no tag in input stream: send all samples in non-burst mdoe
+                        if sio.inputs().len() > 1 {
+                            warn!("forwarding {} samples in non-burst mode, but expected only tagged burst-mode data on outgoing flowgraph.", i.len() - consumed);
+                        }
                         // panic!("no frame start tag");
+                        let n_to_produce = cmp::min(i.len() - consumed, o.len() - produced);
+                        unsafe {
+                            ptr::copy_nonoverlapping(i.as_ptr().add(consumed), o.as_mut_ptr().add(produced), n_to_produce);
+                        }
+                        produced += n_to_produce;
+                        consumed += n_to_produce;
+                        break;  // depleted available input or output buffer, wait for new data
                     }
                 }
                 State::Copy(left) => {
+                    // copy burst of known size
                     if left == 0 {
                         self.state = State::FrameStart;
-                    } else if consumed == i.len() {
+                    } else if consumed == i.len() || produced == o.len() {
                         break;
                     } else {
-                        let n_to_produce = cmp::min(cmp::min(i.len(), o.len()), left);
+                        let n_to_produce = cmp::min(cmp::min(i.len() - consumed, o.len() - produced), left);
                         unsafe {
                             ptr::copy_nonoverlapping(i.as_ptr().add(consumed), o.as_mut_ptr().add(produced), n_to_produce);
                         }
