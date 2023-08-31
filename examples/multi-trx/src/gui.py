@@ -726,7 +726,7 @@ class Ui(QtWidgets.QMainWindow):
                 url="http://10.193.0.73:1347/api/fg/0/",
                 center_freq=int(2.45e9), rx_freq_offset=(-4_000_000, -4_000_000),
                 tx_freq_offset=(-4_000_000, -4_000_000),
-                rx_gain=(60, 60), tx_gain=(40, 40),
+                rx_gain=(10, 10), tx_gain=(10, 10),
                 sample_rate=(4_000_000, 4_000_000),
                 rx_device_channel=0,
                 tx_device_channel=1,
@@ -734,8 +734,8 @@ class Ui(QtWidgets.QMainWindow):
             self.select_path_loss_function(True, 0, invoked_in_gui=False)
             self.stackedWidget.setCurrentIndex(1)
             self.tabWidget.setEnabled(True)
-            self.lineEdit_2.setEnabled(False)
-            self.lineEdit_7.setEnabled(False)
+            self.lineEdit_2.setEnabled(True)
+            self.lineEdit_7.setEnabled(True)
             self.groupBox_3.setEnabled(True)
             self.radio_button_wifi.setEnabled(True)
             self.radio_button_zigbee.setEnabled(True)
@@ -1097,13 +1097,14 @@ class Ui(QtWidgets.QMainWindow):
         ]:
             line_edit.setStyleSheet("color: black;")
         # WiFi settings
+        self.uav_endpoint_controller.set_center_frequency_config(freq=int(float(self.lineEdit_2.text()) * 1_000_000_000))
         self.uav_endpoint_controller.set_rx_gain_config(phy=PHY_WIFI, gain=int(self.lineEdit_6.text()))
         self.uav_endpoint_controller.set_tx_gain_config(phy=PHY_WIFI, gain=int(self.lineEdit_5.text()))
         self.uav_endpoint_controller.set_rx_frequency_offset_config(
-            phy=PHY_WIFI, offset=int(float(self.lineEdit_4.text()) * 1_000_000)
+            phy=PHY_WIFI, offset=int(float(self.lineEdit_3.text()) * 1_000_000)
         )
         self.uav_endpoint_controller.set_tx_frequency_offset_config(
-            phy=PHY_WIFI, offset=-int(float(self.lineEdit_3.text()) * 1_000_000)
+            phy=PHY_WIFI, offset=int(float(self.lineEdit_4.text()) * 1_000_000)
         )
         # bandwidth probably coupled to sample rate in the background, see:
         # https://electronics.stackexchange.com/a/120969
@@ -1120,10 +1121,10 @@ class Ui(QtWidgets.QMainWindow):
         self.uav_endpoint_controller.set_rx_gain_config(phy=PHY_ZIGBEE, gain=int(self.lineEdit_17.text()))
         self.uav_endpoint_controller.set_tx_gain_config(phy=PHY_ZIGBEE, gain=int(self.lineEdit_18.text()))
         self.uav_endpoint_controller.set_rx_frequency_offset_config(
-            phy=PHY_ZIGBEE, offset=int(float(self.lineEdit_9.text()) * 1_000_000)
+            phy=PHY_ZIGBEE, offset=int(float(self.lineEdit_8.text()) * 1_000_000)
         )
         self.uav_endpoint_controller.set_tx_frequency_offset_config(
-            phy=PHY_ZIGBEE, offset=-int(float(self.lineEdit_8.text()) * 1_000_000)
+            phy=PHY_ZIGBEE, offset=int(float(self.lineEdit_9.text()) * 1_000_000)
         )
         self.uav_endpoint_controller.set_sample_rate_config(
             phy=PHY_ZIGBEE,
@@ -1132,10 +1133,11 @@ class Ui(QtWidgets.QMainWindow):
         if not dryrun:
             self.uav_endpoint_controller.select_phy(self.uav_endpoint_controller.current_phy)
         # WiFi settings
+        self.ground_endpoint_controller.set_center_frequency_config(freq=int(float(self.lineEdit_2.text()) * 1_000_000_000))
         self.ground_endpoint_controller.set_rx_gain_config(phy=PHY_WIFI, gain=int(self.lineEdit_13.text()))
         self.ground_endpoint_controller.set_tx_gain_config(phy=PHY_WIFI, gain=int(self.lineEdit_14.text()))
         self.ground_endpoint_controller.set_rx_frequency_offset_config(
-            phy=PHY_WIFI, offset=-int(float(self.lineEdit_4.text()) * 1_000_000)
+            phy=PHY_WIFI, offset=int(float(self.lineEdit_4.text()) * 1_000_000)
         )
         self.ground_endpoint_controller.set_tx_frequency_offset_config(
             phy=PHY_WIFI, offset=int(float(self.lineEdit_3.text()) * 1_000_000)
@@ -1148,7 +1150,7 @@ class Ui(QtWidgets.QMainWindow):
         self.ground_endpoint_controller.set_rx_gain_config(phy=PHY_ZIGBEE, gain=int(self.lineEdit_19.text()))
         self.ground_endpoint_controller.set_tx_gain_config(phy=PHY_ZIGBEE, gain=int(self.lineEdit_20.text()))
         self.ground_endpoint_controller.set_rx_frequency_offset_config(
-            phy=PHY_ZIGBEE, offset=-int(float(self.lineEdit_9.text()) * 1_000_000)
+            phy=PHY_ZIGBEE, offset=int(float(self.lineEdit_9.text()) * 1_000_000)
         )
         self.ground_endpoint_controller.set_tx_frequency_offset_config(
             phy=PHY_ZIGBEE, offset=int(float(self.lineEdit_8.text()) * 1_000_000)
@@ -1164,16 +1166,16 @@ class Ui(QtWidgets.QMainWindow):
         self.lineEdit.setText("4")
         self.lineEdit_6.setText("60")
         self.lineEdit_5.setText("60")
-        self.lineEdit_13.setText("60")
-        self.lineEdit_14.setText("70")
+        self.lineEdit_13.setText("10")
+        self.lineEdit_14.setText("10")
         self.lineEdit_4.setText("4")
         self.lineEdit_3.setText("-4")
         self.lineEdit_2.setText("2.45")
         self.lineEdit_10.setText("4")
         self.lineEdit_17.setText("60")
         self.lineEdit_18.setText("60")
-        self.lineEdit_19.setText("60")
-        self.lineEdit_20.setText("70")
+        self.lineEdit_19.setText("10")
+        self.lineEdit_20.setText("10")
         self.lineEdit_9.setText("4")
         self.lineEdit_8.setText("-4")
         self.lineEdit_7.setText("2.45")

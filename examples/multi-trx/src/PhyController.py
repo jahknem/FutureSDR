@@ -46,15 +46,16 @@ class PhyController:
         soapy_sink_id = -1
 
         for block in self.blocks:
+            # print(block["instance_name"])
             if block["instance_name"] == "Selector<2, 1>_0":
                 source_selector_id = block["id"]
             if block["instance_name"] == "Selector<1, 2>_0":
                 sink_selector_id = block["id"]
             if block["instance_name"] == "MessageSelector_0":
                 message_selector_id = block["id"]
-            if block["instance_name"] == "SoapySink_0":
+            if block["instance_name"] == "Sink_0":
                 soapy_sink_id = block["id"]
-            if block["instance_name"] == "SoapySource_0":
+            if block["instance_name"] == "Source_0":
                 soapy_source_id = block["id"]
 
         if (source_selector_id == -1) or (sink_selector_id == -1) or (soapy_source_id == -1) or (
@@ -76,13 +77,11 @@ class PhyController:
         self.soapy_source_freq_url = "{0}block/{1}/call/0/".format(url, soapy_source_id)
         self.soapy_source_gain_url = "{0}block/{1}/call/1/".format(url, soapy_source_id)
         self.soapy_source_sample_rate_url = "{0}block/{1}/call/2/".format(url, soapy_source_id)
-        self.soapy_source_center_freq_url = "{0}block/{1}/call/4/".format(url, soapy_source_id)
-        self.soapy_source_freq_offset_url = "{0}block/{1}/call/5/".format(url, soapy_source_id)
+        self.soapy_source_freq_offset_url = "{0}block/{1}/call/4/".format(url, soapy_source_id)
         self.soapy_sink_freq_url = "{0}block/{1}/call/0/".format(url, soapy_sink_id)
         self.soapy_sink_gain_url = "{0}block/{1}/call/1/".format(url, soapy_sink_id)
         self.soapy_sink_sample_rate_url = "{0}block/{1}/call/2/".format(url, soapy_sink_id)
-        self.soapy_sink_center_freq_url = "{0}block/{1}/call/4/".format(url, soapy_sink_id)
-        self.soapy_sink_freq_offset_url = "{0}block/{1}/call/5/".format(url, soapy_sink_id)
+        self.soapy_sink_freq_offset_url = "{0}block/{1}/call/4/".format(url, soapy_sink_id)
 
     def use_center_frequency_offset_mode(self, use: bool):
         """
@@ -90,17 +89,17 @@ class PhyController:
         """
         self.center_offset_mode = use
 
-    def set_rx_frequency_config(self, phy, frequency):
-        """
-        sets rx frequency  of the corresponding phy. applies config on next phy selection
-        """
-        self.rx_freq[phy] = frequency
-
-    def set_tx_frequency_config(self, phy, frequency):
-        """
-        sets tx frequency  of the corresponding phy. applies config on next phy selection
-        """
-        self.tx_freq[phy] = frequency
+    # def set_rx_frequency_config(self, phy, frequency):
+    #     """
+    #     sets rx frequency  of the corresponding phy. applies config on next phy selection
+    #     """
+    #     self.rx_freq[phy] = frequency
+    #
+    # def set_tx_frequency_config(self, phy, frequency):
+    #     """
+    #     sets tx frequency  of the corresponding phy. applies config on next phy selection
+    #     """
+    #     self.tx_freq[phy] = frequency
 
     def set_rx_gain_config(self, phy, gain):
         """
@@ -187,17 +186,17 @@ class PhyController:
         """
         requests.post(self.soapy_sink_sample_rate_url, json={"F64": int(sample_rate)})
 
-    def set_rx_center_frequency(self, freq, channel):
-        """
-        set center frquency via message handler
-        """
-        requests.post(self.soapy_source_center_freq_url, json={"VecPmt": [{"F64": int(freq)}, {"U32": int(channel)}]})
+    # def set_rx_center_frequency(self, freq, channel):
+    #     """
+    #     set center frquency via message handler
+    #     """
+    #     requests.post(self.soapy_source_center_freq_url, json={"VecPmt": [{"F64": int(freq)}, {"U32": int(channel)}]})
 
-    def set_tx_center_frequency(self, freq, channel):
-        """
-        set center frquency via message handler
-        """
-        requests.post(self.soapy_sink_center_freq_url, json={"VecPmt": [{"F64": int(freq)}, {"U32": int(channel)}]})
+    # def set_tx_center_frequency(self, freq, channel):
+    #     """
+    #     set center frquency via message handler
+    #     """
+    #     requests.post(self.soapy_sink_center_freq_url, json={"VecPmt": [{"F64": int(freq)}, {"U32": int(channel)}]})
 
     def set_rx_frequency_offset(self, offset, channel):
         """
@@ -219,6 +218,18 @@ class PhyController:
         """
         select the PHY protocol (WLAN = 0, Bluetooth =1)
         """
+        requests.post(self.soapy_source_freq_url, json={"F64": int(self.center_freq)})
+        requests.post(self.soapy_sink_freq_url, json={"F64": int(self.center_freq)})
+        requests.post(
+            self.soapy_source_freq_offset_url,
+            # json={"VecPmt": [{"F64": int(self.rx_freq_offset[phy])}, {"U32": self.rx_device_channel}]}
+            json={"F64": int(self.rx_freq_offset[phy])}
+        )
+        requests.post(
+            self.soapy_sink_freq_offset_url,
+            # json={"VecPmt": [{"F64": int(self.tx_freq_offset[phy])}, {"U32": self.tx_device_channel}]}
+            json={"F64": int(self.tx_freq_offset[phy])}
+        )
         requests.post(self.source_selector_url, json={"U32": phy})
         requests.post(self.sink_selector_url, json={"U32": phy})
         requests.post(self.message_selector_url, json={"U32": phy})
@@ -227,23 +238,19 @@ class PhyController:
         requests.post(self.soapy_sink_gain_url, json={"F64": int(self.tx_gain[phy])})
         requests.post(self.soapy_sink_sample_rate_url, json={"F64": int(self.sample_rate[phy])})
         if self.center_offset_mode:
-            requests.post(
-                self.soapy_source_center_freq_url,
-                json={"VecPmt": [{"F64": int(self.center_freq)}, {"U32": self.rx_device_channel}]}
-            )
-            requests.post(
-                self.soapy_sink_center_freq_url,
-                json={"VecPmt": [{"F64": int(self.center_freq)}, {"U32": self.tx_device_channel}]}
-            )
-            requests.post(
-                self.soapy_source_freq_offset_url,
-                json={"VecPmt": [{"F64": int(self.rx_freq_offset[phy])}, {"U32": self.rx_device_channel}]}
-            )
-            requests.post(
-                self.soapy_sink_freq_offset_url,
-                json={"VecPmt": [{"F64": int(self.tx_freq_offset[phy])}, {"U32": self.tx_device_channel}]}
-            )
+            # requests.post(
+            #     self.soapy_source_freq_url,
+            #     # json={"VecPmt": [{"F64": int(self.center_freq)}, {"U32": self.rx_device_channel}]}  # TODO
+            #     json={"F64": int(self.center_freq)}
+            # )
+            # requests.post(
+            #     self.soapy_sink_freq_url,
+            #     # json={"VecPmt": [{"F64": int(self.center_freq)}, {"U32": self.tx_device_channel}]}
+            #     json={"F64": int(self.center_freq)}
+            # )
+            pass
         else:
+            raise NotImplementedError()
             requests.post(self.soapy_source_freq_url, json={"F64": int(self.rx_freq[phy])})
             requests.post(self.soapy_sink_freq_url, json={"F64": int(self.tx_freq[phy])})
         self.current_phy = phy

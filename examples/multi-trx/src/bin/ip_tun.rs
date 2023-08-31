@@ -12,7 +12,7 @@ use tokio;
 // use packet::ip::Packet;
 // use futuresdr::blocks::soapy::SoapyDevSpec::Dev;
 use futuresdr::anyhow::Result;
-use futuresdr::async_io;
+// use futuresdr::async_io;
 use futuresdr::async_io::block_on;
 use futuresdr::async_io::Timer;
 // use futuresdr::async_net::SocketAddr;
@@ -306,7 +306,7 @@ fn main() -> Result<()> {
             .set_component_frequency(Rx, args.soapy_rx_channel, "RF", center_freq[0])
             .unwrap();
         seify_dev
-            .set_component_frequency(Rx, args.soapy_rx_channel, "BB", rx_freq_offset[0])
+            .set_component_frequency(Rx, args.soapy_rx_channel, "BB", -rx_freq_offset[0])
             .unwrap();
     } else {  // is aaronia device, no offset for TX and only one real center freq, tx center freq has to be set as center_freq+offset; also other component names
 
@@ -318,15 +318,15 @@ fn main() -> Result<()> {
             .set_component_frequency(Rx, args.soapy_rx_channel, "RF", center_freq[0])
             .unwrap();
         seify_dev
-            .set_component_frequency(Rx, args.soapy_rx_channel, "DEMOD", -rx_freq_offset[0])
+            .set_component_frequency(Rx, args.soapy_rx_channel, "DEMOD", rx_freq_offset[0])
             .unwrap();
     }
 
-    let mut sink = SinkBuilder::new()
+    let mut sink = SinkBuilder::new().driver(if is_soapy_dev {"soapy"} else {"aaronia_http"})
         .device(seify_dev.clone())
         .gain(tx_gain[0]);
         // .dev_channels(vec![args.soapy_tx_channel]);  // TODO find out how to select channel with seify
-    let mut src = SourceBuilder::new()
+    let mut src = SourceBuilder::new().driver(if is_soapy_dev {"soapy"} else {"aaronia_http"})
         .device(seify_dev)
         .gain(rx_gain[0]);
         // .dev_channels(vec![args.soapy_rx_channel]);
@@ -599,7 +599,7 @@ fn main() -> Result<()> {
 
     // if tx_interval is set, send messages periodically
     if let Some(tx_interval) = args.tx_interval {
-        let mut seq = 0u64;
+        // let mut seq = 0u64;
         let mut myhandle: FlowgraphHandle = handle.clone();
         rt.spawn_background(async move {
             loop {
@@ -615,7 +615,7 @@ fn main() -> Result<()> {
                     .await
                     .unwrap();
                 debug!("sending sample packet.");
-                seq += 1;
+                // seq += 1;
             }
         });
     }

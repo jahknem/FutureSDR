@@ -7,7 +7,7 @@ use wlan::MAX_PSDU_SIZE;
 
 use futuresdr::anyhow::Result;
 use futuresdr::async_trait::async_trait;
-use futuresdr::futures::FutureExt;
+// use futuresdr::futures::FutureExt;
 use futuresdr::log::warn;
 use futuresdr::runtime::Block;
 use futuresdr::runtime::BlockMeta;
@@ -21,8 +21,8 @@ use futuresdr::runtime::StreamIoBuilder;
 use futuresdr::runtime::Tag;
 use futuresdr::runtime::WorkIo;
 use futuresdr::macros::message_handler;
-use std::future::Future;
-use std::pin::Pin;
+// use std::future::Future;
+// use std::pin::Pin;
 
 const MAX_FRAMES: usize = 1000;
 
@@ -78,7 +78,7 @@ impl Encoder {
         _io: &'a mut WorkIo,
         _mio: &'a mut MessageIo<Self>,
         _meta: &'a mut BlockMeta,
-        p: Pmt,
+        _p: Pmt,
     ) -> Result<Pmt> {
         self.tx_frames.flush();
         Ok(Pmt::Null)

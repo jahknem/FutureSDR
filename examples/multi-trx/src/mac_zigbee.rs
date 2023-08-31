@@ -1,13 +1,13 @@
 use crate::{BoundedDiscretePriorityQueue, PRIORITY_VALUES};
 
-use std::future::Future;
-use std::pin::Pin;
+// use std::future::Future;
+// use std::pin::Pin;
 #[cfg(target_arch = "wasm32")]
 use wasm_bindgen::prelude::*;
 
 use futuresdr::anyhow::Result;
 use futuresdr::async_trait::async_trait;
-use futuresdr::futures::FutureExt;
+// use futuresdr::futures::FutureExt;
 use futuresdr::log::{debug, warn};
 use futuresdr::runtime::Block;
 use futuresdr::runtime::BlockMeta;
@@ -82,7 +82,7 @@ impl Mac {
         _io: &'a mut WorkIo,
         _mio: &'a mut MessageIo<Self>,
         _meta: &'a mut BlockMeta,
-        p: Pmt,
+        _p: Pmt,
     ) -> Result<Pmt> {
         self.tx_frames.flush();
         Ok(Pmt::Null)
@@ -201,7 +201,7 @@ impl Mac {
         _io: &'a mut WorkIo,
         _mio: &'a mut MessageIo<Self>,
         _meta: &'a mut BlockMeta,
-        p: Pmt,
+        _p: Pmt,
     ) -> Result<Pmt> {
         Ok(Pmt::VecU64(vec![self.n_sent, self.n_received]))
     }

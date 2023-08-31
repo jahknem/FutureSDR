@@ -1,9 +1,9 @@
-use futures::AsyncReadExt;
-use futures::AsyncWriteExt;
-use futuresdr::log::{debug, info};
+// use futures::AsyncReadExt;
+// use futures::AsyncWriteExt;
+use futuresdr::log::debug;
 use std::cmp;
 
-use futuresdr::anyhow::{bail, Context, Result};
+use futuresdr::anyhow::Result;
 use futuresdr::async_trait::async_trait;
 use futuresdr::num_complex::Complex32;
 use futuresdr::runtime::Block;
@@ -16,7 +16,7 @@ use futuresdr::runtime::StreamIo;
 use futuresdr::runtime::StreamIoBuilder;
 use futuresdr::runtime::WorkIo;
 
-use std::any::TypeId;
+// use std::any::TypeId;
 
 pub struct Complex32Serializer {}
 pub struct Complex32Deserializer {}

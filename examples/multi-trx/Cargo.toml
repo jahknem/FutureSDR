@@ -10,28 +10,36 @@ default-run = "rx"
 crate-type = ["cdylib", "rlib"]
 
 [[bin]]
-name = "rx"
-path = "src/bin/rx.rs"
+name = "ip_tun"
+path = "src/bin/ip_tun.rs"
 
-[[bin]]
-name = "tx"
-path = "src/bin/tx.rs"
-
-[[bin]]
-name = "trx"
-path = "src/bin/trx.rs"
-
-[[bin]]
-name = "loopback"
-path = "src/bin/loopback.rs"
-
-[[bin]]
-name = "uav"
-path = "src/bin/uav.rs"
-
-[[bin]]
-name = "uav-loopback"
-path = "src/bin/uav_loopback.rs"
+#[[bin]]
+#name = "ip_tun_sw"
+#path = "src/bin/ip_tun_sw.rs"
+#
+#[[bin]]
+#name = "rx"
+#path = "src/bin/rx.rs"
+#
+#[[bin]]
+#name = "tx"
+#path = "src/bin/tx.rs"
+#
+#[[bin]]
+#name = "trx"
+#path = "src/bin/trx.rs"
+#
+#[[bin]]
+#name = "loopback"
+#path = "src/bin/loopback.rs"
+#
+#[[bin]]
+#name = "uav"
+#path = "src/bin/uav.rs"
+#
+#[[bin]]
+#name = "uav-loopback"
+#path = "src/bin/uav_loopback.rs"
 
 [dependencies]
 clap = { version = "3.1.18", features = ["derive"] }
@@ -54,3 +62,6 @@ rand_distr = "0.4.3"
 seify = { version = "0.8.0", features = ["aaronia_http"] }
 packet-builder = "0.7.0"
 pnet = "0.34.0"
+
+[patch.crates-io]
+seify = { path = '/sdr/seify' }

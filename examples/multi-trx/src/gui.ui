@@ -557,7 +557,7 @@
        <attribute name="title">
         <string>Path Loss</string>
        </attribute>
-       <layout class="QGridLayout" name="gridLayout_7" rowstretch="1,1,1,0" columnstretch="1,1">
+       <layout class="QGridLayout" name="gridLayout_7" rowstretch="1,1,1" columnstretch="1,1">
         <item row="0" column="1">
          <widget class="QGroupBox" name="groupBox_13">
           <property name="font">
@@ -1453,14 +1453,14 @@
                  <item row="1" column="0">
                   <widget class="QLabel" name="label_4">
                    <property name="text">
-                    <string>TX</string>
+                    <string>GA</string>
                    </property>
                   </widget>
                  </item>
                  <item row="0" column="0">
                   <widget class="QLabel" name="label_5">
                    <property name="text">
-                    <string>RX</string>
+                    <string>AG</string>
                    </property>
                   </widget>
                  </item>
@@ -1784,14 +1784,14 @@
                  <item row="1" column="0">
                   <widget class="QLabel" name="label_17">
                    <property name="text">
-                    <string>TX</string>
+                    <string>GA</string>
                    </property>
                   </widget>
                  </item>
                  <item row="0" column="0">
                   <widget class="QLabel" name="label_18">
                    <property name="text">
-                    <string>RX</string>
+                    <string>AG</string>
                    </property>
                   </widget>
                  </item>
@@ -1962,7 +1962,7 @@
      <x>0</x>
      <y>0</y>
      <width>1134</width>
-     <height>20</height>
+     <height>22</height>
     </rect>
    </property>
   </widget>

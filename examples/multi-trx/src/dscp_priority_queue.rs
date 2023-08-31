@@ -1,4 +1,4 @@
-use futuresdr::futures::SinkExt;
+// use futuresdr::futures::SinkExt;
 use std::cmp::Ord;
 use std::collections::{HashMap, VecDeque};
 use std::fmt::{Binary, Display};
