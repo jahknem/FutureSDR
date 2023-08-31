@@ -1,7 +1,7 @@
-use seify::Args;
+use seify::{Args, Driver};
 use seify::Device;
 use seify::DeviceTrait;
-use seify::Direction::Tx;
+use seify::Direction::{Rx, Tx};
 use seify::GenericDevice;
 use seify::TxStreamer;
 
@@ -30,10 +30,11 @@ pub struct Sink<D: DeviceTrait + Clone> {
     dev: Device<D>,
     streamer: Option<D::TxStreamer>,
     start_time: Option<i64>,
+    driver: Option<Driver>
 }
 
 impl<D: DeviceTrait + Clone> Sink<D> {
-    pub(super) fn new(dev: Device<D>, channels: Vec<usize>, start_time: Option<i64>) -> Block {
+    pub(super) fn new(dev: Device<D>, channels: Vec<usize>, start_time: Option<i64>, driver: Option<Driver>) -> Block {
         assert!(!channels.is_empty());
 
         let mut siob = StreamIoBuilder::new();
@@ -60,6 +61,7 @@ impl<D: DeviceTrait + Clone> Sink<D> {
                 dev,
                 start_time,
                 streamer: None,
+                driver: driver
             },
         )
     }
@@ -87,10 +89,10 @@ impl<D: DeviceTrait + Clone> Sink<D> {
     ) -> Result<Pmt> {
         for c in &self.channels {
             match &p {
-                Pmt::F32(v) => self.dev.set_frequency(Tx, *c, *v as f64)?,
-                Pmt::F64(v) => self.dev.set_frequency(Tx, *c, *v)?,
-                Pmt::U32(v) => self.dev.set_frequency(Tx, *c, *v as f64)?,
-                Pmt::U64(v) => self.dev.set_frequency(Tx, *c, *v as f64)?,
+                Pmt::F32(v) => self.dev.set_component_frequency(Tx, *c, "RF", *v as f64)?,
+                Pmt::F64(v) => self.dev.set_component_frequency(Tx, *c,  "RF", *v)?,
+                Pmt::U32(v) => self.dev.set_component_frequency(Tx, *c,  "RF", *v as f64)?,
+                Pmt::U64(v) => self.dev.set_component_frequency(Tx, *c,  "RF", *v as f64)?,
                 _ => return Ok(Pmt::InvalidValue),
             };
         }
@@ -153,10 +155,21 @@ impl<D: DeviceTrait + Clone> Sink<D> {
             Pmt::U64(v) => *v as f64,
             _ => return Ok(Pmt::InvalidValue),
         };
-        args.set("Offset", offset.to_string());
+        // args.set("Offset", offset.to_string());
         for c in &self.channels {
-            let f = self.dev.frequency(Tx, *c).unwrap();
-            self.dev.set_frequency_with_args(Tx, *c, f, args.clone())?
+            if let Some(d) = &self.driver {
+                match d {
+                    Driver::Soapy => self.dev.set_component_frequency(Tx, *c, "BB", offset)?,
+                    Driver::AaroniaHttp => {
+                        let f = self.dev.component_frequency(Rx, *c, "RF").unwrap();  // get Rx frequency as that is tuning freq and Tx frequency still contains old offset
+                        self.dev.set_component_frequency(Tx, *c, "RF", f + offset)?
+                    },
+                    _ => panic!("setting offset is only supported for drivers soapy and aaronia_http, current driver: {:?}.", d),
+                }
+            }
+            else {
+                panic!("setting offset is only supported if the device driver is known at runtime, as the API is not consistent at this point.")
+            }
         }
         Ok(Pmt::Ok)
     }
@@ -200,29 +213,36 @@ impl<D: DeviceTrait + Clone> Kernel for Sink<D> {
 
         io.finished = sio.inputs().iter().any(|x| x.finished());
 
-        let consumed = if let Some(len) = t {
-            // debug!("sending in burst mode");
-            if n >= len {
-                // send burst
-                let bufs: Vec<&[Complex32]> = bufs.iter().map(|b| &b[0..len]).collect();
-                let ret = streamer.write(&bufs, None, true, 2_000_000)?;
-                debug_assert_eq!(ret, len);
-                ret
+        let mut consumed = 0;
+        while consumed == 0 {
+            consumed = if let Some(len) = t {
+                // debug!("sending in burst mode");
+                if n >= len {
+                    // send burst
+                    let bufs: Vec<&[Complex32]> = bufs.iter().map(|b| &b[0..len]).collect();
+                    let ret = streamer.write(&bufs, None, true, 2_000_000)?;
+                    debug_assert_eq!(ret, len);
+                    ret
+                } else {
+                    println!("sink [burst-mode]: waiting for more samples before sending.");
+                    // wait for more samples
+                    return Ok(())
+                }
             } else {
-                debug!("sink [burst-mode]: waiting for more samples before sending.");
-                // wait for more samples
-                0
-            }
-        } else {
-            // debug!("sending in non-burst mode");
-            // send in non-burst mode
-            let ret = streamer.write(&bufs, None, false, 2_000_000)?;
-            if ret != n {
-                io.call_again = true;
-            }
-            println!("consumed: {}", ret);
-            ret
-        };
+                // debug!("sending in non-burst mode");
+                // send in non-burst mode
+                // let ret = streamer.write(&bufs, None, false, 2_000_000)?;
+                let ret = streamer.write(&bufs, None, false, 2_000_000)?;
+                if ret != n {
+                    io.call_again = true;
+                }
+                println!("sink consumed {} samples in non-burst mode", ret);
+                ret
+            };
+            // if consumed == 0 {
+            //     println!("retry..");
+            // }
+        }
 
         sio.inputs_mut()
             .iter_mut()

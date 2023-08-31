@@ -1,7 +1,9 @@
+use std::fmt::Display;
 use seify::Args;
 use seify::Device;
 use seify::DeviceTrait;
 use seify::Direction;
+use seify::Driver;
 
 use crate::anyhow::{anyhow, Result};
 use crate::blocks::seify::Config;
@@ -14,6 +16,17 @@ pub enum BuilderType {
     Sink,
 }
 
+fn driver_from_str(d: Option<&str>) -> Option<Driver> {
+    match d {
+        Some("soapy") => Some(Driver::Soapy),
+        Some("aaronia_http") => Some(Driver::AaroniaHttp),
+        Some("aaronia") => Some(Driver::Aaronia),
+        Some("rtlsdr") => Some(Driver::RtlSdr),
+        Some(dr) => panic!("unsupported driver {}", dr),
+        None => None,
+    }
+}
+
 /// Seify Device builder
 pub struct Builder<D: DeviceTrait + Clone> {
     args: Args,
@@ -22,6 +35,7 @@ pub struct Builder<D: DeviceTrait + Clone> {
     dev: Option<Device<D>>,
     start_time: Option<i64>,
     builder_type: BuilderType,
+    driver: Option<&'static str>
 }
 
 impl<D: DeviceTrait + Clone> Builder<D> {
@@ -34,6 +48,7 @@ impl<D: DeviceTrait + Clone> Builder<D> {
             dev: None,
             start_time: None,
             builder_type,
+            driver: None
         }
     }
     /// Arguments
@@ -50,6 +65,7 @@ impl<D: DeviceTrait + Clone> Builder<D> {
             dev: Some(dev),
             start_time: self.start_time,
             builder_type: self.builder_type,
+            driver: self.driver
         }
     }
     /// Channel
@@ -87,29 +103,51 @@ impl<D: DeviceTrait + Clone> Builder<D> {
         self.config.sample_rate = Some(s);
         self
     }
+    /// Driver
+    pub fn driver(mut self, d: &'static str) -> Self {
+        self.driver = Some(d);
+        self
+    }
+
     /// Builder Seify block
     pub fn build(mut self) -> Result<Block> {
         match self.dev.take() {
             Some(dev) => match self.builder_type {
                 BuilderType::Sink => {
+                    let driver  = driver_from_str(self.driver);
                     self.config.apply(&dev, &self.channels, Direction::Tx)?;
-                    Ok(Sink::new(dev, self.channels, self.start_time))
+                    Ok(Sink::new(dev, self.channels, self.start_time, driver))
                 }
                 BuilderType::Source => {
+                    let driver  = driver_from_str(self.driver);
                     self.config.apply(&dev, &self.channels, Direction::Rx)?;
-                    Ok(Source::new(dev, self.channels, self.start_time))
+                    Ok(Source::new(dev, self.channels, self.start_time,driver))
                 }
             },
             None => {
+                let driver = match &self.args.get::<Driver>("driver") {
+                    Ok(Driver::Soapy) => Some(Driver::Soapy),
+                    Ok(Driver::AaroniaHttp) => Some(Driver::AaroniaHttp),
+                    Ok(Driver::Aaronia) => Some(Driver::Aaronia),
+                    Ok(Driver::RtlSdr) => Some(Driver::RtlSdr),
+                    Ok(_) => None,
+                    Err(_) => None,
+                };
+                let driver = if driver.is_none() {
+                    if let Some(d) = self.driver {
+                        &self.args.set("driver", d);
+                        driver_from_str(self.driver)  // TODO
+                    } else {None}
+                } else {driver};
                 let dev = Device::from_args(&self.args)?;
                 match self.builder_type {
                     BuilderType::Sink => {
                         self.config.apply(&dev, &self.channels, Direction::Tx)?;
-                        Ok(Sink::new(dev, self.channels, self.start_time))
+                        Ok(Sink::new(dev, self.channels, self.start_time, driver))
                     }
                     BuilderType::Source => {
                         self.config.apply(&dev, &self.channels, Direction::Rx)?;
-                        Ok(Source::new(dev, self.channels, self.start_time))
+                        Ok(Source::new(dev, self.channels, self.start_time, driver))
                     }
                 }
             }
