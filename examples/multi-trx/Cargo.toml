@@ -64,4 +64,4 @@ packet-builder = "0.7.0"
 pnet = "0.34.0"
 
 [patch.crates-io]
-seify = { path = '/sdr/seify' }
+seify = { path = '../../../seify' }

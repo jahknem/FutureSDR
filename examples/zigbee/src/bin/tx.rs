@@ -14,6 +14,10 @@ use zigbee::parse_channel;
 use zigbee::IqDelay;
 use zigbee::Mac;
 
+
+
+use futuresdr::runtime::buffer::circular::Circular;
+
 #[derive(Parser, Debug)]
 #[clap(version)]
 struct Args {
@@ -57,9 +61,30 @@ fn main() -> Result<()> {
 
     let snk = fg.add_block(snk.build()?);
 
-    fg.connect_stream(mac, "out", modulator, "in")?;
-    fg.connect_stream(modulator, "out", iq_delay, "in")?;
-    fg.connect_stream(iq_delay, "out", snk, "in")?;
+    // fg.connect_stream(mac, "out", modulator, "in")?;
+    fg.connect_stream_with_type(
+        mac,
+        "out",
+        modulator,
+        "in",
+        Circular::with_size(112258),
+    )?;
+    // fg.connect_stream(modulator, "out", iq_delay, "in")?;
+    fg.connect_stream_with_type(
+        modulator,
+        "out",
+        iq_delay,
+        "in",
+        Circular::with_size(1122580),
+    )?;
+    // fg.connect_stream(iq_delay, "out", snk, "in")?;
+    fg.connect_stream_with_type(
+        iq_delay,
+        "out",
+        snk,
+        "in",
+        Circular::with_size(1122580),
+    )?;
 
     let rt = Runtime::new();
     let (fg, mut handle) = rt.start_sync(fg);
@@ -72,7 +97,7 @@ fn main() -> Result<()> {
                 .call(
                     0,
                     1,
-                    Pmt::Blob(format!("FutureSDR {seq}").as_bytes().to_vec()),
+                    Pmt::Blob(format!("FutureSDR {seq} FutureSDRFutureSDRFutureSDRFutureSDRFutureSDRFutureSDRFutureSDRFutureSDRFutureSDRFutureSDRFutureSDRFuturSDRFutureSDRFutureSDRFutureSDRFutureSDRFutureSDRFutureSDRFutureSDRFutureSDRFutureSDRFutureSDRFutureSDRFutureSDRFutureSDRFutureSDR").as_bytes().to_vec()),
                 )
                 .await
                 .unwrap();
