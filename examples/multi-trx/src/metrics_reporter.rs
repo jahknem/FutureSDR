@@ -14,6 +14,11 @@ use futuresdr::runtime::Pmt;
 use futuresdr::runtime::StreamIoBuilder;
 use futuresdr::runtime::WorkIo;
 
+use std::time::SystemTime;
+use std::hash::Hash;
+use std::hash::Hasher;
+use std::collections::hash_map::DefaultHasher;
+
 static TUN_INTERFACE_HEADER_LEN: usize = 4;
 
 pub struct MetricsReporter {
@@ -89,16 +94,25 @@ impl MetricsReporter {
         if let Pmt::Blob(buf) = p {
             let dscp_val = buf[TUN_INTERFACE_HEADER_LEN + 1];
             let next_protocol = buf[TUN_INTERFACE_HEADER_LEN + 9];
+            let timestamp = SystemTime::now()
+                .duration_since(SystemTime::UNIX_EPOCH)
+                .unwrap()
+                .as_secs_f64();
+            let mut s = DefaultHasher::new();
+            buf.hash(&mut s);
+            let hash = s.finish();
             if let Err(_) = self
                 .socket_metrics
                 .send(
                     format!(
-                        "{},{},{},{},{}",
+                        "{},{},{},{},{},{},{}",
                         self.local_ip,
                         direction,
                         buf.len(),
                         dscp_val,
-                        next_protocol
+                        next_protocol,
+                        hash,
+                        timestamp
                     )
                     .as_bytes(),
                 )

@@ -8,7 +8,7 @@ import warnings
 from typing import Tuple, List, Dict, Optional
 
 import requests.exceptions
-from PyQt5 import QtWidgets, uic
+from PyQt5 import QtWidgets, uic, QtCore
 import sys
 import socket
 from functools import partial
@@ -22,7 +22,10 @@ import numpy as np
 import struct
 import cmath
 import signal
+from threading import Lock
 from channel_models import get_station_z, distance, calculate_paths_freespace, calculate_paths_two_ray, calculate_paths_ce2r, calculate_paths_9ray_suburban
+
+DATAPOINTS_LOCK = Lock()
 
 signal.signal(signal.SIGINT, signal.SIG_DFL)
 
@@ -79,7 +82,7 @@ RX_PORT_POSITION = 1342
 
 MAX_PATH_LOSS_FOR_PLOTTING = 120
 PLOTTING_INTERVAL_MS = 1000
-RATE_SMOOTHING_FACTOR = 3
+RATE_SMOOTHING_FACTOR = 1
 """
 averages rate over the last x intervals for smoother plotting
 """
@@ -642,12 +645,20 @@ class Ui(QtWidgets.QMainWindow):
 
         self.protocol_switching_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM, socket.getprotobyname("udp"))
         self.path_loss_switching_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM, socket.getprotobyname("udp"))
+
         self.datapoints = {
             ('192.168.42.10', 'tx'): [],
             ('192.168.42.10', 'rx'): [],
             ('192.168.42.11', 'tx'): [],
             ('192.168.42.11', 'rx'): []
         }
+        self.latest_data_rate_values_ag = (0, 0, 0, 0, 0)
+        self.latest_data_rate_values_ga = (0, 0, 0, 0, 0)
+        self._data_rate_tracking_timer = QtCore.QTimer()
+        self._data_rate_tracking_timer.timeout.connect(self.track_tx_rx)
+        self._data_rate_tracking_timer.setInterval(PLOTTING_INTERVAL_MS)
+        self._data_rate_tracking_timer.start()
+
         self.uav_pos: np.ndarray = np.array((0, 0, 0))
         self.uav_orientation: np.ndarray = np.array((0, 0, 0))
         self.taps: tuple[
@@ -810,53 +821,100 @@ class Ui(QtWidgets.QMainWindow):
         # 6 - do not start the thread yet, wait after initializations are finished
         return udp_receiver, thread
 
-    def get_datapoint_data_rate(self, receiver: tuple[str, str], sender: tuple[str, str]):
+    def compute_data_rate(self, receiver: tuple[str, str], sender: tuple[str, str]):
         byte_rates = {}
-        now = int(time.time_ns() / 1_000_000)
-        for key in (receiver, sender):
-            current_data = self.datapoints[key]
-            try:
-                first_relevant_datapoint = next((
-                    i
-                    for i, sample
-                    in enumerate(current_data)
-                    if sample[0] > now - PLOTTING_INTERVAL_MS * RATE_SMOOTHING_FACTOR
-                ))
-                # discard old samples
-                # print(now, current_data[0])
-                self.datapoints[key] = self.datapoints[key][first_relevant_datapoint:]
-            except StopIteration:
-                pass
+        now = time.time()
+        tx_only = []
+        tx_rx = []
+        rx_only = []
+        delay = 0
 
-        def get_byte_rate(key, prioritized: bool):
+        direction = 'AG' if receiver[0] == '192.168.42.10' else 'GA'
+        # (timestamp, len, dscp_priority, next_protocol, hash)
+        with DATAPOINTS_LOCK:
+            tx_timed_out = [
+                timestamp < now - 2
+                for (timestamp, _, _, _, _)
+                in self.datapoints[sender]
+            ]
+            tx_only = [sample for sample, timed_out in zip(self.datapoints[sender], tx_timed_out) if timed_out]
+            self.datapoints[sender] = [sample for sample, timed_out in zip(self.datapoints[sender], tx_timed_out) if not timed_out]
+            for rx in self.datapoints[receiver]:
+                try:
+                    matching_tx = [
+                        sample
+                        for sample
+                        in self.datapoints[sender][::-1]
+                        if sample[0] < rx[0] and sample[1] == rx[1] and sample[4] == rx[4]
+                    ]
+                    # if len(matching_tx) > 1 and direction == 'GA':
+                        # print(f"{direction} multiple mathces possible: {len(matching_tx)}.")
+                    matching_tx = matching_tx[0]
+                    delay_tmp = rx[0] - matching_tx[0]
+                    if delay_tmp > 1:
+                        print(f"high latency sample: {delay_tmp}s.")
+                    delay += delay_tmp
+                    self.datapoints[sender].remove(matching_tx)
+                    tx_rx.append(rx)
+                except (StopIteration, IndexError):
+                    rx_only.append(rx)
+            self.datapoints[receiver] = []
+
+        delay = delay / len(tx_rx) if len(tx_rx) > 0 else 0
+
+        def get_kilobytes_per_second(samples, prioritized: bool):
             bytes_sum = sum((
                 sample[1]
                 for sample
-                in self.datapoints[key]
+                in samples
                 if (
                     (prioritized and sample[2] > 0)
                     or
                     (not prioritized and sample[2] == 0)
                 )
-            )) / RATE_SMOOTHING_FACTOR
+            )) / (PLOTTING_INTERVAL_MS / 1_000)
             return bytes_sum / 1024
+        # ({sum((size for _, size, _, _, _ in tx_only))} bytes)
+        # print(f"{direction}: {len(tx_only)} packages lost (of {len(tx_only) + len(tx_rx)}).")
+        # print(f"{direction}: avg delay {delay}s.")
+        # if direction == 'AG':
+        #     print(f"{direction}: {len(rx_only)} packages delayed more than 2s or corrupted.")
+        if direction == 'GA':
+            print("TX ", tx_only)
+            print("RX ", rx_only)
 
+        return (
+            get_kilobytes_per_second(tx_rx, True),
+            get_kilobytes_per_second(tx_only, True),
+            get_kilobytes_per_second(tx_rx, False),
+            get_kilobytes_per_second(tx_only, False),
+            len(tx_rx) / (len(tx_only) + len(tx_rx)) if len(tx_only) > 0 or len(tx_rx) > 0 else 0,
+            delay
+        )
+
+    def track_tx_rx(self):
+        self.latest_data_rate_values_ag = self.compute_data_rate(('192.168.42.10', 'rx'), ('192.168.42.11', 'tx'))
+        self.latest_data_rate_values_ga = self.compute_data_rate(('192.168.42.11', 'rx'), ('192.168.42.10', 'tx'))
+
+    def get_datapoint_data_rate(self, receiver: tuple[str, str], sender: tuple[str, str]):
+        if receiver[0] == '192.168.42.10':
+            val = self.latest_data_rate_values_ag
+        else:
+            val = self.latest_data_rate_values_ga
         color = 0 if self.radio_button_wifi.isChecked() else 1
         return (
             (0, {"color": 'black', "linestyle": '-'}),
-            (-get_byte_rate(receiver, True), {"color": color, "linestyle": '-', "fill" : True, "fill_color": color}),
-            (-get_byte_rate(sender, True), {"color": color, "linestyle": '--'}),
-            (get_byte_rate(receiver, False), {"color": color, "linestyle": '-', "fill" : True, "fill_color": color}),
-            (get_byte_rate(sender, False), {"color": color, "linestyle": '--'})
+            (-val[0], {"color": color, "linestyle": '-', "fill" : True, "fill_color": color}),
+            (-val[1]-val[0], {"color": color, "linestyle": '--'}),
+            (val[2], {"color": color, "linestyle": '-', "fill" : True, "fill_color": color}),
+            (val[3]+val[2], {"color": color, "linestyle": '--'})
         )
 
     def get_datapoint_data_rate_combined(self):
-        _, (ag_recv_prio, _), (ag_send_prio, _), (ag_recv, _), (ag_send, _) = self.get_datapoint_data_rate(('192.168.42.10', 'rx'), ('192.168.42.11', 'tx'))
-        _, (ga_recv_prio, _), (ga_send_prio, _), (ga_recv, _), (ga_send, _) = self.get_datapoint_data_rate(('192.168.42.11', 'rx'), ('192.168.42.10', 'tx'))
-        ag_recv -= ag_recv_prio
-        ag_send -= ag_send_prio
-        ga_recv -= ga_recv_prio
-        ga_send -= ga_send_prio
+        ag_recv = self.latest_data_rate_values_ag[0] + self.latest_data_rate_values_ag[2]
+        ag_send = self.latest_data_rate_values_ag[1] + self.latest_data_rate_values_ag[3]
+        ga_recv = self.latest_data_rate_values_ga[0] + self.latest_data_rate_values_ga[2]
+        ga_send = self.latest_data_rate_values_ga[1] + self.latest_data_rate_values_ga[3]
         color = 0 if self.radio_button_wifi.isChecked() else 1
         return (
             (0, {"color": 'black', "linestyle": '-'}),
@@ -865,27 +923,10 @@ class Ui(QtWidgets.QMainWindow):
         )
 
     def get_datapoint_delivery_rate(self, keys: tuple[tuple[str, str], tuple[str, str]]):
-        counts = {}
-        now = int(time.time_ns() / 1_000_000)
-        for key in keys:
-            current_data = self.datapoints[key]
-            try:
-                first_relevant_datapoint = next((
-                    i
-                    for i, sample
-                    in enumerate(current_data)
-                    if sample[0] > now - PLOTTING_INTERVAL_MS * RATE_SMOOTHING_FACTOR
-                ))
-                # discard old samples
-                # print(now, current_data[0])
-                self.datapoints[key] = self.datapoints[key][first_relevant_datapoint:]
-                counts[key] = len(current_data) - first_relevant_datapoint
-            except StopIteration:
-                counts[key] = 0
-        if counts[keys[0]] == 0 or counts[keys[1]] == 0:
-            val = 0
+        if keys[0][0] == '192.168.42.10':
+            val = self.latest_data_rate_values_ag[4]
         else:
-            val = counts[keys[0]] / counts[keys[1]]
+            val = self.latest_data_rate_values_ga[4]
         val = min(val, 1.0)
         colour = 0 if self.radio_button_wifi.isChecked() else 1
         return ((val, {"color": colour}), )
@@ -1002,13 +1043,16 @@ class Ui(QtWidgets.QMainWindow):
         return taps_real, taps_imag
 
     def on_data_ready_package_counter(self, message):
-        timestamp = int(time.time_ns() / 1_000_000)
+        # timestamp = int(time.time_ns() / 1_000_000)
         # print( timestamp, message)
-        endpoint, direction, len, dscp_priority, next_protocol = str(message).strip(" b'").split(',')
+        endpoint, direction, len, dscp_priority, next_protocol, hash, timestamp = str(message).strip(" b'").split(',')
         len = int(len)
         dscp_priority = int(dscp_priority)
         next_protocol = int(next_protocol)
-        self.datapoints[(endpoint, direction)].append((timestamp, len, dscp_priority, next_protocol))
+        hash = int(hash)
+        timestamp = float(timestamp)
+        with DATAPOINTS_LOCK:
+            self.datapoints[(endpoint, direction)].append((timestamp, len, dscp_priority, next_protocol, hash))
 
     def on_data_ready_position(self, message):
         if message[0] == b'P'[0]:
@@ -1069,7 +1113,8 @@ class Ui(QtWidgets.QMainWindow):
             self.lineEdit_5, self.lineEdit_6, self.lineEdit_14, self.lineEdit_13,
             self.lineEdit_17, self.lineEdit_18, self.lineEdit_19, self.lineEdit_20
         ]:
-            if not line_edit.text().isdigit():
+            text = line_edit.text()
+            if not text.isdigit() and not (text[0] == '-' and text[1:].isdigit):
                 line_edit.setStyleSheet("color: red;")
                 malformatted_input = True
         for line_edit in [
@@ -1165,17 +1210,17 @@ class Ui(QtWidgets.QMainWindow):
     def restore_settings(self):
         self.lineEdit.setText("4")
         self.lineEdit_6.setText("60")
-        self.lineEdit_5.setText("60")
-        self.lineEdit_13.setText("10")
-        self.lineEdit_14.setText("10")
+        self.lineEdit_5.setText("30")
+        self.lineEdit_13.setText("0")
+        self.lineEdit_14.setText("-45")
         self.lineEdit_4.setText("4")
         self.lineEdit_3.setText("-4")
         self.lineEdit_2.setText("2.45")
         self.lineEdit_10.setText("4")
         self.lineEdit_17.setText("60")
-        self.lineEdit_18.setText("60")
-        self.lineEdit_19.setText("10")
-        self.lineEdit_20.setText("10")
+        self.lineEdit_18.setText("30")
+        self.lineEdit_19.setText("0")
+        self.lineEdit_20.setText("-45")
         self.lineEdit_9.setText("4")
         self.lineEdit_8.setText("-4")
         self.lineEdit_7.setText("2.45")
