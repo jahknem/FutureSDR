@@ -224,19 +224,17 @@ impl<D: DeviceTrait + Clone> Kernel for Sink<D> {
                     debug_assert_eq!(ret, len);
                     ret
                 } else {
-                    println!("sink [burst-mode]: waiting for more samples before sending.");
-                    // wait for more samples
-                    return Ok(())
+                    // println!("sink [burst-mode]: waiting for more samples before sending.");
+                    // println!("WARNING sink [burst-mode]: dropping incomplete burst.");
+                    // n
+                    streamer.write(&bufs, None, false, 2_000_000)?
                 }
             } else {
                 // debug!("sending in non-burst mode");
                 // send in non-burst mode
                 // let ret = streamer.write(&bufs, None, false, 2_000_000)?;
                 let ret = streamer.write(&bufs, None, false, 2_000_000)?;
-                if ret != n {
-                    io.call_again = true;
-                }
-                println!("sink consumed {} samples in non-burst mode", ret);
+                // println!("sink consumed {} samples in non-burst mode", ret);
                 ret
             };
             // if consumed == 0 {
@@ -244,6 +242,9 @@ impl<D: DeviceTrait + Clone> Kernel for Sink<D> {
             // }
         }
 
+        if consumed != n {
+            io.call_again = true;
+        }
         sio.inputs_mut()
             .iter_mut()
             .for_each(|i| i.consume(consumed));
