@@ -60,7 +60,7 @@ where
             Some(insert_index_ref) => {
                 let insert_index = *insert_index_ref;
                 if insert_index >= self.max_size {
-                    warn!(
+                    debug!(
                         "Input Queue: max number of frames of higher priority already in TX queue, DROPPING new frame (trying to insert at {}, queue capacity {}, priority {:#8b}).",
                         insert_index, self.max_size, priority
                     );
@@ -74,6 +74,7 @@ where
                     self.data.len()
                 );
                 let mut queue_full = false;
+                // let mut highest_index = 0;
                 for priority_key in self.priority_values {
                     if *priority_key <= priority {
                         let new_index = self.priority_index_map[priority_key] + 1_usize;
@@ -82,10 +83,14 @@ where
                         } else {
                             self.priority_index_map.insert(*priority_key, new_index);
                         }
+                        // highest_index = highest_index.max(new_index)
                     }
                 }
+                // if highest_index > 20 {
+                //     println!("WARNING: more than 20 samples in queue: {}", highest_index);  // TODO
+                // }
                 if queue_full {
-                    warn!(
+                    debug!(
                         "Input Queue: max number of frames of higher or equal priority already in TX queue, DROPPING oldest frame of lowest priority. (trying to insert at {}, queue capacity {}, priority {:#8b}).",
                         insert_index, self.max_size, priority
                     );
