@@ -8,7 +8,7 @@ use tokio;
 use tokio::sync::mpsc::unbounded_channel;
 use tokio::sync::watch;
 
-use futuredsp::fir::NonResamplingFirKernel;
+use futuresdr::futuredsp::fir::NonResamplingFirKernel;
 use futuresdr::anyhow::Result;
 use futuresdr::async_io::block_on;
 use futuresdr::async_net::UdpSocket;
