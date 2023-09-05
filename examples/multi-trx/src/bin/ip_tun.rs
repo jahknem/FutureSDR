@@ -57,6 +57,7 @@ use wlan::parse_channel as wlan_parse_channel;
 use wlan::Decoder as WlanDecoder;
 use wlan::Delay as WlanDelay;
 use wlan::MAX_PAYLOAD_SIZE;
+use wlan::MAX_ENCODED_BITS;
 // use wlan::Encoder as WlanEncoder;
 use multitrx::Encoder as WlanEncoder;
 //use wlan::FftShift;
@@ -200,7 +201,8 @@ struct Args {
     flow_priority_file: String,
 }
 
-const LARGE_ENOUGH_BUFFER_SIZE_FOR_AARONIA_BURST: usize = 1122580;
+// const LARGE_ENOUGH_BUFFER_SIZE_FOR_AARONIA_BURST: usize = 1122580;  // TODO maybe this
+const LARGE_ENOUGH_BUFFER_SIZE_FOR_AARONIA_BURST: usize = 8 * MAX_ENCODED_BITS;  // TODO maybe this
 
 const DSCP_EF: u8 = 0b101110 << 2;
 const NUM_PROTOCOLS: usize = 2;
@@ -481,11 +483,11 @@ fn main() -> Result<()> {
     let (wlan_rxed_sender, mut wlan_rxed_frames) = mpsc::channel::<Pmt>(100);
     let wlan_message_pipe = fg.add_block(MessagePipe::new(wlan_rxed_sender));
     fg.connect_message(wlan_decoder, "rx_frames", wlan_message_pipe, "in")?;
-    let wlan_blob_to_udp = fg.add_block(futuresdr::blocks::BlobToUdp::new("127.0.0.1:55555"));
-    fg.connect_message(wlan_decoder, "rx_frames", wlan_blob_to_udp, "in")?;
+    // let wlan_blob_to_udp = fg.add_block(futuresdr::blocks::BlobToUdp::new("127.0.0.1:55555"));
+    // fg.connect_message(wlan_decoder, "rx_frames", wlan_blob_to_udp, "in")?;
     fg.connect_message(wlan_decoder, "rx_frames", metrics_reporter, "rx_wifi_in")?;
-    let wlan_blob_to_udp = fg.add_block(futuresdr::blocks::BlobToUdp::new("127.0.0.1:55556"));
-    fg.connect_message(wlan_decoder, "rftap", wlan_blob_to_udp, "in")?;
+    // let wlan_blob_to_udp = fg.add_block(futuresdr::blocks::BlobToUdp::new("127.0.0.1:55556"));
+    // fg.connect_message(wlan_decoder, "rftap", wlan_blob_to_udp, "in")?;
 
     // ========================================
     // ZIGBEE RECEIVER
@@ -670,14 +672,6 @@ fn main() -> Result<()> {
     let tun_queue2 = tun_queue1.clone();
     let tun_queue3 = tun_queue1.clone();
 
-    // let socket_metrics = block_on(UdpSocket::bind("0.0.0.0:0")).unwrap();
-    // block_on(socket_metrics.connect(args.metrics_reporting_socket)).unwrap();
-    // let socket_metrics2 = socket_metrics.clone();
-    // let socket_metrics3 = socket_metrics.clone();
-    // let local_ip1 = args.local_ip.clone();
-    // let local_ip2 = args.local_ip.clone();
-    // let local_ip3 = args.local_ip.clone();
-
     rt.spawn_background(async move {
         println!("initialized sender.");
         let mut buf = vec![0u8; 1024];
@@ -697,11 +691,6 @@ fn main() -> Result<()> {
                         .call(ip_dscp_rewriter, fg_tx_port, Pmt::Blob(buf[0..n].to_vec()))
                         .await
                         .unwrap();
-                    // if let Ok(_res) = socket_metrics.send(format!("{},tx,{}", local_ip1, n).as_bytes()).await {
-                    //     // info!("server sent a frame.")
-                    // } else {
-                    //     warn!("could not send metric update.")
-                    // }
                 }
                 Err(err) => panic!("Error: {:?}", err),
             }
@@ -716,11 +705,6 @@ fn main() -> Result<()> {
                     // info!("received frame, size {}", v.len() - 24);
                     print!("r");
                     tun_queue2.send(&v[24..].to_vec()).await.unwrap();
-                    // if let Ok(_) = socket_metrics2.send(format!("{},rx", local_ip2).as_bytes()).await {
-                    //     // info!("server received a frame.")
-                    // } else {
-                    //     warn!("could not send metric update.")
-                    // }
                 } else {
                     warn!("pmt to tx was not a blob");
                 }
@@ -738,11 +722,6 @@ fn main() -> Result<()> {
                     // info!("received Zigbee frame size {}", v.len());
                     print!("r");
                     tun_queue3.send(&v.to_vec()).await.unwrap();
-                    // if let Ok(_) = socket_metrics3.send(format!("{},rx", local_ip3).as_bytes()).await {
-                    //     // info!("server received a frame.")
-                    // } else {
-                    //     warn!("could not send metric update.")
-                    // }
                 } else {
                     warn!("pmt to tx was not a blob");
                 }
