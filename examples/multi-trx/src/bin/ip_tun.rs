@@ -672,7 +672,7 @@ fn main() -> Result<()> {
     let tun_queue2 = tun_queue1.clone();
     let tun_queue3 = tun_queue1.clone();
 
-    rt.spawn_background(async move {
+    let sending_thread = rt.spawn(async move {
         println!("initialized sender.");
         let mut buf = vec![0u8; 1024];
         loop {
@@ -692,7 +692,7 @@ fn main() -> Result<()> {
                         .await
                         .unwrap();
                 }
-                Err(err) => panic!("Error: {:?}", err),
+                Err(err) => break,
             }
         }
     });
@@ -911,8 +911,10 @@ fn main() -> Result<()> {
     // }
     // else {
     println!("running in background, disabling manual protocol selection.");
-    loop {
-        sleep(Duration::from_secs(5));
-    }
+    // loop {
+    //     sleep(Duration::from_secs(5));
+    // }
+    block_on(sending_thread);
+    Ok(())
     // }
 }
