@@ -598,13 +598,13 @@ class Ui(QtWidgets.QMainWindow):
         self.canvas_small_pl_5.addWidget(self.plot_path_loss_manual_small)
         # position tab
         self.plot_position_distance = MyFigureCanvas(
-            x_len=120, y_range=[0, 750], interval=PLOTTING_INTERVAL_MS,
+            x_len=120, y_range=[0, 2200], interval=PLOTTING_INTERVAL_MS,
             data_getter_callback=self.get_datapoint_distance,
             y_label="Distance to Basestation (m)"
         )
         self.layout_canvas_distance.addWidget(self.plot_position_distance)
         self.plot_position_distance_small = MyFigureCanvas(
-            x_len=60, y_range=[0, 750], interval=PLOTTING_INTERVAL_MS,
+            x_len=60, y_range=[0, 2200], interval=PLOTTING_INTERVAL_MS,
             data_getter_callback=self.get_datapoint_distance,
             small=True,
             y_label="Distance to Basestation (m)"
@@ -653,7 +653,9 @@ class Ui(QtWidgets.QMainWindow):
             ('192.168.42.11', 'rx'): []
         }
         self.latest_data_rate_values_ag = (0, 0, 0, 0, 0)
+        self._latest_data_rate_values_ag = []
         self.latest_data_rate_values_ga = (0, 0, 0, 0, 0)
+        self._latest_data_rate_values_ga = []
         self._data_rate_tracking_timer = QtCore.QTimer()
         self._data_rate_tracking_timer.timeout.connect(self.track_tx_rx)
         self._data_rate_tracking_timer.setInterval(PLOTTING_INTERVAL_MS)
@@ -851,8 +853,8 @@ class Ui(QtWidgets.QMainWindow):
                         # print(f"{direction} multiple mathces possible: {len(matching_tx)}.")
                     matching_tx = matching_tx[0]
                     delay_tmp = rx[0] - matching_tx[0]
-                    if delay_tmp > 1:
-                        print(f"high latency sample: {delay_tmp}s.")
+                    # if delay_tmp > 1:
+                    #     print(f"high latency sample: {delay_tmp}s.")
                     delay += delay_tmp
                     self.datapoints[sender].remove(matching_tx)
                     tx_rx.append(rx)
@@ -879,22 +881,28 @@ class Ui(QtWidgets.QMainWindow):
         # print(f"{direction}: avg delay {delay}s.")
         # if direction == 'AG':
         #     print(f"{direction}: {len(rx_only)} packages delayed more than 2s or corrupted.")
-        if direction == 'GA':
-            print("TX ", tx_only)
-            print("RX ", rx_only)
+        # if direction == 'GA':
+        #     print("TX ", tx_only)  # TODO
+        #     print("RX ", rx_only)
 
         return (
-            get_kilobytes_per_second(tx_rx, True),
-            get_kilobytes_per_second(tx_only, True),
-            get_kilobytes_per_second(tx_rx, False),
-            get_kilobytes_per_second(tx_only, False),
-            len(tx_rx) / (len(tx_only) + len(tx_rx)) if len(tx_only) > 0 or len(tx_rx) > 0 else 0,
+            get_kilobytes_per_second(tx_rx, True) + get_kilobytes_per_second(rx_only, True),
+            get_kilobytes_per_second(tx_only, True) - get_kilobytes_per_second(rx_only, True),
+            get_kilobytes_per_second(tx_rx, False) + get_kilobytes_per_second(rx_only, False),
+            get_kilobytes_per_second(tx_only, False) - get_kilobytes_per_second(rx_only, False),
+            (len(tx_rx) + len(rx_only)) / (len(tx_only) + len(tx_rx) + len(rx_only)) if len(tx_only) > 0 or len(tx_rx) > 0 or len(rx_only) > 0 else 0,
             delay
         )
 
     def track_tx_rx(self):
-        self.latest_data_rate_values_ag = self.compute_data_rate(('192.168.42.10', 'rx'), ('192.168.42.11', 'tx'))
-        self.latest_data_rate_values_ga = self.compute_data_rate(('192.168.42.11', 'rx'), ('192.168.42.10', 'tx'))
+        self._latest_data_rate_values_ag.append(self.compute_data_rate(('192.168.42.10', 'rx'), ('192.168.42.11', 'tx')))
+        self._latest_data_rate_values_ga.append(self.compute_data_rate(('192.168.42.11', 'rx'), ('192.168.42.10', 'tx')))
+        if len(self._latest_data_rate_values_ag) > RATE_SMOOTHING_FACTOR:
+            self._latest_data_rate_values_ag = self._latest_data_rate_values_ag[1:]
+        if len(self._latest_data_rate_values_ga) > RATE_SMOOTHING_FACTOR:
+            self._latest_data_rate_values_ga = self._latest_data_rate_values_ga[1:]
+        self.latest_data_rate_values_ag = [sum(samples) / len(self._latest_data_rate_values_ag) for samples in zip(*self._latest_data_rate_values_ag)]
+        self.latest_data_rate_values_ga = [sum(samples) / len(self._latest_data_rate_values_ga) for samples in zip(*self._latest_data_rate_values_ga)]
 
     def get_datapoint_data_rate(self, receiver: tuple[str, str], sender: tuple[str, str]):
         if receiver[0] == '192.168.42.10':
@@ -1210,17 +1218,25 @@ class Ui(QtWidgets.QMainWindow):
     def restore_settings(self):
         self.lineEdit.setText("4")
         self.lineEdit_6.setText("60")
-        self.lineEdit_5.setText("30")
-        self.lineEdit_13.setText("0")
+        self.lineEdit_6.setEnabled(False)
+        self.lineEdit_5.setText("25")
+        self.lineEdit_5.setEnabled(False)
+        self.lineEdit_13.setText("10")
+        self.lineEdit_13.setEnabled(False)
         self.lineEdit_14.setText("-45")
+        self.lineEdit_14.setEnabled(False)
         self.lineEdit_4.setText("4")
         self.lineEdit_3.setText("-4")
         self.lineEdit_2.setText("2.45")
         self.lineEdit_10.setText("4")
         self.lineEdit_17.setText("60")
-        self.lineEdit_18.setText("30")
-        self.lineEdit_19.setText("0")
+        self.lineEdit_17.setEnabled(False)
+        self.lineEdit_18.setText("25")
+        self.lineEdit_18.setEnabled(False)
+        self.lineEdit_19.setText("10")
+        self.lineEdit_19.setEnabled(False)
         self.lineEdit_20.setText("-45")
+        self.lineEdit_20.setEnabled(False)
         self.lineEdit_9.setText("4")
         self.lineEdit_8.setText("-4")
         self.lineEdit_7.setText("2.45")
