@@ -107,6 +107,18 @@ impl<D: DeviceTrait + Clone> Source<D> {
         p: Pmt,
     ) -> Result<Pmt> {
         for c in &self.channels {
+            if let Some(d) = &self.driver {
+                match d {
+                    Driver::Soapy => { },
+                    Driver::AaroniaHttp => {
+                        self.dev.enable_agc(Rx, *c, true)?
+                    },
+                    _ => panic!("setting offset is only supported for drivers soapy and aaronia_http, current driver: {:?}.", d),
+                }
+            }
+            else {
+                panic!("setting offset is only supported if the device driver is known at runtime, as the API is not consistent at this point.")
+            }
             match &p {
                 Pmt::F32(v) => self.dev.set_gain(Rx, *c, *v as f64)?,
                 Pmt::F64(v) => self.dev.set_gain(Rx, *c, *v)?,
