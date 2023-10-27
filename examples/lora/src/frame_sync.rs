@@ -18,19 +18,9 @@ use futuresdr::runtime::StreamIoBuilder;
 use futuresdr::runtime::Tag;
 use futuresdr::runtime::WorkIo;
 
-use ordered_float::OrderedFloat;
-use rustfft::{FftDirection, FftPlanner};
+use crate::utilities::*;
 
-// #[derive(Debug)]
-// enum Ev {
-//     ModeManual(f32),
-//     ModeAutomaticFreeSpace,
-//     ModeAutomaticFlatEarthTwoRay,
-//     ModeAutomaticCurvedEarthTwoRay,
-//     ModeAutomaticNineRay,
-//     Value(f32, f32, f32, f32, f32, f32),
-//     ScalingCoeff(f32),
-// }
+use rustfft::{FftDirection, FftPlanner};
 
 // impl Copy for usize {}
 // impl Copy for u8 {}
@@ -64,13 +54,13 @@ pub struct FrameSync {
     m_center_freq: u32,    //< RF center frequency
     m_bw: u32,             //< Bandwidth
     // m_samp_rate: u32,               //< Sampling rate
-    m_sf: u8, //< Spreading factor
+    m_sf: usize, //< Spreading factor
     // m_cr: u8,                       //< Coding rate
     // m_pay_len: u32,                 //< payload length
     // m_has_crc: u8,                  //< CRC presence
     // m_invalid_header: u8,           //< invalid header checksum
     m_impl_head: bool,      //< use implicit header mode
-    m_os_factor: u8,        //< oversampling factor
+    m_os_factor: usize,     //< oversampling factor
     m_sync_words: Vec<u16>, //< vector containing the two sync words (network identifiers)
     // m_ldro: bool,                        //< use of low datarate optimisation mode
     m_n_up_req: usize, //< number of consecutive upchirps required to trigger a detection
@@ -91,9 +81,8 @@ pub struct FrameSync {
     m_preamb_len: usize,        //< Number of consecutive upchirps in preamble
     additional_upchirps: usize, //< indicate the number of additional upchirps found in preamble (in addition to the minimum required to trigger a detection)
 
-    cx_in: Vec<Complex32>,  //<input of the FFT
-    cx_out: Vec<Complex32>, //<output of the FFT
-
+    // cx_in: Vec<Complex32>,  //<input of the FFT
+    // cx_out: Vec<Complex32>, //<output of the FFT
     items_to_consume: usize, //< Number of items to consume after each iteration of the general_work function
 
     // one_symbol_off: i32, //< indicate that we are offset by one symbol after the preamble  // TODO bool?
@@ -126,58 +115,14 @@ pub struct FrameSync {
                         // off_by_one_id: f32, //< Indicate that the network identifiers where off by one and corrected (float used as saved in a float32 bin file)
 }
 
-fn build_upchirp(id: u32, sf: u8) -> Vec<Complex32> {
-    let n = (1 << sf) as f32;
-    let n_idx = (1 << sf) as usize;
-    let n_fold = n - id as f32;
-    let mut chirp = vec![Complex32::from(0.); (1 << sf) as usize];
-    for i in 0..n_idx {
-        let j = i as f32;
-        if n < n_fold {
-            chirp[n_idx] = Complex32::new(1.0, 0.0)
-                * (Complex32::new(0.0, 1.0)
-                    * Complex32::new(
-                        2.0 * PI * (j * j / (2. * n) + (id as f32 / n as f32 - 0.5) * j),
-                        0.0,
-                    ))
-                .exp();
-        } else {
-            chirp[n_idx] = Complex32::new(1.0, 0.0)
-                * (Complex32::new(0.0, 1.0)
-                    * Complex32::new(
-                        2.0 * PI * (j * j / (2. * n) + (id as f32 / n as f32 - 1.5) * j),
-                        0.0,
-                    ))
-                .exp();
-        }
-    }
-    chirp
-}
-
-fn volk_32fc_conjugate_32fc(a_vector: &Vec<Complex32>) -> Vec<Complex32> {
-    let mut b_vector = vec![Complex32::from(0.); a_vector.len()];
-    for i in 0_usize..a_vector.len() {
-        let tmp: Complex32 = a_vector[i];
-        b_vector[i] = tmp.conj();
-    }
-    b_vector
-}
-
-fn build_ref_chirps(sf: u8) -> (Vec<Complex32>, Vec<Complex32>) {
-    let n: f64 = (1 << sf) as f64;
-    let upchirp = build_upchirp(0, sf);
-    let downchirp = volk_32fc_conjugate_32fc(&upchirp);
-    (upchirp, downchirp)
-}
-
 impl FrameSync {
     pub fn new(
         center_freq: u32,
         bandwidth: u32,
-        sf: u8,
+        sf: usize,
         impl_head: bool,
         sync_word: Vec<u16>,
-        os_factor: u8,
+        os_factor: usize,
         preamble_len: Option<usize>,
     ) -> Block {
         let preamble_len_tmp = preamble_len.unwrap_or(8);
@@ -247,8 +192,8 @@ impl FrameSync {
                 preamb_up_vals: vec![0; preamble_len_tmp - 3], //< value of the preamble upchirps
                 frame_cnt: 0,                   //< Number of frame received
 
-                cx_in: vec![Complex32::new(0., 0.); m_number_of_bins_tmp], //<input of the FFT
-                cx_out: vec![Complex32::new(0., 0.); m_number_of_bins_tmp], //<output of the FFT
+                // cx_in: vec![Complex32::new(0., 0.); m_number_of_bins_tmp], //<input of the FFT
+                // cx_out: vec![Complex32::new(0., 0.); m_number_of_bins_tmp], //<output of the FFT
 
                 // m_samp_rate: u32,               //< Sampling rate  // unused
                 // m_cr: u8,                       //< Coding rate  // local to frame info handler
@@ -295,7 +240,7 @@ impl FrameSync {
     //         ninput_items_required[0] = (m_os_factor * (m_number_of_bins + 2));
     //     }
 
-    fn estimate_CFO_frac(&mut self, samples: Vec<Complex32>) -> f32 {
+    fn estimate_CFO_frac(&mut self, samples: &Vec<Complex32>) -> f32 {
         // create longer downchirp
         let mut downchirp_aug: Vec<Complex32> =
             vec![Complex32::new(0., 0.); self.up_symb_to_use * self.m_number_of_bins];
@@ -305,11 +250,7 @@ impl FrameSync {
         }
 
         // Dechirping
-        let dechirped: Vec<Complex32> = samples
-            .iter()
-            .zip(downchirp_aug.iter())
-            .map(|(x, y)| x * y)
-            .collect();
+        let dechirped: Vec<Complex32> = volk_32fc_x2_multiply_32fc(&samples, &downchirp_aug);
         // prepare FFT
         // zero padded
         // let mut cx_in_cfo: Vec<Complex32> = vec![Complex32::new(0., 0.), 2 * self.up_symb_to_use * self.m_number_of_bins];
@@ -323,18 +264,9 @@ impl FrameSync {
             .plan_fft(cx_out_cfo.len(), FftDirection::Forward)
             .process(&mut cx_out_cfo);
         // Get magnitude
-        let fft_mag_sq: Vec<f32> = cx_out_cfo
-            .iter()
-            .map(|x| x.re * x.re + x.im * x.im)
-            .collect();
+        let fft_mag_sq: Vec<f32> = volk_32fc_magnitude_squared_32f(&cx_out_cfo);
         // get argmax here
-        let k0: usize = fft_mag_sq
-            .iter()
-            .map(|x| OrderedFloat::<f32>(*x))
-            .enumerate()
-            .max_by(|(_, value0), (_, value1)| value0.cmp(value1))
-            .map(|(idx, _)| idx)
-            .unwrap_or(0_usize);
+        let k0: usize = argmax_float(&fft_mag_sq);
 
         // get three spectral lines
         let Y_1 = fft_mag_sq[(k0 - 1) % (2 * self.up_symb_to_use * self.m_number_of_bins)];
@@ -351,217 +283,193 @@ impl FrameSync {
         // Correct CFO frac in preamble
         let CFO_frac_correc_aug: Vec<Complex32> = (0_usize
             ..self.up_symb_to_use * self.m_number_of_bins)
-            .map(|x| -2. * PI * (cfo_frac) / self.m_number_of_bins as f32 * x as f32)
-            .map(|x| Complex32::new(x.cos(), x.sin()))
+            .map(|x| {
+                Complex32::from_polar(
+                    1.,
+                    -2. * PI * (cfo_frac) / self.m_number_of_bins as f32 * x as f32,
+                )
+            })
             .collect();
 
-        self.preamble_upchirps = samples
-            .iter()
-            .zip(CFO_frac_correc_aug.iter())
-            .map(|(x, y)| x * y)
-            .collect();
+        self.preamble_upchirps = volk_32fc_x2_multiply_32fc(&samples, &CFO_frac_correc_aug);
 
         cfo_frac
     }
 
-    //         float frame_sync_impl::estimate_CFO_frac_Bernier(gr_complex *samples)
-    //         {
-    //             std::vector<int> k0(up_symb_to_use);
-    //             float cfo_frac;
-    //             std::vector<gr_complex> CFO_frac_correc_aug(up_symb_to_use * m_number_of_bins); ///< CFO frac correction vector
-    //             std::vector<double> k0_mag(up_symb_to_use);
-    //             std::vector<gr_complex> fft_val(up_symb_to_use * m_number_of_bins);
-    //
-    //             std::vector<gr_complex> dechirped(m_number_of_bins);
-    //             kiss_fft_cpx *cx_in_cfo = new kiss_fft_cpx[m_number_of_bins];
-    //             kiss_fft_cpx *cx_out_cfo = new kiss_fft_cpx[m_number_of_bins];
-    //             std::vector<float> fft_mag_sq(m_number_of_bins);
-    //             for (size_t i = 0; i < m_number_of_bins; i++)
-    //             {
-    //                 fft_mag_sq[i] = 0;
-    //             }
-    //             kiss_fft_cfg cfg_cfo = kiss_fft_alloc(m_number_of_bins, 0, 0, 0);
-    //             for (int i = 0; i < up_symb_to_use; i++)
-    //             {
-    //                 // Dechirping
-    //                 volk_32fc_x2_multiply_32fc(&dechirped[0], &samples[m_number_of_bins * i], &m_downchirp[0], m_number_of_bins);
-    //                 // prepare FFT
-    //                 for (uint32_t j = 0; j < m_number_of_bins; j++)
-    //                 {
-    //                     cx_in_cfo[j].r = dechirped[j].real();
-    //                     cx_in_cfo[j].i = dechirped[j].imag();
-    //                 }
-    //                 // do the FFT
-    //                 kiss_fft(cfg_cfo, cx_in_cfo, cx_out_cfo);
-    //                 // Get magnitude
-    //
-    //                 for (uint32_t j = 0u; j < m_number_of_bins; j++)
-    //                 {
-    //                     fft_mag_sq[j] = cx_out_cfo[j].r * cx_out_cfo[j].r + cx_out_cfo[j].i * cx_out_cfo[j].i;
-    //                     fft_val[j + i * m_number_of_bins] = gr_complex(cx_out_cfo[j].r, cx_out_cfo[j].i);
-    //                 }
-    //                 k0[i] = std::distance(std::begin(fft_mag_sq), std::max_element(std::begin(fft_mag_sq), std::end(fft_mag_sq)));
-    //
-    //                 k0_mag[i] = fft_mag_sq[k0[i]];
-    //             }
-    //             free(cfg_cfo);
-    //             delete[] cx_in_cfo;
-    //             delete[] cx_out_cfo;
-    //             // get argmax
-    //             int idx_max = k0[std::distance(std::begin(k0_mag), std::max_element(std::begin(k0_mag), std::end(k0_mag)))];
-    //             gr_complex four_cum(0.0f, 0.0f);
-    //             for (int i = 0; i < up_symb_to_use - 1; i++)
-    //             {
-    //                 four_cum += fft_val[idx_max + m_number_of_bins * i] * std::conj(fft_val[idx_max + m_number_of_bins * (i + 1)]);
-    //             }
-    //             cfo_frac = -std::arg(four_cum) / 2 / M_PI;
-    //             // Correct CFO in preamble
-    //             for (uint32_t n = 0; n < up_symb_to_use * m_number_of_bins; n++)
-    //             {
-    //                 CFO_frac_correc_aug[n] = gr_expj(-2 * M_PI * cfo_frac / m_number_of_bins * n);
-    //             }
-    //             volk_32fc_x2_multiply_32fc(&preamble_upchirps[0], samples, &CFO_frac_correc_aug[0], up_symb_to_use * m_number_of_bins);
-    //             return cfo_frac;
-    //         }
-    //
-    //         float frame_sync_impl::estimate_STO_frac()
-    //         {
-    //             int k0;
-    //             double Y_1, Y0, Y1, u, v, ka, wa, k_residual;
-    //             float sto_frac = 0;
-    //
-    //             std::vector<gr_complex> dechirped(m_number_of_bins);
-    //             kiss_fft_cpx *cx_in_sto = new kiss_fft_cpx[2 * m_number_of_bins];
-    //             kiss_fft_cpx *cx_out_sto = new kiss_fft_cpx[2 * m_number_of_bins];
-    //
-    //             std::vector<float> fft_mag_sq(2 * m_number_of_bins);
-    //             for (size_t i = 0; i < 2 * m_number_of_bins; i++)
-    //             {
-    //                 fft_mag_sq[i] = 0;
-    //             }
-    //             kiss_fft_cfg cfg_sto = kiss_fft_alloc(2 * m_number_of_bins, 0, 0, 0);
-    //
-    //             for (int i = 0; i < up_symb_to_use; i++)
-    //             {
-    //                 // Dechirping
-    //                 volk_32fc_x2_multiply_32fc(&dechirped[0], &preamble_upchirps[m_number_of_bins * i], &m_downchirp[0], m_number_of_bins);
-    //
-    //                 // prepare FFT
-    //                 for (uint32_t j = 0; j < 2 * m_number_of_bins; j++)
-    //                 {
-    //                     if (j < m_number_of_bins)
-    //                     {
-    //                         cx_in_sto[j].r = dechirped[j].real();
-    //                         cx_in_sto[j].i = dechirped[j].imag();
-    //                     }
-    //                     else
-    //                     { // add padding
-    //                         cx_in_sto[j].r = 0;
-    //                         cx_in_sto[j].i = 0;
-    //                     }
-    //                 }
-    //                 // do the FFT
-    //                 kiss_fft(cfg_sto, cx_in_sto, cx_out_sto);
-    //                 // Get magnitude
-    //                 for (uint32_t j = 0u; j < 2 * m_number_of_bins; j++)
-    //                 {
-    //                     fft_mag_sq[j] += cx_out_sto[j].r * cx_out_sto[j].r + cx_out_sto[j].i * cx_out_sto[j].i;
-    //                 }
-    //             }
-    //             free(cfg_sto);
-    //             delete[] cx_in_sto;
-    //             delete[] cx_out_sto;
-    //
-    //             // get argmax here
-    //             k0 = std::distance(std::begin(fft_mag_sq), std::max_element(std::begin(fft_mag_sq), std::end(fft_mag_sq)));
-    //
-    //             // get three spectral lines
-    //             Y_1 = fft_mag_sq[mod(k0 - 1, 2 * m_number_of_bins)];
-    //             Y0 = fft_mag_sq[k0];
-    //             Y1 = fft_mag_sq[mod(k0 + 1, 2 * m_number_of_bins)];
-    //
-    //             // set constant coeff
-    //             u = 64 * m_number_of_bins / 406.5506497; // from Cui yang (eq.15)
-    //             v = u * 2.4674;
-    //             // RCTSL
-    //             wa = (Y1 - Y_1) / (u * (Y1 + Y_1) + v * Y0);
-    //             ka = wa * m_number_of_bins / M_PI;
-    //             k_residual = fmod((k0 + ka) / 2, 1);
-    //             sto_frac = k_residual - (k_residual > 0.5 ? 1 : 0);
-    //
-    //             return sto_frac;
-    //         }
-    //
-    //         uint32_t frame_sync_impl::get_symbol_val(const gr_complex *samples, gr_complex *ref_chirp)
-    //         {
-    //             double sig_en = 0;
-    //             std::vector<float> fft_mag(m_number_of_bins);
-    //             volk::vector<gr_complex> dechirped(m_number_of_bins);
-    //
-    //             kiss_fft_cfg cfg = kiss_fft_alloc(m_number_of_bins, 0, 0, 0);
-    //
-    //             // Multiply with ideal downchirp
-    //             volk_32fc_x2_multiply_32fc(&dechirped[0], samples, ref_chirp, m_number_of_bins);
-    //
-    //             for (uint32_t i = 0; i < m_number_of_bins; i++)
-    //             {
-    //                 cx_in[i].r = dechirped[i].real();
-    //                 cx_in[i].i = dechirped[i].imag();
-    //             }
-    //             // do the FFT
-    //             kiss_fft(cfg, cx_in, cx_out);
-    //
-    //             // Get magnitude
-    //             for (uint32_t i = 0u; i < m_number_of_bins; i++)
-    //             {
-    //                 fft_mag[i] = cx_out[i].r * cx_out[i].r + cx_out[i].i * cx_out[i].i;
-    //                 sig_en += fft_mag[i];
-    //             }
-    //             free(cfg);
-    //             // Return argmax here
-    //
-    //             return sig_en ? (std::distance(std::begin(fft_mag), std::max_element(std::begin(fft_mag), std::end(fft_mag)))) : -1;
-    //         }
-    //
-    //         float frame_sync_impl::determine_energy(const gr_complex *samples, int length = 1)
-    //         {
-    //             volk::vector<float> magsq_chirp(m_number_of_bins * length);
-    //             float energy_chirp = 0;
-    //             volk_32fc_magnitude_squared_32f(&magsq_chirp[0], samples, m_number_of_bins * length);
-    //             volk_32f_accumulator_s32f(&energy_chirp, &magsq_chirp[0], m_number_of_bins * length);
-    //             return energy_chirp / m_number_of_bins / length;
-    //         }
-    //         float frame_sync_impl::determine_snr(const gr_complex *samples)
-    //         {
-    //             double tot_en = 0;
-    //             std::vector<float> fft_mag(m_number_of_bins);
-    //             std::vector<gr_complex> dechirped(m_number_of_bins);
-    //
-    //             kiss_fft_cfg cfg = kiss_fft_alloc(m_number_of_bins, 0, 0, 0);
-    //
-    //             // Multiply with ideal downchirp
-    //             volk_32fc_x2_multiply_32fc(&dechirped[0], samples, &m_downchirp[0], m_number_of_bins);
-    //
-    //             for (uint32_t i = 0; i < m_number_of_bins; i++)
-    //             {
-    //                 cx_in[i].r = dechirped[i].real();
-    //                 cx_in[i].i = dechirped[i].imag();
-    //             }
-    //             // do the FFT
-    //             kiss_fft(cfg, cx_in, cx_out);
-    //
-    //             // Get magnitude
-    //             for (uint32_t i = 0u; i < m_number_of_bins; i++)
-    //             {
-    //                 fft_mag[i] = cx_out[i].r * cx_out[i].r + cx_out[i].i * cx_out[i].i;
-    //                 tot_en += fft_mag[i];
-    //             }
-    //             free(cfg);
-    //
-    //             int max_idx = std::distance(std::begin(fft_mag), std::max_element(std::begin(fft_mag), std::end(fft_mag)));
-    //             float sig_en = fft_mag[max_idx];
-    //             return 10 * log10(sig_en / (tot_en - sig_en));
-    //         }
+    fn estimate_CFO_frac_Bernier(&mut self, samples: &Vec<Complex32>) -> f32 {
+        let mut fft_val: Vec<Complex32> =
+            vec![Complex32::new(0., 0.); self.up_symb_to_use * self.m_number_of_bins];
+        let mut k0: Vec<usize> = vec![0; self.up_symb_to_use];
+        let mut k0_mag: Vec<f32> = vec![0.; self.up_symb_to_use]; // TODO original type double
+        for i in 0_usize..self.up_symb_to_use {
+            // Dechirping
+            let dechirped: Vec<Complex32> = volk_32fc_x2_multiply_32fc(&samples, &self.m_downchirp);
+            let mut cx_out_cfo: Vec<Complex32> = dechirped;
+            // do the FFT
+            FftPlanner::new()
+                .plan_fft(cx_out_cfo.len(), FftDirection::Forward)
+                .process(&mut cx_out_cfo);
+            let fft_mag_sq: Vec<f32> = volk_32fc_magnitude_squared_32f(&cx_out_cfo);
+            fft_val[(i * self.m_number_of_bins)..((i + 1) * self.m_number_of_bins)]
+                .copy_from_slice(&cx_out_cfo[0_usize..self.m_number_of_bins]);
+            // Get magnitude
+            // get argmax here
+            k0[i] = argmax_float(&fft_mag_sq);
+
+            k0_mag[i] = fft_mag_sq[k0[i]];
+        }
+        // get argmax
+        let idx_max: usize = argmax_float(&k0_mag);
+        let mut four_cum = Complex32::new(0., 0.);
+        for i in 0_usize..(self.up_symb_to_use - 1) {
+            four_cum += fft_val[idx_max + self.m_number_of_bins * i]
+                * (fft_val[idx_max + self.m_number_of_bins * (i + 1)]).conj();
+        }
+        let cfo_frac = -four_cum.arg() / 2. / PI;
+        // Correct CFO in preamble
+        let CFO_frac_correc_aug: Vec<Complex32> = (0_usize
+            ..(self.up_symb_to_use * self.m_number_of_bins))
+            .map(|x| {
+                Complex32::from_polar(
+                    1.,
+                    -2. * PI * cfo_frac / self.m_number_of_bins as f32 * x as f32,
+                )
+            })
+            .collect();
+        self.preamble_upchirps = volk_32fc_x2_multiply_32fc(&samples, &CFO_frac_correc_aug);
+        cfo_frac
+    }
+
+    fn estimate_STO_frac(&self) -> f32 {
+        // int k0;
+        // double Y_1, Y0, Y1, u, v, ka, wa, k_residual;
+        // float sto_frac = 0;
+
+        // std::vector<gr_complex> dechirped(m_number_of_bins);
+        // kiss_fft_cpx *cx_in_sto = new kiss_fft_cpx[2 * m_number_of_bins];
+        // kiss_fft_cpx *cx_out_sto = new kiss_fft_cpx[2 * m_number_of_bins];
+
+        // std::vector<float> fft_mag_sq(2 * m_number_of_bins);
+        // for (size_t i = 0; i < 2 * m_number_of_bins; i++)
+        // {
+        //     fft_mag_sq[i] = 0;
+        // }
+        // kiss_fft_cfg cfg_sto = kiss_fft_alloc(2 * m_number_of_bins, 0, 0, 0);
+
+        let mut fft_mag_sq: Vec<f32> = vec![0.; 2 * self.m_number_of_bins];
+        for i in 0_usize..self.up_symb_to_use {
+            // Dechirping
+            let dechirped: Vec<Complex32> = volk_32fc_x2_multiply_32fc(
+                &self.preamble_upchirps
+                    [(self.m_number_of_bins * i)..(self.m_number_of_bins * (i + 1))],
+                &self.m_downchirp,
+            );
+
+            let mut cx_out_sto: Vec<Complex32> =
+                vec![Complex32::new(0., 0.); 2 * self.m_number_of_bins];
+            cx_out_sto[..self.m_number_of_bins].copy_from_slice(&dechirped);
+            // do the FFT
+            FftPlanner::new()
+                .plan_fft(cx_out_sto.len(), FftDirection::Forward)
+                .process(&mut cx_out_sto);
+            // Get magnitude
+
+            fft_mag_sq = volk_32fc_magnitude_squared_32f(&cx_out_sto)
+                .iter()
+                .zip(fft_mag_sq.iter())
+                .map(|(x, y)| x + y)
+                .collect();
+        }
+
+        // get argmax here
+        let k0 = argmax_float(&fft_mag_sq);
+
+        // get three spectral lines
+        let Y_1 = fft_mag_sq[(k0 - 1) % (2 * self.m_number_of_bins)] as f64;
+        let Y0 = fft_mag_sq[k0] as f64;
+        let Y1 = fft_mag_sq[(k0 + 1) % (2 * self.m_number_of_bins)] as f64;
+
+        // set constant coeff
+        let u = 64. * self.m_number_of_bins as f64 / 406.5506497; // from Cui yang (eq.15)
+        let v = u * 2.4674;
+        // RCTSL
+        let wa = (Y1 - Y_1) / (u * (Y1 + Y_1) + v * Y0);
+        let ka = wa * self.m_number_of_bins as f64 / std::f64::consts::PI;
+        let k_residual = ((k0 as f64 + ka) / 2.) % (1.);
+        let sto_frac = (k_residual - if k_residual > 0.5 { 1. } else { 0. }) as f32;
+
+        sto_frac
+    }
+
+    fn get_symbol_val(
+        &mut self,
+        samples: &Vec<Complex32>,
+        ref_chirp: &Vec<Complex32>,
+    ) -> (usize, bool) {
+        // double sig_en = 0;
+        // std::vector<float> fft_mag(m_number_of_bins);
+        // volk::vector<gr_complex> dechirped(m_number_of_bins);
+
+        // kiss_fft_cfg cfg = kiss_fft_alloc(m_number_of_bins, 0, 0, 0);
+
+        // Multiply with ideal downchirp
+        let dechirped = volk_32fc_x2_multiply_32fc(&samples, &ref_chirp);
+
+        let mut cx_out: Vec<Complex32> = dechirped;
+        // do the FFT
+        FftPlanner::new()
+            .plan_fft(cx_out.len(), FftDirection::Forward)
+            .process(&mut cx_out);
+
+        // Get magnitude
+        let fft_mag = volk_32fc_magnitude_squared_32f(&cx_out);
+        //     sig_en += fft_mag[i];
+        // }
+        let sig_en: f64 = fft_mag.iter().map(|x| *x as f64).fold(0., |acc, e| acc + e);
+        // Return argmax here
+
+        return if sig_en != 0. {
+            (argmax_float(&fft_mag), true)
+        } else {
+            (0, false)
+        };
+    }
+
+    fn determine_energy(&self, samples: &Vec<Complex32>, length: Option<usize>) -> f32 {
+        let length_tmp = length.unwrap_or(1);
+        let magsq_chirp = volk_32fc_magnitude_squared_32f(
+            &samples[0_usize..(self.m_number_of_bins * length_tmp)],
+        );
+        let energy_chirp = magsq_chirp.iter().fold(0., |acc, e| acc + e);
+        return energy_chirp / self.m_number_of_bins as f32 / length_tmp as f32;
+    }
+
+    fn determine_snr(&self, samples: &Vec<Complex32>) -> f32 {
+        // double tot_en = 0;
+        // std::vector<float> fft_mag(m_number_of_bins);
+        // std::vector<gr_complex> dechirped(m_number_of_bins);
+
+        // kiss_fft_cfg cfg = kiss_fft_alloc(m_number_of_bins, 0, 0, 0);
+
+        // Multiply with ideal downchirp
+        let dechirped = volk_32fc_x2_multiply_32fc(&samples, &self.m_downchirp);
+
+        let mut cx_out: Vec<Complex32> = dechirped;
+        // do the FFT
+        FftPlanner::new()
+            .plan_fft(cx_out.len(), FftDirection::Forward)
+            .process(&mut cx_out);
+
+        // Get magnitude
+        let fft_mag = volk_32fc_magnitude_squared_32f(&cx_out);
+        //     sig_en += fft_mag[i];
+        // }
+        let tot_en: f64 = fft_mag.iter().map(|x| *x as f64).fold(0., |acc, e| acc + e);
+        // Return argmax here
+        let max_idx = argmax_float(&fft_mag);
+        let sig_en = fft_mag[max_idx] as f64;
+        return (10. * (sig_en / (tot_en - sig_en)).log10()) as f32;
+    }
 
     // TODO self.m_noise_est only referenced here, so a noop?
     // #[message_handler]
@@ -588,67 +496,122 @@ impl FrameSync {
         _meta: &mut BlockMeta,
         p: Pmt,
     ) -> Result<Pmt> {
-        if let Pmt::F32(frame_info) = p {
+        if let Pmt::MapStrPmt(mut frame_info) = p {
             // TODO
             // pmt::pmt_t
-            // err = pmt::string_to_symbol("error");
+            let err = Pmt::String(String::from("error"));
             //
-            // m_cr = pmt::to_long(pmt::dict_ref(frame_info, pmt::string_to_symbol("cr"), err));
-            // m_pay_len = pmt::to_double(pmt::dict_ref(frame_info, pmt::string_to_symbol("pay_len"), err));
-            // m_has_crc = pmt::to_long(pmt::dict_ref(frame_info, pmt::string_to_symbol("crc"), err));
+            let m_cr: usize = if let Pmt::Usize(temp) = frame_info.get("cr").unwrap_or(&err) {
+                *temp
+            } else {
+                panic!("invalid cr")
+            }; // TODO double
+            let m_pay_len: usize =
+                if let Pmt::Usize(temp) = frame_info.get("pay_len").unwrap_or(&err) {
+                    *temp
+                } else {
+                    panic!("invalid pay_len")
+                };
+            let m_has_crc: usize = if let Pmt::Usize(temp) = frame_info.get("crc").unwrap_or(&err) {
+                *temp
+            } else {
+                panic!("invalid pay_len")
+            };
             // uint8_t
-            // ldro_mode = pmt::to_long(pmt::dict_ref(frame_info, pmt::string_to_symbol("ldro_mode"), err));
-            // m_invalid_header = pmt::to_double(pmt::dict_ref(frame_info, pmt::string_to_symbol("err"), err));
-            //
-            // if (m_invalid_header)
-            // {
-            //     m_state = DETECT;
-            //     symbol_cnt = 1;
-            //     k_hat = 0;
-            //     m_sto_frac = 0;
-            // } else {
-            //     if (ldro_mode == AUTO)
-            //     m_ldro = (float)(1u << m_sf) * 1e3 / m_bw > LDRO_MAX_DURATION_MS;
-            //     else
-            //     m_ldro = ldro_mode;
-            //
-            //     m_symb_numb = 8 + ceil((double)(2 * m_pay_len - m_sf + 2 + !m_impl_head * 5 + m_has_crc * 4) / (m_sf - 2 * m_ldro)) * (4 + m_cr);
-            //     m_received_head = true;
-            //     frame_info = pmt::dict_add(frame_info, pmt::intern("is_header"), pmt::from_bool(false));
-            //     frame_info = pmt::dict_add(frame_info, pmt::intern("symb_numb"), pmt::from_long(m_symb_numb));
-            //     frame_info = pmt::dict_delete(frame_info, pmt::intern("ldro_mode"));
-            //
-            //     frame_info = pmt::dict_add(frame_info, pmt::intern("ldro"), pmt::from_bool(m_ldro));
-            //     add_item_tag(0, nitems_written(0), pmt::string_to_symbol("frame_info"), frame_info);
-            // }
+            let ldro_mode_tmp: ldro_mode =
+                if let Pmt::Usize(temp) = frame_info.get("ldro_mode").unwrap_or(&err) {
+                    *temp as ldro_mode
+                } else {
+                    panic!("invalid ldro mode")
+                };
+            let m_invalid_header = frame_info.get("err").unwrap_or(&err);
+
+            if *m_invalid_header == err {
+                self.m_state = DETECT;
+                self.symbol_cnt = 1_usize as SyncState;
+                self.k_hat = 0;
+                self.m_sto_frac = 0.;
+            } else {
+                let m_ldro = if ldro_mode_tmp == ldro_mode::AUTO {
+                    (1_usize << self.m_sf) as f32 * 1e3 / self.m_bw as f32 > LDRO_MAX_DURATION_MS
+                } else {
+                    ldro_mode_tmp
+                };
+
+                self.m_symb_numb = 8
+                    + ((2 * m_pay_len - self.m_sf
+                        + 2
+                        + (!self.m_impl_head) as usize * 5
+                        + m_has_crc * 4) as f64
+                        / (self.m_sf - 2 * m_ldro) as f64)
+                        .ceil() as usize
+                        * (4 + m_cr);
+                self.m_received_head = true;
+                frame_info.insert(String::from("is_header"), Pmt::Bool(false));
+                frame_info.insert(String::from("symb_numb"), Pmt::Usize(self.m_symb_numb));
+                frame_info.remove("ldro_mode");
+                frame_info.insert(String::from("ldro"), Pmt::Bool(m_ldro));
+                let frame_info_pmt = Pmt::MapStrPmt(frame_info);
+                // TODO tag stream
+                // add_item_tag(
+                //     0,
+                //     nitems_written(0),
+                //     pmt::string_to_symbol("frame_info"),
+                //     frame_info,
+                // );
+            }
         } else {
-            warn!("noise_est pmt was not an f32");
+            warn!("noise_est pmt was not a Map/Dict");
         }
         Ok(Pmt::Null)
     }
-    //
-    //         void frame_sync_impl::set_sf(int sf)
-    //         {
-    //             m_sf = sf;
-    //             m_number_of_bins = (uint32_t)(1u << m_sf);
-    //             m_samples_per_symbol = m_number_of_bins * m_os_factor;
-    //             additional_symbol_samp.resize(2 * m_samples_per_symbol);
-    //             m_upchirp.resize(m_number_of_bins);
-    //             m_downchirp.resize(m_number_of_bins);
-    //             preamble_upchirps.resize(m_preamb_len * m_number_of_bins);
-    //             preamble_raw_up.resize((m_preamb_len + 3) * m_samples_per_symbol);
-    //             CFO_frac_correc.resize(m_number_of_bins);
-    //             CFO_SFO_frac_correc.resize(m_number_of_bins);
-    //             symb_corr.resize(m_number_of_bins);
-    //             in_down.resize(m_number_of_bins);
-    //             preamble_raw.resize(m_preamb_len * m_number_of_bins);
-    //             net_id_samp.resize(m_samples_per_symbol * 2.5); // we should be able to move up to one quarter of symbol in each direction
-    //             build_ref_chirps(&m_upchirp[0], &m_downchirp[0], m_sf);
-    //
-    //             cx_in = new kiss_fft_cpx[m_number_of_bins];
-    //             cx_out = new kiss_fft_cpx[m_number_of_bins];
-    //             set_output_multiple(m_number_of_bins);
-    //         }
+
+    fn set_sf(&mut self, sf: usize) {
+        self.m_sf = sf;
+        self.m_number_of_bins = 1 << self.m_sf;
+        self.m_samples_per_symbol = self.m_number_of_bins * self.m_os_factor;
+        self.additional_symbol_samp
+            .resize(2 * self.m_samples_per_symbol, Complex32::new(0., 0.));
+        self.m_upchirp
+            .resize(self.m_number_of_bins, Complex32::new(0., 0.));
+        self.m_downchirp
+            .resize(self.m_number_of_bins, Complex32::new(0., 0.));
+        self.preamble_upchirps.resize(
+            self.m_preamb_len * self.m_number_of_bins,
+            Complex32::new(0., 0.),
+        );
+        self.preamble_raw_up.resize(
+            (self.m_preamb_len + 3) * self.m_samples_per_symbol,
+            Complex32::new(0., 0.),
+        );
+        self.CFO_frac_correc
+            .resize(self.m_number_of_bins, Complex32::new(0., 0.));
+        self.CFO_SFO_frac_correc
+            .resize(self.m_number_of_bins, Complex32::new(0., 0.));
+        self.symb_corr
+            .resize(self.m_number_of_bins, Complex32::new(0., 0.));
+        self.in_down
+            .resize(self.m_number_of_bins, Complex32::new(0., 0.));
+        self.preamble_raw.resize(
+            self.m_preamb_len * self.m_number_of_bins,
+            Complex32::new(0., 0.),
+        );
+        self.net_id_samp.resize(
+            (self.m_samples_per_symbol as f32 * 2.5) as usize,
+            Complex32::new(0., 0.),
+        ); // we should be able to move up to one quarter of symbol in each direction
+        let (upchirp_tmp, downchirp_tmp) = build_ref_chirps(self.m_sf);
+        self.m_upchirp = upchirp_tmp;
+        self.m_downchirp = downchirp_tmp;
+
+        // self.cx_in = new kiss_fft_cpx[m_number_of_bins];
+        // self.cx_out = new kiss_fft_cpx[m_number_of_bins];
+
+        // Constrain the noutput_items argument passed to forecast and general_work.
+        // set_output_multiple causes the scheduler to ensure that the noutput_items argument passed to forecast and general_work will be an integer multiple of
+        // https://www.gnuradio.org/doc/doxygen/classgr_1_1block.html#a63d67fd758b70c6f2d7b7d4edcec53b3
+        // set_output_multiple(m_number_of_bins);  // TODO
+    }
 }
 
 #[async_trait]
