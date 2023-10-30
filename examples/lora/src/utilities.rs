@@ -6,7 +6,10 @@
 use futuresdr::num_complex::Complex32;
 use ordered_float::OrderedFloat;
 use rustfft::num_traits::Float;
+use std::cmp::Eq;
+use std::collections::HashMap;
 use std::f32::consts::PI;
+use std::hash::Hash;
 use std::ops::Mul;
 
 // pub const RESET: &str = "\033[0m";
@@ -30,12 +33,23 @@ pub enum Symbol_type {
 }
 
 pub const LDRO_MAX_DURATION_MS: f32 = 16.;
+
 #[repr(usize)]
 #[derive(Debug, Copy, Clone, Eq, PartialEq)]
 pub enum ldro_mode {
-    DISABLE,
-    ENABLE,
-    AUTO,
+    DISABLE = 0,
+    ENABLE = 1,
+    AUTO = 2,
+}
+impl From<usize> for ldro_mode {
+    fn from(orig: usize) -> Self {
+        match orig {
+            0_usize => return ldro_mode::DISABLE,
+            1_usize => return ldro_mode::ENABLE,
+            2_usize => return ldro_mode::AUTO,
+            _ => panic!("invalid value to ldro_mode"),
+        };
+    }
 }
 // /**
 //  *  \brief  return the modulus a%b between 0 and (b-1)
@@ -135,25 +149,26 @@ pub fn build_ref_chirps(sf: usize) -> (Vec<Complex32>, Vec<Complex32>) {
     (upchirp, downchirp)
 }
 
-//  // find most frequency number in vector
-// inline int most_frequent(int arr[], int n)
-// {
-//     // Insert all elements in hash.
-//     std::unordered_map<int, int> hash;
-//     for (int i = 0; i < n; i++)
-//         hash[arr[i]]++;
-//
-//     // find the max frequency
-//     int max_count = 0, res = -1;
-//     for (auto i : hash) {
-//         if (max_count < i.second) {
-//             res = i.first;
-//             max_count = i.second;
-//         }
-//     }
-//
-//     return res;
-// }
+// find most frequency number in vector
+#[inline]
+pub fn most_frequent<T>(input_slice: &[T]) -> T
+where
+    T: Eq + Hash + Copy,
+{
+    input_slice
+        .iter()
+        .fold(HashMap::<T, usize>::new(), |mut map, val| {
+            map.entry(*val)
+                .and_modify(|frq| *frq += 1_usize)
+                .or_insert(1_usize);
+            map
+        })
+        .iter()
+        .max_by(|(_, val_a), (_, val_b)| val_a.cmp(val_b))
+        .map(|(k, _)| k)
+        .unwrap_or_else(|| panic!("lora::utilities::most_frequent was called on empty slice."))
+        .to_owned()
+}
 
 // inline std::string random_string(int Nbytes){
 // const char* charmap = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
