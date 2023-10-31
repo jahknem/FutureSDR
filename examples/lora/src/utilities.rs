@@ -20,33 +20,33 @@ pub const MAX_SF: usize = 12;
 pub type LLR = f64; //< Log-Likelihood Ratio type
                     //typedef long double LLR; // 16 Bytes
 
-#[repr(usize)]
-#[derive(Debug, Copy, Clone)]
-pub enum Symbol_type {
-    VOID,
-    UPCHIRP,
-    SYNC_WORD,
-    DOWNCHIRP,
-    QUARTER_DOWN,
-    PAYLOAD,
-    UNDETERMINED,
-}
+// #[repr(usize)]
+// #[derive(Debug, Copy, Clone)]
+// pub enum Symbol_type {
+//     VOID,
+//     UPCHIRP,
+//     SYNC_WORD,
+//     DOWNCHIRP,
+//     QUARTER_DOWN,
+//     PAYLOAD,
+//     UNDETERMINED,
+// }
 
 pub const LDRO_MAX_DURATION_MS: f32 = 16.;
 
 #[repr(usize)]
 #[derive(Debug, Copy, Clone, Eq, PartialEq)]
-pub enum ldro_mode {
+pub enum LdroMode {
     DISABLE = 0,
     ENABLE = 1,
     AUTO = 2,
 }
-impl From<usize> for ldro_mode {
+impl From<usize> for LdroMode {
     fn from(orig: usize) -> Self {
         match orig {
-            0_usize => return ldro_mode::DISABLE,
-            1_usize => return ldro_mode::ENABLE,
-            2_usize => return ldro_mode::AUTO,
+            0_usize => return LdroMode::DISABLE,
+            1_usize => return LdroMode::ENABLE,
+            2_usize => return LdroMode::AUTO,
             _ => panic!("invalid value to ldro_mode"),
         };
     }
@@ -115,13 +115,13 @@ pub fn build_upchirp(id: u32, sf: usize) -> Vec<Complex32> {
     for i in 0..n_idx {
         let j = i as f32;
         if n < n_fold {
-            chirp[n_idx] = Complex32::new(1.0, 0.0)
+            chirp[i] = Complex32::new(1.0, 0.0)
                 * Complex32::from_polar(
                     1.,
                     2.0 * PI * (j * j / (2. * n) + (id as f32 / n as f32 - 0.5) * j),
                 );
         } else {
-            chirp[n_idx] = Complex32::new(1.0, 0.0)
+            chirp[i] = Complex32::new(1.0, 0.0)
                 * Complex32::from_polar(
                     1.,
                     2.0 * PI * (j * j / (2. * n) + (id as f32 / n as f32 - 1.5) * j),
@@ -143,7 +143,6 @@ pub fn build_upchirp(id: u32, sf: usize) -> Vec<Complex32> {
  */
 #[inline]
 pub fn build_ref_chirps(sf: usize) -> (Vec<Complex32>, Vec<Complex32>) {
-    let n: f64 = (1 << sf) as f64;
     let upchirp = build_upchirp(0, sf);
     let downchirp = volk_32fc_conjugate_32fc(&upchirp);
     (upchirp, downchirp)
