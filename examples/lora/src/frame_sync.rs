@@ -1,6 +1,7 @@
 use futuresdr::anyhow::Result;
 use futuresdr::async_trait::async_trait;
 use std::cmp::Eq;
+use std::collections::HashMap;
 use std::f32::consts::PI;
 use std::mem;
 // use futuresdr::futures::FutureExt;
@@ -25,6 +26,7 @@ use rustfft::num_traits::Signed;
 use rustfft::{FftDirection, FftPlanner};
 
 impl Copy for usize {}
+impl Copy for isize {}
 impl Copy for u8 {}
 impl Copy for u16 {}
 impl Copy for u32 {}
@@ -112,7 +114,7 @@ pub struct FrameSync {
 
     // cx_in: Vec<Complex32>,  //<input of the FFT
     // cx_out: Vec<Complex32>, //<output of the FFT
-    items_to_consume: usize, //< Number of items to consume after each iteration of the general_work function  ]] TODO check if local
+    items_to_consume: isize, //< Number of items to consume after each iteration of the general_work function  ]] TODO check if local
 
     // one_symbol_off: i32, //< indicate that we are offset by one symbol after the preamble  // TODO bool?
     additional_symbol_samp: Vec<Complex32>, //< save the value of the last 1.25 downchirp as it might contain the first payload symbol
@@ -139,9 +141,9 @@ pub struct FrameSync {
 
     symb_corr: Vec<Complex32>, //< symbol with CFO frac corrected
     down_val: Option<usize>,   //< value of the preamble downchirps
-    // net_id_off: i32,                    //< offset of the network identifier
-    m_should_log: bool, //< indicate that the sync values should be logged
-                        // off_by_one_id: f32, //< Indicate that the network identifiers where off by one and corrected (float used as saved in a float32 bin file)
+                               // net_id_off: i32,                    //< offset of the network identifier
+                               // m_should_log: bool, //< indicate that the sync values should be logged
+                               // off_by_one_id: f32, //< Indicate that the network identifiers where off by one and corrected (float used as saved in a float32 bin file)
 }
 
 impl FrameSync {
@@ -191,7 +193,7 @@ impl FrameSync {
                 m_preamb_len: preamble_len_tmp, //< Number of consecutive upchirps in preamble
                 net_ids: vec![None; 2],         //< values of the network identifiers received
 
-                m_n_up_req: SyncState::from(preamble_len_tmp - 3), //< number of consecutive upchirps required to trigger a detection
+                m_n_up_req: From::<usize>::from(preamble_len_tmp - 3), //< number of consecutive upchirps required to trigger a detection
                 up_symb_to_use: preamble_len_tmp - 4, //< number of upchirp symbols to use for CFO and STO frac estimation
 
                 m_sto_frac: 0.0, //< fractional part of CFO
@@ -249,9 +251,9 @@ impl FrameSync {
                 cfo_frac_sto_frac_est: false, //< indicate that the estimation of CFO_frac and STO_frac has been performed
 
                 down_val: None, //< value of the preamble downchirps
-                // net_id_off: i32,                    //< offset of the network identifier  // local to work
-                m_should_log: false, //< indicate that the sync values should be logged
-                                     // off_by_one_id: f32  // local to work
+                                // net_id_off: i32,                    //< offset of the network identifier  // local to work
+                                // m_should_log: false, //< indicate that the sync values should be logged
+                                // off_by_one_id: f32  // local to work
             },
         )
     }
@@ -552,7 +554,7 @@ impl FrameSync {
             let m_invalid_header = frame_info.get("err").unwrap_or(&err);
 
             if *m_invalid_header == err {
-                self.m_state = DETECT;
+                self.m_state = DecoderState::DETECT;
                 self.symbol_cnt = SyncState::NET_ID2;
                 self.k_hat = 0;
                 self.m_sto_frac = 0.;
@@ -669,14 +671,13 @@ impl Kernel for FrameSync {
             return Ok(());
         }
 
-        // float *sync_log_out = NULL;
-        // if (output_items.size() == 2)  // TODO
-        // {
-        //     sync_log_out = (float *)output_items[1];
-        //     m_should_log = true;
-        // }
-        // else
-        //     m_should_log = false;
+        let mut sync_log_out: &mut [f32] = &mut [];
+        let m_should_log = if sio.outputs().len() == 2 {
+            sync_log_out = sio.output(1).slice::<f32>();
+            true
+        } else {
+            false
+        };
         let input = sio.input(0).slice::<Complex32>();
         let nitems_to_process = input.len();
 
@@ -783,9 +784,10 @@ impl Kernel for FrameSync {
                         .copy_from_slice(&input[input_idx_offset..(input_idx_offset + count)]);
 
                     // perform the coarse synchronization
-                    self.items_to_consume = self.m_os_factor * (self.m_number_of_bins - self.k_hat);
+                    self.items_to_consume =
+                        self.m_os_factor as isize * (self.m_number_of_bins as isize - self.k_hat);
                 } else {
-                    self.items_to_consume = self.m_samples_per_symbol;
+                    self.items_to_consume = self.m_samples_per_symbol as isize;
                 }
                 items_to_output = 0;
             }
@@ -810,7 +812,7 @@ impl Kernel for FrameSync {
                         .collect();
                     self.cfo_frac_sto_frac_est = true;
                 }
-                self.items_to_consume = self.m_samples_per_symbol;
+                self.items_to_consume = self.m_samples_per_symbol as isize;
                 // apply cfo correction
                 self.symb_corr = volk_32fc_x2_multiply_32fc(&self.in_down, &self.CFO_frac_correc);
 
@@ -1045,14 +1047,15 @@ impl Kernel for FrameSync {
                             &self.m_downchirp,
                         )
                         .unwrap();
-                        let one_symbol_off = false;
+                        let mut one_symbol_off = false;
+                        let mut off_by_one_id = false;
 
                         if (netid1 as i32 - self.m_sync_words[0] as i32).abs() > 2
                         // wrong id 1, (we allow an offset of 2)
                         {
                             // check if we are in fact checking the second net ID and that the first one was considered as a preamble upchirp
                             if (netid1 as i32 - self.m_sync_words[1] as i32).abs() <= 2 {
-                                let net_id_off = netid1 as i32 - self.m_sync_words[1] as i32;
+                                let net_id_off = netid1 as isize - self.m_sync_words[1] as isize;
                                 for i in (self.m_preamb_len - 2)
                                     ..(Into::<usize>::into(self.m_n_up_req)
                                         + self.additional_upchirps)
@@ -1062,40 +1065,53 @@ impl Kernel for FrameSync {
                                             ..((i + 1) * self.m_number_of_bins)],
                                         &self.m_downchirp,
                                     )
-                                    .unwrap() as i32
+                                    .unwrap() as isize
                                         + net_id_off
-                                        == self.m_sync_words[0] as i32
+                                        == self.m_sync_words[0] as isize
                                     // found the first netID
                                     {
-                                        //                                     one_symbol_off = 1;
-                                        //                                     if (net_id_off != 0 && abs(net_id_off) > 1)
-                                        //                                         std::cout << RED << "[frame_sync_impl.cc] net id offset >1: " << net_id_off << RESET << std::endl;
-                                        //                                     if (m_should_log)
-                                        //                                         off_by_one_id = net_id_off != 0;
-                                        //                                     items_to_consume = -m_os_factor * net_id_off;
-                                        //                                     // the first symbol was mistaken for the end of the downchirp. we should correct and output it.
-                                        //
-                                        //                                     int start_off = (int)m_os_factor / 2 - my_roundf(m_sto_frac * m_os_factor) + m_os_factor * (0.25 * m_number_of_bins + m_cfo_int);
-                                        //                                     for (int i = start_off; i < 1.25 * m_samples_per_symbol; i += m_os_factor)
-                                        //                                     {
-                                        //
-                                        //                                         out[int((i - start_off) / m_os_factor)] = additional_symbol_samp[i];
-                                        //                                     }
-                                        //                                     items_to_output = m_number_of_bins;
-                                        //                                     m_state = SFO_COMPENSATION;
-                                        //                                     symbol_cnt = 1;
-                                        //                                     frame_cnt++;
+                                        one_symbol_off = true;
+                                        if net_id_off != 0 && net_id_off.abs() > 1 {
+                                            warn!(
+                                                "[frame_sync.rs] net id offset >1: {}",
+                                                net_id_off
+                                            );
+                                        }
+                                        if m_should_log {
+                                            off_by_one_id = net_id_off != 0;
+                                        }
+                                        self.items_to_consume =
+                                            -(self.m_os_factor as isize) * net_id_off;
+                                        // TODO
+                                        // the first symbol was mistaken for the end of the downchirp. we should correct and output it.
+
+                                        let start_off = self.m_os_factor / 2
+                                            - FrameSync::my_roundf(
+                                                self.m_sto_frac * self.m_os_factor as f32,
+                                            )
+                                            + self.m_os_factor
+                                                * (self.m_number_of_bins / 4 + m_cfo_int);
+                                        for i in start_off
+                                            ..(self.m_samples_per_symbol * 5 / 4)
+                                                .step_by(self.m_os_factor)
+                                        {
+                                            out[(i - start_off) / self.m_os_factor] =
+                                                self.additional_symbol_samp[i];
+                                        }
+                                        items_to_output = self.m_number_of_bins;
+                                        self.m_state = DecoderState::SFO_COMPENSATION;
+                                        self.symbol_cnt = SyncState::NET_ID2;
+                                        self.frame_cnt += 1;
                                     }
                                 }
-                                //                             if (!one_symbol_off)
-                                //                             {
-                                //                                 m_state = DETECT;
-                                //                                 symbol_cnt = 1;
-                                //                                 items_to_output = 0;
-                                //                                 k_hat = 0;
-                                //                                 m_sto_frac = 0;
-                                //                                 items_to_consume = 0;
-                                //                             }
+                                if !one_symbol_off {
+                                    self.m_state = DecoderState::DETECT;
+                                    self.symbol_cnt = SyncState::NET_ID2;
+                                    items_to_output = 0;
+                                    self.k_hat = 0;
+                                    self.m_sto_frac = 0.;
+                                    self.items_to_consume = 0;
+                                }
                             } else {
                                 self.m_state = DecoderState::DETECT;
                                 self.symbol_cnt = SyncState::NET_ID2;
@@ -1107,122 +1123,136 @@ impl Kernel for FrameSync {
                         } else
                         // net ID 1 valid
                         {
-                            //                         net_id_off = netid1 - (int32_t)m_sync_words[0];
-                            //                         if (mod(netid2 - net_id_off, m_number_of_bins) != (int32_t)m_sync_words[1]) // wrong id 2
-                            //                         {
-                            //                             m_state = DETECT;
-                            //                             symbol_cnt = 1;
-                            //                             items_to_output = 0;
-                            //                             k_hat = 0;
-                            //                             m_sto_frac = 0;
-                            //                             items_to_consume = 0;
-                            //                         }
-                            //                         else
-                            //                         {
-                            //                             if (net_id_off != 0 && abs(net_id_off) > 1)
-                            //                                 std::cout << RED << "[frame_sync_impl.cc] net id offset >1: " << net_id_off << RESET << std::endl;
-                            //                             if (m_should_log)
-                            //                                 off_by_one_id = net_id_off != 0;
-                            //                             items_to_consume = -m_os_factor * net_id_off;
-                            //                             m_state = SFO_COMPENSATION;
-                            //                             frame_cnt++;
-                            //                         }
+                            let net_id_off = netid1 as isize - self.m_sync_words[0] as isize;
+                            if (netid2 as isize - net_id_off) % self.m_number_of_bins
+                                != self.m_sync_words[1]
+                            // wrong id 2
+                            {
+                                self.m_state = DecoderState::DETECT;
+                                self.symbol_cnt = SyncState::NET_ID2;
+                                items_to_output = 0;
+                                self.k_hat = 0;
+                                self.m_sto_frac = 0.;
+                                self.items_to_consume = 0;
+                            } else {
+                                if net_id_off != 0 && net_id_off.abs() > 1 {
+                                    warn!("[frame_sync.rs] net id offset >1: {}", net_id_off);
+                                }
+                                if m_should_log {
+                                    off_by_one_id = net_id_off != 0;
+                                }
+                                self.items_to_consume = -(self.m_os_factor as isize) * net_id_off;
+                                self.m_state = DecoderState::SFO_COMPENSATION;
+                                self.frame_cnt += 1;
+                            }
                         }
-                        //                     if (m_state != DETECT)
-                        //                     {
-                        //                         // update sto_frac to its value at the payload beginning
-                        //                         m_sto_frac += sfo_hat * 4.25;
-                        //                         sfo_cum = ((m_sto_frac * m_os_factor) - my_roundf(m_sto_frac * m_os_factor)) / m_os_factor;
-                        //
-                        //                         pmt::pmt_t frame_info = pmt::make_dict();
-                        //                         frame_info = pmt::dict_add(frame_info, pmt::intern("is_header"), pmt::from_bool(true));
-                        //                         frame_info = pmt::dict_add(frame_info, pmt::intern("cfo_int"), pmt::mp((long)m_cfo_int));
-                        //                         frame_info = pmt::dict_add(frame_info, pmt::intern("cfo_frac"), pmt::mp((float)m_cfo_frac));
-                        //                         frame_info = pmt::dict_add(frame_info, pmt::intern("sf"), pmt::mp((long)m_sf));
-                        //
-                        //                         add_item_tag(0, nitems_written(0), pmt::string_to_symbol("frame_info"), frame_info);
-                        //
-                        //                         m_received_head = false;
-                        //                         items_to_consume += m_samples_per_symbol / 4 + m_os_factor * m_cfo_int;
-                        //                         symbol_cnt = one_symbol_off;
-                        //                         float snr_est2 = 0;
-                        //
-                        //                         if (m_should_log)
-                        //                         {
-                        //                             // estimate SNR
-                        //
-                        //                             for (int i = 0; i < up_symb_to_use; i++)
-                        //                             {
-                        //                                 snr_est2 += determine_snr(&preamble_upchirps[i * m_number_of_bins]);
-                        //                             }
-                        //                             snr_est2 /= up_symb_to_use;
-                        //                             float cfo_log = m_cfo_int + m_cfo_frac;
-                        //                             float sto_log = k_hat - m_cfo_int + m_sto_frac;
-                        //                             float srn_log = snr_est;
-                        //                             float sfo_log = sfo_hat;
-                        //
-                        //                             sync_log_out[0] = srn_log;
-                        //                             sync_log_out[1] = cfo_log;
-                        //                             sync_log_out[2] = sto_log;
-                        //                             sync_log_out[3] = sfo_log;
-                        //                             sync_log_out[4] = off_by_one_id;
-                        //                             produce(1, 5);
-                        //                         }
-                        // #ifdef PRINT_INFO
-                        //
-                        //                         std::cout << "[frame_sync_impl.cc] " << frame_cnt << " CFO estimate: " << m_cfo_int + m_cfo_frac << ", STO estimate: " << k_hat - m_cfo_int + m_sto_frac << " snr est: " << snr_est << std::endl;
-                        // #endif
-                        //                     }
+                        if self.m_state != DecoderState::DETECT {
+                            // update sto_frac to its value at the payload beginning
+                            self.m_sto_frac += self.sfo_hat * 4.25;
+                            self.sfo_cum = ((self.m_sto_frac * self.m_os_factor as f32)
+                                - FrameSync::my_roundf(self.m_sto_frac * self.m_os_factor as f32)
+                                    as f32)
+                                / self.m_os_factor as f32;
+
+                            let mut frame_info: HashMap<String, Pmt> = HashMap::new();
+
+                            frame_info.insert(String::from("is_header"), Pmt::Bool(true));
+                            frame_info.insert(String::from("cfo_int"), Pmt::Usize(m_cfo_int));
+                            frame_info.insert(String::from("cfo_frac"), Pmt::F32(self.m_cfo_frac));
+                            frame_info.insert(String::from("sf"), Pmt::Usize(self.m_sf));
+                            let frame_info_pmt = Pmt::MapStrPmt(frame_info);
+
+                            // add_item_tag(
+                            //     0,
+                            //     nitems_written(0),
+                            //     pmt::string_to_symbol("frame_info"),
+                            //     frame_info,
+                            // );  // TODO
+
+                            self.m_received_head = false;
+                            self.items_to_consume +=
+                                self.m_samples_per_symbol / 4 + self.m_os_factor * m_cfo_int;
+                            self.symbol_cnt = if one_symbol_off {
+                                SyncState::NET_ID2
+                            } else {
+                                SyncState::NET_ID1
+                            };
+                            let mut snr_est2: f32 = 0.;
+
+                            if m_should_log {
+                                // estimate SNR
+
+                                for i in 0..self.up_symb_to_use {
+                                    snr_est2 += self.determine_snr(
+                                        &self.preamble_upchirps[(i * self.m_number_of_bins)
+                                            ..((i + 1) * self.m_number_of_bins)],
+                                    );
+                                }
+                                snr_est2 /= self.up_symb_to_use as f32;
+                                let cfo_log = m_cfo_int as f32 + self.m_cfo_frac;
+                                let sto_log = (self.k_hat - m_cfo_int) as f32 + self.m_sto_frac;
+                                let srn_log = snr_est;
+                                let sfo_log = self.sfo_hat;
+
+                                sync_log_out[0] = srn_log;
+                                sync_log_out[1] = cfo_log;
+                                sync_log_out[2] = sto_log;
+                                sync_log_out[3] = sfo_log;
+                                sync_log_out[4] = off_by_one_id as f32;
+                                sio.output(1).produce(5);
+                            }
+                            // #ifdef PRINT_INFO
+                            //
+                            //                         std::cout << "[frame_sync_impl.cc] " << frame_cnt << " CFO estimate: " << m_cfo_int + m_cfo_frac << ", STO estimate: " << k_hat - m_cfo_int + m_sto_frac << " snr est: " << snr_est << std::endl;
+                            // #endif
+                        }
                     }
                     _ => warn!("encountered unexpercted symbol_cnt SyncState."),
                 }
             }
             DecoderState::SFO_COMPENSATION => {
-                //                 // transmit only useful symbols (at least 8 symbol for PHY header)
-                //
-                //                 if (symbol_cnt < 8 || ((uint32_t)symbol_cnt < m_symb_numb && m_received_head))
-                //                 {
-                //                     // output downsampled signal (with no STO but with CFO)
-                //                     memcpy(&out[0], &in_down[0], m_number_of_bins * sizeof(gr_complex));
-                //                     items_to_consume = m_samples_per_symbol;
-                //
-                //                     //   update sfo evolution
-                //                     if (abs(sfo_cum) > 1.0 / 2 / m_os_factor)
-                //                     {
-                //                         items_to_consume -= (-2 * signbit(sfo_cum) + 1);
-                //                         sfo_cum -= (-2 * signbit(sfo_cum) + 1) * 1.0 / m_os_factor;
-                //                     }
-                //
-                //                     sfo_cum += sfo_hat;
-                //
-                //                     items_to_output = m_number_of_bins;
-                //                     symbol_cnt++;
-                //                 }
-                //                 else if (!m_received_head)
-                //                 { // Wait for the header to be decoded
-                //                     items_to_consume = 0;
-                //                     items_to_output = 0;
-                //                 }
-                //                 else
-                //                 {
-                //                     m_state = DETECT;
-                //                     symbol_cnt = 1;
-                //                     items_to_consume = m_samples_per_symbol;
-                //                     items_to_output = 0;
-                //                     k_hat = 0;
-                //                     m_sto_frac = 0;
-                //                 }
-                //                 break;
+                // transmit only useful symbols (at least 8 symbol for PHY header)
+
+                if Into::<usize>::into(self.symbol_cnt) < 8
+                    || (Into::<usize>::into(self.symbol_cnt) < self.m_symb_numb
+                        && self.m_received_head)
+                {
+                    // output downsampled signal (with no STO but with CFO)
+                    let count = mem::size_of::<Complex32>() * self.m_number_of_bins;
+                    out[0..count].copy_from_slice(&self.in_down[0..count]);
+                    self.items_to_consume = self.m_samples_per_symbol as isize;
+
+                    //   update sfo evolution
+                    if self.sfo_cum.abs() > 1.0 / 2. / self.m_os_factor as f32 {
+                        self.items_to_consume -= (-2 * self.sfo_cum.signum() as isize + 1);
+                        self.sfo_cum -=
+                            (-2. * self.sfo_cum.signum() + 1.) * 1.0 / self.m_os_factor as f32;
+                    }
+
+                    self.sfo_cum += self.sfo_hat;
+
+                    items_to_output = self.m_number_of_bins;
+                    self.symbol_cnt = From::<usize>::from(Into::<usize>::into(self.symbol_cnt) + 1);
+                } else if !self.m_received_head {
+                    // Wait for the header to be decoded
+                    self.items_to_consume = 0;
+                    items_to_output = 0;
+                } else {
+                    self.m_state = DecoderState::DETECT;
+                    self.symbol_cnt = SyncState::NET_ID2;
+                    self.items_to_consume = self.m_samples_per_symbol as isize;
+                    items_to_output = 0;
+                    self.k_hat = 0;
+                    self.m_sto_frac = 0.;
+                }
             }
             _ => {
-                // std::cerr << "[LoRa sync] WARNING : No state! Shouldn't happen\n";
-                // break;
-            } //             }
-              //             consume_each(items_to_consume);
-              //             produce(0, items_to_output);
-              //             return WORK_CALLED_PRODUCE;
+                panic!("[LoRa sync] WARNING : No state! Shouldn't happen\n");
+            }
         }
-        //     } /* namespace lora_sdr */
+        assert!(self.items_to_consume >= 0);
+        sio.input(0).consume(self.items_to_consume as usize);
+        sio.output(0).produce(items_to_output);
         Ok(())
     }
-} /* namespace gr */
+}
