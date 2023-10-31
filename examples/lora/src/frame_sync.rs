@@ -172,6 +172,7 @@ impl FrameSync {
             StreamIoBuilder::new()
                 .add_input::<Complex32>("in")
                 .add_output::<Complex32>("out")
+                .add_output::<f32>("log_out")
                 .build(),
             MessageIoBuilder::new()
                 .add_input("frame_info", Self::frame_info_handler)
