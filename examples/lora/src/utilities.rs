@@ -107,7 +107,7 @@ pub fn bool2int(b: Vec<bool>) -> u32 {
  *          The oversampling factor used to generate the upchirp
  */
 #[inline]
-pub fn build_upchirp(id: u32, sf: usize) -> Vec<Complex32> {
+pub fn build_upchirp(id: usize, sf: usize) -> Vec<Complex32> {
     let n = (1 << sf) as f32;
     let n_idx = 1 << sf;
     let n_fold = n - id as f32;
