@@ -98,10 +98,10 @@ impl FftDemod {
                            // fs.set_tag_propagation_policy(TPP_DONT);  // TODO
         let mut sio = StreamIoBuilder::new().add_input::<Complex32>("in");
         if soft_decoding {
-            sio = sio.add_output::<[LLR; MAX_SF]>("out") // TODO
+            sio = sio.add_output::<[LLR; MAX_SF]>("out")
         } else {
             sio = sio.add_output::<u16>("out")
-        } // TODO stream type: soft_decoding ? MAX_SF * sizeof(LLR) : sizeof(uint16_t)
+        }
         Block::new(
             BlockMetaBuilder::new("FftDemod").build(),
             sio.build(),
@@ -446,11 +446,6 @@ impl Kernel for FftDemod {
             }
         }
 
-        //                 if (tags.size()){
-        //                         tags[0].offset = nitems_written(0);
-        //                         add_item_tag(0, tags[0]);  // 8 LoRa symbols in the header
-        //                 }  // TODO what to do with this?
-
         if self.output.len() < block_size  // only consume more if not currently waiting for space in out buffer
             && self.LLRs_block.len() < block_size
             && nitems_to_process >= self.m_samples_per_symbol
@@ -466,6 +461,15 @@ impl Kernel for FftDemod {
                 );
             }
             items_to_consume = self.m_samples_per_symbol;
+            // if let Some(tag) = tag_tmp {
+            //     sio.output(0).add_tag(
+            //         0,
+            //         Tag::NamedAny(
+            //             "frame_info".to_string(),
+            //             Box::new(Pmt::MapStrPmt(tag.clone())),
+            //         ),
+            //     );
+            // }  // TODO won't compile
             // self.m_symb_cnt += 1;  // TODO noop
             // if self.m_symb_cnt == self.m_symb_numb {
             //     // std::cout<<"fft_demod_impl.cc end of frame\n";
