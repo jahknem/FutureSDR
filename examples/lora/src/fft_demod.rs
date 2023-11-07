@@ -362,7 +362,7 @@ impl Kernel for FftDemod {
 
         let block_size = 4 + if self.is_header { 4 } else { self.m_cr };
 
-        let tag_tmp: Option<&HashMap<String, Pmt>> =
+        let tag_tmp: Option<HashMap<String, Pmt>> =
             sio.input(0).tags().iter().find_map(|x| match x {
                 ItemTag {
                     index,
@@ -370,7 +370,7 @@ impl Kernel for FftDemod {
                 } => {
                     if n == "frame_info" {
                         match (**val).downcast_ref().unwrap() {
-                            Pmt::MapStrPmt(map) => Some(map),
+                            Pmt::MapStrPmt(map) => Some(map.clone()),
                             _ => None,
                         }
                     } else {
@@ -381,7 +381,7 @@ impl Kernel for FftDemod {
             });
         //             get_tags_in_window(tags, 0, 0, m_samples_per_symbol, pmt::string_to_symbol("frame_info"));
 
-        if let Some(tag) = tag_tmp {
+        if let Some(ref tag) = tag_tmp {
             //                 pmt::pmt_t err = pmt::string_to_symbol("error");
             let is_header = if let Pmt::Bool(tmp) = tag.get("is_header").unwrap() {
                 *tmp
@@ -461,15 +461,12 @@ impl Kernel for FftDemod {
                 );
             }
             items_to_consume = self.m_samples_per_symbol;
-            // if let Some(tag) = tag_tmp {
-            //     sio.output(0).add_tag(
-            //         0,
-            //         Tag::NamedAny(
-            //             "frame_info".to_string(),
-            //             Box::new(Pmt::MapStrPmt(tag.clone())),
-            //         ),
-            //     );
-            // }  // TODO won't compile
+            if let Some(tag) = tag_tmp {
+                sio.output(0).add_tag(
+                    0,
+                    Tag::NamedAny("frame_info".to_string(), Box::new(Pmt::MapStrPmt(tag))),
+                );
+            }
             // self.m_symb_cnt += 1;  // TODO noop
             // if self.m_symb_cnt == self.m_symb_numb {
             //     // std::cout<<"fft_demod_impl.cc end of frame\n";

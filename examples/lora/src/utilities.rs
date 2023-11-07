@@ -33,6 +33,7 @@ pub type LLR = f64; //< Log-Likelihood Ratio type
 // }
 
 pub const LDRO_MAX_DURATION_MS: f32 = 16.;
+pub const CW_NBR: usize = 16; // In LoRa, always "only" 16 possible codewords => compare with all and take argmax
 
 #[repr(usize)]
 #[derive(Debug, Copy, Clone, Eq, PartialEq)]
@@ -70,7 +71,7 @@ impl From<usize> for LdroMode {
  *          The output number of bits
  */
 #[inline]
-pub fn int2bool(integer: u32, n_bits: usize) -> Vec<bool> {
+pub fn int2bool(integer: u16, n_bits: usize) -> Vec<bool> {
     let mut vec: Vec<bool> = vec![false; n_bits];
     let mut j = n_bits;
     for i in 0_usize..n_bits {
@@ -86,12 +87,13 @@ pub fn int2bool(integer: u32, n_bits: usize) -> Vec<bool> {
  *          The boolean vector to convert
  */
 #[inline]
-pub fn bool2int(b: Vec<bool>) -> u32 {
+pub fn bool2int(b: &[bool]) -> u8 {
+    assert!(b.len() <= 8);
     b.iter()
-        .map(|x| *x as u32)
+        .map(|x| *x as u8)
         .zip((0_usize..b.len()).rev())
         .map(|(bit, order)| bit << order)
-        .fold(0_u32, |acc, e| acc + e)
+        .fold(0_u8, |acc, e| acc + e)
 }
 
 /**
