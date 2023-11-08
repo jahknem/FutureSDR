@@ -30,7 +30,7 @@ pub struct HeaderDecoder {
     m_payload_len: usize, // The payload length in bytes
     m_has_crc: bool,      // Specify the usage of a payload CRC
     m_cr: usize,          // Coding rate
-    m_ldro_mode: usize,   // use low datarate optimisation
+    m_ldro_mode: bool,    // use low datarate optimisation
     // header_chk: u8,       // The header checksum received in the header
     pay_cnt: usize, // The number of payload nibbles received
     // nout: usize,          // The number of data nibbles to output
@@ -43,7 +43,7 @@ impl HeaderDecoder {
         cr: usize,
         pay_len: usize,
         has_crc: bool,
-        ldro_mode: usize,
+        ldro_mode: bool,
         print_header: bool,
     ) -> Block {
         Block::new(
@@ -77,7 +77,7 @@ impl HeaderDecoder {
         cr: usize,
         pay_len: usize,
         crc: bool,
-        ldro_mode: usize,
+        ldro_mode: bool,
         err: bool,
     ) {
         let mut header_content: HashMap<String, Pmt> = HashMap::new();
@@ -85,7 +85,7 @@ impl HeaderDecoder {
         header_content.insert("cr".to_string(), Pmt::Usize(cr));
         header_content.insert("pay_len".to_string(), Pmt::Usize(pay_len));
         header_content.insert("crc".to_string(), Pmt::Bool(crc));
-        header_content.insert("ldro_mode".to_string(), Pmt::Usize(ldro_mode));
+        header_content.insert("ldro_mode".to_string(), Pmt::Bool(ldro_mode));
         header_content.insert("err".to_string(), Pmt::Bool(err));
         mio.output_mut(0)
             .post(Pmt::MapStrPmt(header_content.clone()));
@@ -155,13 +155,17 @@ impl Kernel for HeaderDecoder {
                 }
             }
         }
+        info!("FLLLLLLAG 1");
+        info!("nitem_to_consume: {}", nitem_to_consume);
         if self.is_header && nitem_to_consume < 5 && !self.m_impl_header
         //ensure to have a full PHY header to process
         {
             nitem_to_consume = 0;
         }
+        info!("FLLLLLLAG 2");
         nitem_to_consume = min(nitem_to_consume, min(input.len(), out.len()));
         if nitem_to_consume > 0 {
+            info!("FLLLLLLAG 3");
             if self.is_header {
                 if self.m_impl_header {
                     //implicit header, all parameters should have been provided
@@ -279,6 +283,7 @@ impl Kernel for HeaderDecoder {
                     }
                 }
             }
+            info!("FLLLLLLAG 4");
             sio.input(0).consume(nitem_to_consume);
             sio.output(0).produce(nitem_to_produce);
         }

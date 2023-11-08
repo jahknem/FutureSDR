@@ -5,7 +5,7 @@ use std::collections::HashMap;
 use std::f32::consts::PI;
 use std::mem;
 // use futuresdr::futures::FutureExt;
-use futuresdr::log::warn;
+use futuresdr::log::{info, warn};
 use futuresdr::macros::message_handler;
 use futuresdr::num_complex::{Complex32, Complex64};
 use futuresdr::runtime::BlockMeta;
@@ -75,6 +75,7 @@ impl Kernel for GrayMapping {
             return Ok(());
         }
 
+        info!("FLUGGuGG");
         let tags: Vec<(usize, usize)> = sio
             .input(0)
             .tags()
@@ -144,6 +145,9 @@ impl Kernel for GrayMapping {
         //                           << "0x" << out[i] << std::dec << std::endl;
         // #endif
 
+        if nitems_to_process > 0 {
+            info!("FLUGGGG");
+        }
         sio.input(0).consume(nitems_to_process);
         sio.output(0).produce(nitems_to_process);
         Ok(())

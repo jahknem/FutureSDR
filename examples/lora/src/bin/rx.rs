@@ -15,10 +15,10 @@ use futuresdr::num_complex::Complex32;
 use futuresdr::runtime::Flowgraph;
 use futuresdr::runtime::Pmt;
 use futuresdr::runtime::Runtime;
+use lora::utilities::*;
+use lora::{Deinterleaver, FftDemod, FrameSync, GrayMapping, HammingDec, HeaderDecoder};
 use seify::Device;
 use seify::Direction::{Rx, Tx};
-
-use lora::frame_sync::FrameSync;
 
 #[derive(Parser, Debug)]
 #[clap(version)]
@@ -101,18 +101,32 @@ fn main() -> Result<()> {
     let src = fg.add_block(src.build().unwrap());
 
     let frame_sync = fg.add_block(FrameSync::new(
-        args.center_freq as u32,
-        args.sample_rate as u32,
-        8,
+        868100000,
+        125000,
+        7,
         false,
-        vec![0, 0],
+        vec![0x12], // TODO 18?
         1,
         None,
     ));
     fg.connect_stream(src, "out", frame_sync, "in")?;
+    let null_sink2 = fg.add_block(NullSink::<f32>::new());
+    fg.connect_stream(frame_sync, "log_out", null_sink2, "in")?;
+    let fft_demod = fg.add_block(FftDemod::new(true, true));
+    fg.connect_stream(frame_sync, "out", fft_demod, "in")?;
+    let gray_mapping = fg.add_block(GrayMapping::new(true));
+    fg.connect_stream(fft_demod, "out", gray_mapping, "in")?;
+    let deinterleaver = fg.add_block(Deinterleaver::new(true));
+    fg.connect_stream(gray_mapping, "out", deinterleaver, "in")?;
+    let hamming_dec = fg.add_block(HammingDec::new(true));
+    fg.connect_stream(deinterleaver, "out", hamming_dec, "in")?;
+    let header_decoder = fg.add_block(HeaderDecoder::new(false, 1, 11, true, false, true));
+    fg.connect_stream(hamming_dec, "out", header_decoder, "in")?;
 
-    let null_sink = fg.add_block(NullSink::<Complex32>::new());
-    fg.connect_stream(frame_sync, "out", null_sink, "in")?;
+    fg.connect_message(header_decoder, "frame_info", frame_sync, "frame_info")?;
+
+    let null_sink = fg.add_block(NullSink::<u8>::new());
+    fg.connect_stream(header_decoder, "out", null_sink, "in")?;
 
     let (_fg, _handle) = rt.start_sync(fg);
     loop {}

@@ -4,7 +4,7 @@ use std::collections::HashMap;
 use std::f32::consts::PI;
 use std::mem;
 // use futuresdr::futures::FutureExt;
-use futuresdr::log::warn;
+use futuresdr::log::{info, warn};
 use futuresdr::macros::message_handler;
 use futuresdr::num_complex::{Complex32, Complex64};
 use futuresdr::runtime::BlockMeta;
@@ -279,7 +279,7 @@ impl FftDemod {
                 for n in 0..self.m_samples_per_symbol {
                     // for all symbols n : 0 --> 2^sf
                     // LoRa: shift by -1 and use reduce rate if first block (header)
-                    let mut s: usize = ((n - 1) % (1 << self.m_sf))
+                    let mut s: usize = my_modulo((n as isize - 1), (1 << self.m_sf))
                         / if self.is_header || self.m_ldro { 4 } else { 1 };
                     s = s ^ (s >> 1); // Gray encoding formula               // Gray demap before (in this block)
                     if (s & (1 << i)) != 0 {
@@ -391,8 +391,8 @@ impl Kernel for FftDemod {
             if is_header
             // new frame beginning
             {
-                let cfo_int = if let Pmt::Usize(tmp) = tag.get("cfo_int").unwrap() {
-                    *tmp
+                let cfo_int = if let Pmt::F32(tmp) = tag.get("cfo_int").unwrap() {
+                    *tmp as isize
                 } else {
                     panic!()
                 };
@@ -410,7 +410,8 @@ impl Kernel for FftDemod {
                     self.set_sf(sf);
                 }
                 //create downchirp taking CFO_int into account
-                self.m_upchirp = build_upchirp(cfo_int % self.m_samples_per_symbol, self.m_sf);
+                self.m_upchirp =
+                    build_upchirp(my_modulo(cfo_int, self.m_samples_per_symbol), self.m_sf);
                 self.m_downchirp = volk_32fc_conjugate_32fc(&self.m_upchirp);
                 // adapt the downchirp to the cfo_frac of the frame
                 let tmp: Vec<Complex32> = (0..self.m_samples_per_symbol)
@@ -450,6 +451,11 @@ impl Kernel for FftDemod {
             && self.LLRs_block.len() < block_size
             && nitems_to_process >= self.m_samples_per_symbol
         {
+            info!(
+                "self.LLRs_block.len(): {}/{}",
+                self.LLRs_block.len(),
+                block_size
+            ); // TODO here
             if self.m_soft_decoding {
                 self.LLRs_block.push(self.get_LLRs(&input)); // Store 'sf' LLRs
             } else {
@@ -498,9 +504,11 @@ impl Kernel for FftDemod {
         } // else nothing to output
 
         if items_to_consume > 0 {
+            info!("FftDemod: consuming {} samples", items_to_consume);
             sio.input(0).consume(items_to_consume);
         }
         if items_to_output > 0 {
+            info!("FftDemod: producing {} samples", items_to_output);
             sio.output(0).produce(items_to_output);
         }
         Ok(())
