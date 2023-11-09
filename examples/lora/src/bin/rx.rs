@@ -16,7 +16,10 @@ use futuresdr::runtime::Flowgraph;
 use futuresdr::runtime::Pmt;
 use futuresdr::runtime::Runtime;
 use lora::utilities::*;
-use lora::{Deinterleaver, FftDemod, FrameSync, GrayMapping, HammingDec, HeaderDecoder};
+use lora::{
+    CrcVerif, Deinterleaver, Dewhitening, FftDemod, FrameSync, GrayMapping, HammingDec,
+    HeaderDecoder,
+};
 use seify::Device;
 use seify::Direction::{Rx, Tx};
 
@@ -112,7 +115,7 @@ fn main() -> Result<()> {
     fg.connect_stream(src, "out", frame_sync, "in")?;
     let null_sink2 = fg.add_block(NullSink::<f32>::new());
     fg.connect_stream(frame_sync, "log_out", null_sink2, "in")?;
-    let fft_demod = fg.add_block(FftDemod::new(true, true));
+    let fft_demod = fg.add_block(FftDemod::new(true, true, 7));
     fg.connect_stream(frame_sync, "out", fft_demod, "in")?;
     let gray_mapping = fg.add_block(GrayMapping::new(true));
     fg.connect_stream(fft_demod, "out", gray_mapping, "in")?;
@@ -122,11 +125,17 @@ fn main() -> Result<()> {
     fg.connect_stream(deinterleaver, "out", hamming_dec, "in")?;
     let header_decoder = fg.add_block(HeaderDecoder::new(false, 1, 11, true, false, true));
     fg.connect_stream(hamming_dec, "out", header_decoder, "in")?;
+    let dewhitening = fg.add_block(Dewhitening::new());
+    fg.connect_stream(header_decoder, "out", dewhitening, "in")?;
+    let crc_verif = fg.add_block(CrcVerif::new(true, false));
+    fg.connect_stream(dewhitening, "out", crc_verif, "in")?;
+    let null_sink3 = fg.add_block(NullSink::<bool>::new());
+    fg.connect_stream(crc_verif, "out1", null_sink3, "in")?;
 
     fg.connect_message(header_decoder, "frame_info", frame_sync, "frame_info")?;
 
     let null_sink = fg.add_block(NullSink::<u8>::new());
-    fg.connect_stream(header_decoder, "out", null_sink, "in")?;
+    fg.connect_stream(crc_verif, "out", null_sink, "in")?;
 
     let (_fg, _handle) = rt.start_sync(fg);
     loop {}

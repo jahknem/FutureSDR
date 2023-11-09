@@ -5,7 +5,7 @@ use std::collections::HashMap;
 use std::f32::consts::PI;
 use std::mem;
 // use futuresdr::futures::FutureExt;
-use futuresdr::log::warn;
+use futuresdr::log::{info, warn};
 use futuresdr::macros::message_handler;
 use futuresdr::num_complex::{Complex32, Complex64};
 use futuresdr::runtime::BlockMeta;
@@ -113,6 +113,10 @@ impl Kernel for Deinterleaver {
                 panic!()
             };
 
+            // info!(
+            //     "Deinterleaver: received new tag: {}",
+            //     if self.m_is_header { "header" } else { "body" }
+            // );
             if self.m_is_header {
                 self.m_sf = if let Pmt::Usize(tmp) = tag.get("sf").unwrap() {
                     *tmp
@@ -128,11 +132,13 @@ impl Kernel for Deinterleaver {
                 } else {
                     panic!()
                 };
+                // info!("Deinterleaver: m_cr: {}", self.m_cr);
                 self.m_ldro = if let Pmt::Bool(tmp) = tag.get("ldro").unwrap() {
                     *tmp
                 } else {
                     panic!()
                 };
+                // info!("Deinterleaver: m_ldro: {}", self.m_ldro);
                 // std::cout<<"\ndeinter_cr "<<tags[0].offset<<" - cr: "<<(int)m_cr<<"\n";
             }
             sio.output(0).add_tag(
@@ -173,7 +179,15 @@ impl Kernel for Deinterleaver {
                 for i in 0..cw_len {
                     for j in 0..sf_app {
                         // std::cout << "T["<<i<<"]["<<j<<"] "<< (inter_bin[i][j] > 0) << " ";
-                        deinter_bin[(i - j - 1) % sf_app][i] = inter_bin[i][j];
+                        // info!(
+                        //     "{}/{}, {}/{}",
+                        //     my_modulo(i as isize - j as isize - 1, sf_app),
+                        //     deinter_bin.len(),
+                        //     i,
+                        //     inter_bin.len()
+                        // );
+                        deinter_bin[my_modulo(i as isize - j as isize - 1, sf_app)][i] =
+                            inter_bin[i][j];
                     }
                     // std::cout << std::endl;
                 }
@@ -231,6 +245,7 @@ impl Kernel for Deinterleaver {
                 // if(is_first)
                 //     add_item_tag(0, nitems_written(0), pmt::string_to_symbol("header_len"), pmt::mp((long)sf_app));//sf_app is the header part size
             }
+            // info!("Deinterleaver: producing {} samples", sf_app);
             sio.input(0).consume(cw_len);
             sio.output(0).produce(sf_app);
         }

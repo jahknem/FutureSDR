@@ -1,10 +1,5 @@
 use futuresdr::anyhow::Result;
 use futuresdr::async_trait::async_trait;
-use std::cmp::min;
-use std::collections::HashMap;
-use std::f32::consts::PI;
-use std::mem;
-// use futuresdr::futures::FutureExt;
 use futuresdr::log::{info, warn};
 use futuresdr::macros::message_handler;
 use futuresdr::num_complex::{Complex32, Complex64};
@@ -19,6 +14,11 @@ use futuresdr::runtime::StreamIoBuilder;
 use futuresdr::runtime::Tag;
 use futuresdr::runtime::WorkIo;
 use futuresdr::runtime::{Block, ItemTag};
+use std::cmp::min;
+use std::collections::HashMap;
+use std::collections::VecDeque;
+use std::f32::consts::PI;
+use std::mem;
 
 use crate::utilities::*;
 
@@ -70,30 +70,21 @@ impl Kernel for GrayMapping {
             sio.output(0).slice::<u16>().len()
         };
         let mut nitems_to_process = min(n_input, n_output);
-
         if nitems_to_process == 0 {
             return Ok(());
         }
-
-        info!("FLUGGuGG");
-        let tags: Vec<(usize, usize)> = sio
+        let mut tags: VecDeque<(usize, HashMap<String, Pmt>)> = sio
             .input(0)
             .tags()
             .iter()
-            .map(|x| match x {
+            .filter_map(|x| match x {
                 ItemTag {
                     index,
                     tag: Tag::NamedAny(n, val),
                 } => {
-                    if n == "new_frame" {
+                    if n == "frame_info" {
                         match (**val).downcast_ref().unwrap() {
-                            Pmt::MapStrPmt(map) => {
-                                let sf_tmp = map.get("sf").unwrap();
-                                match sf_tmp {
-                                    Pmt::Usize(sf) => Some((*index, *sf)),
-                                    _ => None,
-                                }
-                            }
+                            Pmt::MapStrPmt(map) => Some((*index, map.clone())),
                             _ => None,
                         }
                     } else {
@@ -102,8 +93,6 @@ impl Kernel for GrayMapping {
                 }
                 _ => None,
             })
-            .filter(|x| x.is_some())
-            .map(|x| x.unwrap())
             .collect();
         //             get_tags_in_window(tags, 0, 0, ninput_items[0], pmt::string_to_symbol("new_frame"));
         if tags.len() > 0 {
@@ -121,6 +110,13 @@ impl Kernel for GrayMapping {
                 // int sf = pmt::to_long(pmt::dict_ref(tags[0].value, pmt::string_to_symbol("sf"), err));
                 // m_sf = sf;  // TODO noop
                 // }
+                sio.output(0).add_tag(
+                    0,
+                    Tag::NamedAny(
+                        "frame_info".to_string(),
+                        Box::new(Pmt::MapStrPmt(tags.pop_front().unwrap().1)),
+                    ),
+                );
             }
         }
 
@@ -145,9 +141,9 @@ impl Kernel for GrayMapping {
         //                           << "0x" << out[i] << std::dec << std::endl;
         // #endif
 
-        if nitems_to_process > 0 {
-            info!("FLUGGGG");
-        }
+        // if nitems_to_process > 0 {
+        //     info!("GrayMapping: producing {} samples", nitems_to_process);
+        // }
         sio.input(0).consume(nitems_to_process);
         sio.output(0).produce(nitems_to_process);
         Ok(())

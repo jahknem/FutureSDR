@@ -44,8 +44,8 @@ impl CrcVerif {
             BlockMetaBuilder::new("CrcVerif").build(),
             StreamIoBuilder::new()
                 .add_input::<u8>("in")
-                .add_output::<u8>("out1")
-                .add_output::<bool>("out2")
+                .add_output::<u8>("out")
+                .add_output::<bool>("out1")
                 .build(),
             MessageIoBuilder::new().add_output("msg").build(),
             CrcVerif {

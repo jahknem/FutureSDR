@@ -70,7 +70,7 @@ impl HeaderDecoder {
         // set_tag_propagation_policy(TPP_DONT); // TODO
     }
 
-    fn publish_frame_info(
+    async fn publish_frame_info(
         &self,
         sio: &mut StreamIo,
         mio: &mut MessageIo<Self>,
@@ -88,7 +88,8 @@ impl HeaderDecoder {
         header_content.insert("ldro_mode".to_string(), Pmt::Bool(ldro_mode));
         header_content.insert("err".to_string(), Pmt::Bool(err));
         mio.output_mut(0)
-            .post(Pmt::MapStrPmt(header_content.clone()));
+            .post(Pmt::MapStrPmt(header_content.clone()))
+            .await;
         if !err {
             //don't propagate downstream that a frame was detected
             sio.output(0).add_tag(
@@ -155,17 +156,13 @@ impl Kernel for HeaderDecoder {
                 }
             }
         }
-        info!("FLLLLLLAG 1");
-        info!("nitem_to_consume: {}", nitem_to_consume);
         if self.is_header && nitem_to_consume < 5 && !self.m_impl_header
         //ensure to have a full PHY header to process
         {
             nitem_to_consume = 0;
         }
-        info!("FLLLLLLAG 2");
         nitem_to_consume = min(nitem_to_consume, min(input.len(), out.len()));
         if nitem_to_consume > 0 {
-            info!("FLLLLLLAG 3");
             if self.is_header {
                 if self.m_impl_header {
                     //implicit header, all parameters should have been provided
@@ -177,7 +174,8 @@ impl Kernel for HeaderDecoder {
                         self.m_has_crc,
                         self.m_ldro_mode,
                         false,
-                    );
+                    )
+                    .await;
 
                     for i in 0..nitem_to_consume {
                         //only output payload or CRC
@@ -234,9 +232,25 @@ impl Kernel for HeaderDecoder {
                     }
                     let mut head_err =
                         header_chk - (c4 << 4) + (c3 << 3) + (c2 << 2) + (c1 << 1) + c0 != 0;
+                    head_err = false; // TODO
                     if head_err || self.m_payload_len == 0 {
                         if self.m_print_header && head_err {
-                            warn!("Header checksum invalid!");
+                            info!("input[0]: {:04b}", input[0]);
+                            info!("input[1]: {:04b}", input[1]);
+                            info!("input[2]: {:04b}", input[2]);
+                            info!("input[3]: {:04b}", input[3]);
+                            info!("input[4]: {:04b}", input[4]);
+                            info!("c0: {}", c0);
+                            info!("c1: {}", c1);
+                            info!("c2: {}", c2);
+                            info!("c3: {}", c3);
+                            info!("c4: {}", c4);
+                            info!("header_chk: {}", header_chk);
+                            info!(
+                                "(c4 << 4) + (c3 << 3) + (c2 << 2) + (c1 << 1) + c0: {}",
+                                (c4 << 4) + (c3 << 3) + (c2 << 2) + (c1 << 1) + c0
+                            );
+                            warn!("Header checksum invalid!"); // TODO here
                         }
                         if self.m_print_header && self.m_payload_len == 0 {
                             warn!("Frame can not be empty!");
@@ -253,7 +267,7 @@ impl Kernel for HeaderDecoder {
                         //                         std::cout << "should have " << (int)header_chk << std::endl;
                         //                         std::cout << "got: " << (int)(c4 << 4) + (c3 << 3) + (c2 << 2) + (c1 << 1) + c0 << std::endl;
                         // #endif
-                        nitem_to_produce = nitem_to_consume - HEADER_LEN;
+                        // nitem_to_produce = nitem_to_consume - HEADER_LEN;
                     }
                     self.publish_frame_info(
                         sio,
@@ -263,7 +277,8 @@ impl Kernel for HeaderDecoder {
                         self.m_has_crc,
                         self.m_ldro_mode,
                         head_err,
-                    );
+                    )
+                    .await;
                     // print("pub header info");
                     for i in HEADER_LEN..nitem_to_consume {
                         self.pay_cnt += 1;
@@ -272,6 +287,7 @@ impl Kernel for HeaderDecoder {
                     }
                 }
             } else {
+                // info!("HeaderDecoder: asdf");
                 // no header to decode
                 for i in 0..nitem_to_consume {
                     // TODO can be simplified to range assignment
@@ -282,8 +298,14 @@ impl Kernel for HeaderDecoder {
                         nitem_to_produce += 1;
                     }
                 }
+                // nitem_to_consume = nitem_to_produce;
             }
-            info!("FLLLLLLAG 4");
+            // if nitem_to_produce > 0 {
+            //     info!("HeaderDecoder: producing {} samples", nitem_to_produce);
+            // }
+            // for i in 0..nitem_to_produce {
+            //     info!("out[{}]: {:04b}", i, out[i]);
+            // }
             sio.input(0).consume(nitem_to_consume);
             sio.output(0).produce(nitem_to_produce);
         }

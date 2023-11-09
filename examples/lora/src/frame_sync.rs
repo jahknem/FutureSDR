@@ -5,6 +5,9 @@ use std::collections::HashMap;
 use std::f32::consts::PI;
 use std::mem;
 // use futuresdr::futures::FutureExt;
+use futuresdr::futures::channel::mpsc;
+use futuresdr::futures::executor::block_on;
+use futuresdr::futures_lite::StreamExt;
 use futuresdr::log::{info, warn};
 use futuresdr::macros::message_handler;
 use futuresdr::num_complex::{Complex32, Complex64};
@@ -60,7 +63,7 @@ impl From<usize> for SyncState {
             3_usize => SyncState::Downchirp2,
             4_usize => SyncState::QuarterDown,
             _ => {
-                warn!("implicit conversion from usize to SyncState::SYNCED(usize)");
+                // warn!("implicit conversion from usize to SyncState::SYNCED(usize)");  // TODO
                 SyncState::Synced(orig)
             }
         }
@@ -139,9 +142,10 @@ pub struct FrameSync {
 
     symb_corr: Vec<Complex32>, //< symbol with CFO frac corrected
     down_val: Option<usize>,   //< value of the preamble downchirps
-                               // net_id_off: i32,                    //< offset of the network identifier
-                               // m_should_log: bool, //< indicate that the sync values should be logged
-                               // off_by_one_id: f32, //< Indicate that the network identifiers where off by one and corrected (float used as saved in a float32 bin file)
+    // net_id_off: i32,                    //< offset of the network identifier
+    // m_should_log: bool, //< indicate that the sync values should be logged
+    // off_by_one_id: f32, //< Indicate that the network identifiers where off by one and corrected (float used as saved in a float32 bin file)
+    tag_from_msg_handler_to_work_channel: (mpsc::Sender<Pmt>, mpsc::Receiver<Pmt>),
 }
 
 impl FrameSync {
@@ -254,9 +258,10 @@ impl FrameSync {
                 cfo_frac_sto_frac_est: false, //< indicate that the estimation of CFO_frac and STO_frac has been performed
 
                 down_val: None, //< value of the preamble downchirps
-                                // net_id_off: i32,                    //< offset of the network identifier  // local to work
-                                // m_should_log: false, //< indicate that the sync values should be logged
-                                // off_by_one_id: f32  // local to work
+                // net_id_off: i32,                    //< offset of the network identifier  // local to work
+                // m_should_log: false, //< indicate that the sync values should be logged
+                // off_by_one_id: f32  // local to work
+                tag_from_msg_handler_to_work_channel: mpsc::channel::<Pmt>(1),
             },
         )
     }
@@ -549,34 +554,41 @@ impl FrameSync {
         p: Pmt,
     ) -> Result<Pmt> {
         if let Pmt::MapStrPmt(mut frame_info) = p {
-            let err = Pmt::String(String::from("error"));
-            //
-            let m_cr: usize = if let Pmt::Usize(temp) = frame_info.get("cr").unwrap_or(&err) {
+            let m_cr: usize = if let Pmt::Usize(temp) = frame_info.get("cr").unwrap() {
                 *temp
             } else {
                 panic!("invalid cr")
-            }; // TODO double
-            let m_pay_len: usize =
-                if let Pmt::Usize(temp) = frame_info.get("pay_len").unwrap_or(&err) {
-                    *temp
-                } else {
-                    panic!("invalid pay_len")
-                };
-            let m_has_crc: usize = if let Pmt::Usize(temp) = frame_info.get("crc").unwrap_or(&err) {
+            };
+            let m_pay_len: usize = if let Pmt::Usize(temp) = frame_info.get("pay_len").unwrap() {
+                *temp
+            } else {
+                panic!("invalid pay_len")
+            };
+            let m_has_crc: bool = if let Pmt::Bool(temp) = frame_info.get("crc").unwrap() {
                 *temp
             } else {
                 panic!("invalid m_has_crc")
             };
             // uint8_t
             let ldro_mode_tmp: LdroMode =
-                if let Pmt::Usize(temp) = frame_info.get("ldro_mode").unwrap_or(&err) {
-                    (*temp).into()
+                if let Pmt::Bool(temp) = frame_info.get("ldro_mode").unwrap() {
+                    if *temp {
+                        LdroMode::ENABLE
+                    } else {
+                        LdroMode::DISABLE
+                    }
                 } else {
-                    panic!("invalid ldro mode")
+                    panic!("invalid ldro_mode")
                 };
-            let m_invalid_header = frame_info.get("err").unwrap_or(&err);
+            let m_invalid_header = if let Pmt::Bool(temp) = frame_info.get("err").unwrap() {
+                *temp
+            } else {
+                panic!("invalid err flag")
+            };
 
-            if *m_invalid_header == err {
+            // info!("FrameSync: received header info");
+
+            if m_invalid_header {
                 self.m_state = DecoderState::Detect;
                 self.symbol_cnt = SyncState::NetId2;
                 self.k_hat = 0;
@@ -597,7 +609,7 @@ impl FrameSync {
                     + ((2 * m_pay_len - self.m_sf
                         + 2
                         + (!self.m_impl_head) as usize * 5
-                        + m_has_crc * 4) as f64
+                        + if m_has_crc { 4 } else { 0 }) as f64
                         / (self.m_sf - 2 * m_ldro as usize) as f64)
                         .ceil() as usize
                         * (4 + m_cr);
@@ -607,15 +619,10 @@ impl FrameSync {
                 frame_info.remove("ldro_mode");
                 frame_info.insert(String::from("ldro"), Pmt::Bool(m_ldro as usize != 0));
                 let frame_info_pmt = Pmt::MapStrPmt(frame_info);
-                // sio.output(0)
-                //     .add_tag(0, Tag::NamedAny("wifi_start".to_string(), Box::new(frame)));
-                // TODO tag stream
-                // add_item_tag(
-                //     0,
-                //     nitems_written(0),
-                //     pmt::string_to_symbol("frame_info"),
-                //     frame_info,
-                // );
+                self.tag_from_msg_handler_to_work_channel
+                    .0
+                    .try_send(frame_info_pmt)
+                    .unwrap();
             }
         } else {
             warn!("noise_est pmt was not a Map/Dict");
@@ -752,7 +759,7 @@ impl Kernel for FrameSync {
 
         if nitems_to_process < self.m_number_of_bins + 2 {
             // TODO check, condition taken from self.forecast()
-            info!("FrameSync FLAG 01");
+            // info!("FrameSync FLAG 01");
             return Ok(());
         }
 
@@ -828,10 +835,11 @@ impl Kernel for FrameSync {
                 }
                 self.bin_idx = bin_idx_new_opt;
                 if self.symbol_cnt == self.m_n_up_req {
-                    info!(
-                        "FrameSync: detected required nuber of upchirps ({})",
-                        Into::<usize>::into(self.m_n_up_req)
-                    );
+                    info!("FrameSync: detected Frame.");
+                    // info!(
+                    //     "FrameSync: detected required nuber of upchirps ({})",
+                    //     Into::<usize>::into(self.m_n_up_req)
+                    // );
                     self.additional_upchirps = 0;
                     self.m_state = DecoderState::Sync;
                     self.symbol_cnt = SyncState::NetId1;
@@ -1317,12 +1325,23 @@ impl Kernel for FrameSync {
                 // info!("FLAAAAAAAAAG 6!");
                 // transmit only useful symbols (at least 8 symbol for PHY header)
 
+                if let Ok(frame_info_tag_tmp) =
+                    self.tag_from_msg_handler_to_work_channel.1.try_next()
+                {
+                    if let Some(frame_info_tag) = frame_info_tag_tmp {
+                        // info!("new frame_info tag: {:?}", frame_info_tag);
+                        sio.output(0).add_tag(
+                            0,
+                            Tag::NamedAny("frame_info".to_string(), Box::new(frame_info_tag)),
+                        );
+                    }
+                }
+
                 if Into::<usize>::into(self.symbol_cnt) < 8
                     || (Into::<usize>::into(self.symbol_cnt) < self.m_symb_numb
                         && self.m_received_head)
                 {
-                    info!("FLAAAAAAAAAG 7!");
-                    info!("self.symbol_cnt: {}", Into::<usize>::into(self.symbol_cnt));
+                    // info!("self.symbol_cnt: {}", Into::<usize>::into(self.symbol_cnt));
                     // output downsampled signal (with no STO but with CFO)
                     let count = self.m_number_of_bins;
                     out[0..count].copy_from_slice(&self.in_down[0..count]);
@@ -1340,13 +1359,11 @@ impl Kernel for FrameSync {
                     items_to_output = self.m_number_of_bins;
                     self.symbol_cnt = From::<usize>::from(Into::<usize>::into(self.symbol_cnt) + 1);
                 } else if !self.m_received_head {
-                    info!("FLAAAAAAAAAG 8!");
                     // Wait for the header to be decoded
                     items_to_consume = 0;
                     items_to_output = 0;
                     // TODO
                 } else {
-                    info!("FLAAAAAAAAAG 9!");
                     self.m_state = DecoderState::Detect;
                     self.symbol_cnt = SyncState::NetId2;
                     items_to_consume = self.m_samples_per_symbol as isize;
@@ -1362,7 +1379,7 @@ impl Kernel for FrameSync {
         // info!("FrameSync: consuing {} samples, producing {}", items_to_consume, items_to_output);
         sio.input(0).consume(items_to_consume as usize);
         if items_to_output > 0 {
-            info!("FrameSync: producing {} samples", items_to_output);
+            // info!("FrameSync: producing {} samples", items_to_output);
         }
         sio.output(0).produce(items_to_output);
         Ok(())

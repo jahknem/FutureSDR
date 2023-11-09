@@ -43,8 +43,7 @@ pub struct FftDemod {
     m_upchirp: Vec<Complex32>,   //< Reference upchirp
     m_downchirp: Vec<Complex32>, //< Reference downchirp
     // m_dechirped: Vec<Complex32>, //< Dechirped symbol
-    m_fft: Vec<Complex32>, //< Result of the FFT
-
+    // m_fft: Vec<Complex32>, //< Result of the FFT
     output: Vec<u16>, //< Stores the value to be outputted once a full bloc has been received
     LLRs_block: Vec<[LLR; MAX_SF]>, //< Stores the LLRs to be outputted once a full bloc has been received
     is_header: bool,                //< Indicate that the first block hasn't been fully received
@@ -71,7 +70,7 @@ pub struct FftDemod {
 }
 
 impl FftDemod {
-    pub fn new(soft_decoding: bool, max_log_approx: bool) -> Block {
+    pub fn new(soft_decoding: bool, max_log_approx: bool, sf_initial: usize) -> Block {
         let mut fs = Self {
             m_sf: 0,
             m_cr: 1, // TODO never initialized in cpp code (would set the value implicitly to 0), but set to 1 in python example
@@ -86,7 +85,7 @@ impl FftDemod {
             m_upchirp: vec![],
             m_downchirp: vec![],
             // m_dechirped: vec![],
-            m_fft: vec![],
+            // m_fft: vec![],
             output: vec![],
             LLRs_block: vec![],
             is_header: false,
@@ -94,8 +93,8 @@ impl FftDemod {
             m_symb_numb: 0,
             // block_size: _,
         };
-        fs.set_sf(MIN_SF); //accept any new sf
-                           // fs.set_tag_propagation_policy(TPP_DONT);  // TODO
+        fs.set_sf(sf_initial); //accept any new sf
+                               // fs.set_tag_propagation_policy(TPP_DONT);  // TODO
         let mut sio = StreamIoBuilder::new().add_input::<Complex32>("in");
         if soft_decoding {
             sio = sio.add_output::<[LLR; MAX_SF]>("out")
@@ -140,25 +139,31 @@ impl FftDemod {
         // info!("[fft_demod_impl.cc] new sf received {}", sf);
         self.m_sf = sf;
         self.m_samples_per_symbol = 1_usize << self.m_sf;
-        self.m_upchirp = vec![Complex32::new(0., 0.); self.m_samples_per_symbol];
-        self.m_downchirp = vec![Complex32::new(0., 0.); self.m_samples_per_symbol];
+        // self.m_upchirp = vec![Complex32::new(0., 0.); self.m_samples_per_symbol];
+        // self.m_downchirp = vec![Complex32::new(0., 0.); self.m_samples_per_symbol];
 
         // FFT demodulation preparations
-        self.m_fft = vec![Complex32::new(0., 0.); self.m_samples_per_symbol];
+        // self.m_fft = vec![Complex32::new(0., 0.); self.m_samples_per_symbol];
         // self.m_dechirped = vec![Complex32::new(0., 0.); self.m_samples_per_symbol];
     }
 
     ///Compute the FFT and fill the class attributes
     fn compute_fft_mag(&self, samples: &[Complex32]) -> Vec<f64> {
+        // info!("samples: {:?}", samples);
+        // info!("self.m_downchirp: {:?}", self.m_downchirp);
         // Multiply with ideal downchirp
         let m_dechirped = volk_32fc_x2_multiply_32fc(&samples, &self.m_downchirp);
+        // info!("m_dechirped: {:?}", m_dechirped);
         let mut cx_out: Vec<Complex32> = m_dechirped[0..self.m_samples_per_symbol].to_vec();
+        // info!("cx_out: {:?}", cx_out);
         // do the FFT
         FftPlanner::new()
             .plan_fft(cx_out.len(), FftDirection::Forward)
             .process(&mut cx_out);
+        // info!("cx_out after fft: {:?}", cx_out);  // TODO here
         // Get magnitude squared
         let m_fft_mag_sq = volk_32fc_magnitude_squared_32f(&cx_out);
+        // info!("m_fft_mag_sq: {:?}", m_fft_mag_sq);
         // let rec_en = m_fft_mag_sq.iter().fold(0., |acc, e| acc + e);
         m_fft_mag_sq.iter().map(|x| *x as f64).collect()
     }
@@ -194,6 +199,7 @@ impl FftDemod {
         // compute SNR estimate at each received symbol as SNR remains constant during 1 simulation run
         // Estimate signal power
         let symbol_idx = argmax_float(&m_fft_mag_sq);
+        // info!("symbol_idx: {}", symbol_idx);
 
         // Estimate noise power
         let mut signal_energy: f64 = 0.;
@@ -250,8 +256,12 @@ impl FftDemod {
             let bessel_arg = m_Ps_est.sqrt() / m_Pn_est * (m_fft_mag_sq[n] as f64).sqrt();
             // Manage overflow of Bessel function
             // 713 ~ log(std::numeric_limits<LLR>::max())
-            if bessel_arg < 713. {
+            // if bessel_arg < 713. {
+            if bessel_arg < 100. {
+                // TODO original limit produces NaNs
+                // info!("bessel_arg: {}", bessel_arg);
                 let tmp = bessel::i_nu(0., Complex64::new(bessel_arg, 0.));
+                // info!("tmp: {}", tmp);
                 assert!(tmp.im == 0.);
                 LLs[n] = tmp.re; // compute Bessel safely  // TODO correct construction of complex number?
             } else {
@@ -360,9 +370,7 @@ impl Kernel for FftDemod {
         let mut items_to_output: usize = 0;
         let mut items_to_consume: usize = 0; //< Number of items to consume after each iteration of the general_work functio
 
-        let block_size = 4 + if self.is_header { 4 } else { self.m_cr };
-
-        let tag_tmp: Option<HashMap<String, Pmt>> =
+        let mut tag_tmp: Option<HashMap<String, Pmt>> =
             sio.input(0).tags().iter().find_map(|x| match x {
                 ItemTag {
                     index,
@@ -379,16 +387,18 @@ impl Kernel for FftDemod {
                 }
                 _ => None,
             });
-        //             get_tags_in_window(tags, 0, 0, m_samples_per_symbol, pmt::string_to_symbol("frame_info"));
 
         if let Some(ref tag) = tag_tmp {
-            //                 pmt::pmt_t err = pmt::string_to_symbol("error");
-            let is_header = if let Pmt::Bool(tmp) = tag.get("is_header").unwrap() {
+            self.is_header = if let Pmt::Bool(tmp) = tag.get("is_header").unwrap() {
                 *tmp
             } else {
                 panic!()
             };
-            if is_header
+            // info!(
+            //     "FftDemod: received new tag: {}",
+            //     if self.is_header { "header" } else { "body" }
+            // );
+            if self.is_header
             // new frame beginning
             {
                 let cfo_int = if let Pmt::F32(tmp) = tag.get("cfo_int").unwrap() {
@@ -414,15 +424,26 @@ impl Kernel for FftDemod {
                     build_upchirp(my_modulo(cfo_int, self.m_samples_per_symbol), self.m_sf);
                 self.m_downchirp = volk_32fc_conjugate_32fc(&self.m_upchirp);
                 // adapt the downchirp to the cfo_frac of the frame
-                let tmp: Vec<Complex32> = (0..self.m_samples_per_symbol)
+                let tmp: Vec<Complex64> = (0..self.m_samples_per_symbol)
                     .map(|x| {
-                        Complex32::from_polar(
+                        Complex64::from_polar(
                             1.,
-                            -2. * PI * cfo_frac as f32 / (self.m_samples_per_symbol * x) as f32,
+                            -2. * std::f64::consts::PI * cfo_frac
+                                / self.m_samples_per_symbol as f64
+                                * x as f64,
                         )
                     })
                     .collect();
-                self.m_downchirp = volk_32fc_x2_multiply_32fc(&self.m_downchirp, &tmp);
+                let mut m_downchirp_tmp: Vec<Complex64> = self
+                    .m_downchirp
+                    .iter()
+                    .map(|x| Complex64::new(x.re as f64, x.im as f64))
+                    .collect();
+                m_downchirp_tmp = volk_32fc_x2_multiply_32fc(&m_downchirp_tmp, &tmp);
+                self.m_downchirp = m_downchirp_tmp
+                    .iter()
+                    .map(|x| Complex32::new(x.re as f32, x.im as f32))
+                    .collect();
                 if self.m_soft_decoding {
                     self.LLRs_block.clear(); // TODO not cleared in original code
                 } else {
@@ -447,41 +468,50 @@ impl Kernel for FftDemod {
             }
         }
 
-        if self.output.len() < block_size  // only consume more if not currently waiting for space in out buffer
+        let block_size = 4 + if self.is_header { 4 } else { self.m_cr };
+
+        while self.output.len() < block_size  // only consume more if not currently waiting for space in out buffer
             && self.LLRs_block.len() < block_size
             && nitems_to_process >= self.m_samples_per_symbol
         {
-            info!(
-                "self.LLRs_block.len(): {}/{}",
-                self.LLRs_block.len(),
-                block_size
-            ); // TODO here
+            // TODO changed to loop as preceding block produces burst of samples and then stalls, leading to scheduler calling this work function only once.
+            // info!(
+            //     "self.LLRs_block.len(): {}/{}",
+            //     self.LLRs_block.len(),
+            //     block_size
+            // );
+            let input_tmp =
+                &input[items_to_consume..(items_to_consume + self.m_samples_per_symbol)];
+            // info!("input_tmp: {:?}", input_tmp);
             if self.m_soft_decoding {
-                self.LLRs_block.push(self.get_LLRs(&input)); // Store 'sf' LLRs
+                self.LLRs_block.push(self.get_LLRs(input_tmp)); // Store 'sf' LLRs
             } else {
                 // Hard decoding
                 // shift by -1 and use reduce rate if first block (header)
                 self.output.push(
-                    ((self.get_symbol_val(&input) - 1) % (1 << self.m_sf))
+                    ((self.get_symbol_val(input_tmp) - 1) % (1 << self.m_sf))
                         / if self.is_header || self.m_ldro { 4 } else { 1 },
                 );
             }
-            items_to_consume = self.m_samples_per_symbol;
+            items_to_consume += self.m_samples_per_symbol;
             if let Some(tag) = tag_tmp {
                 sio.output(0).add_tag(
                     0,
                     Tag::NamedAny("frame_info".to_string(), Box::new(Pmt::MapStrPmt(tag))),
                 );
+                tag_tmp = None;
             }
+            nitems_to_process = input.len() - items_to_consume;
             // self.m_symb_cnt += 1;  // TODO noop
             // if self.m_symb_cnt == self.m_symb_numb {
             //     // std::cout<<"fft_demod_impl.cc end of frame\n";
             //     // set_sf(0);
             //     self.m_symb_cnt = 0;
             // }
-        } else if nitems_to_process < self.m_samples_per_symbol {
-            warn!("FftDemod: not enough samples for one symbol in input buffer, waiting for more samples.")
         }
+        // else if nitems_to_process < self.m_samples_per_symbol {
+        //     warn!("FftDemod: not enough samples for one symbol in input buffer, waiting for more samples.")
+        // }
 
         if !self.m_soft_decoding && self.output.len() == block_size {
             let mut out_buf = sio.output(0).slice::<u16>();
@@ -504,11 +534,11 @@ impl Kernel for FftDemod {
         } // else nothing to output
 
         if items_to_consume > 0 {
-            info!("FftDemod: consuming {} samples", items_to_consume);
+            // info!("FftDemod: consuming {} samples", items_to_consume);
             sio.input(0).consume(items_to_consume);
         }
         if items_to_output > 0 {
-            info!("FftDemod: producing {} samples", items_to_output);
+            // info!("FftDemod: producing {} samples", items_to_output);
             sio.output(0).produce(items_to_output);
         }
         Ok(())

@@ -133,13 +133,13 @@ impl Kernel for Dewhitening {
         for i in 0..nitem_to_process / 2 {
             if self.offset < self.m_payload_len {
                 let low_nib = input[2 * i] ^ (WHITENING_SEQ[self.offset] & 0x0F);
-                let high_nib = input[2 * i + 1] ^ (WHITENING_SEQ[self.offset] & 0xF0) >> 4;
-                dewhitened.push(high_nib << 4 | low_nib);
+                let high_nib = input[2 * i + 1] ^ ((WHITENING_SEQ[self.offset] & 0xF0) >> 4);
+                dewhitened.push((high_nib << 4) | low_nib);
             } else if (self.offset < self.m_payload_len + 2) && self.m_crc_presence {
                 //do not dewhiten the CRC
                 let low_nib = input[2 * i];
                 let high_nib = input[2 * i + 1];
-                dewhitened.push(high_nib << 4 | low_nib);
+                dewhitened.push((high_nib << 4) | low_nib);
             } else {
                 // full packet received
                 break;
@@ -152,6 +152,7 @@ impl Kernel for Dewhitening {
         //                 std::cout << (char)(int)dewhitened[i] << "    0x" << std::hex << (int)dewhitened[i] << std::dec << std::endl;
         //             }
         // #endif
+        // info!("Dewhitening: producing {} samples", dewhitened.len());
         out[0..dewhitened.len()].copy_from_slice(&dewhitened);
         sio.input(0).consume(dewhitened.len() * 2); //ninput_items[0]/2*2
         sio.output(0).produce(dewhitened.len());

@@ -1,11 +1,11 @@
 use futuresdr::anyhow::Result;
 use futuresdr::async_trait::async_trait;
 use std::cmp::min;
-use std::collections::HashMap;
+use std::collections::{HashMap, VecDeque};
 use std::f32::consts::PI;
 use std::mem;
 // use futuresdr::futures::FutureExt;
-use futuresdr::log::warn;
+use futuresdr::log::{info, warn};
 use futuresdr::macros::message_handler;
 use futuresdr::num_complex::{Complex32, Complex64};
 use futuresdr::runtime::BlockMeta;
@@ -67,8 +67,8 @@ impl Kernel for HammingDec {
             sio.input(0).slice::<u8>().len()
         };
         let output = sio.output(0).slice::<u8>();
-        let mut nitems_to_process: usize = 0;
-        let tags: Vec<(usize, &HashMap<String, Pmt>)> = sio
+        let mut nitems_to_process: usize = n_input;
+        let mut tags: VecDeque<(usize, HashMap<String, Pmt>)> = sio
             .input(0)
             .tags()
             .iter()
@@ -79,7 +79,7 @@ impl Kernel for HammingDec {
                 } => {
                     if n == "frame_info" {
                         match (**val).downcast_ref().unwrap() {
-                            Pmt::MapStrPmt(map) => Some((*index, map)),
+                            Pmt::MapStrPmt(map) => Some((*index, map.clone())),
                             _ => None,
                         }
                     } else {
@@ -105,7 +105,6 @@ impl Kernel for HammingDec {
                 } else {
                     panic!()
                 };
-                // TODO move below block out from else branch?
                 if !self.is_header {
                     self.m_cr = if let Pmt::Usize(tmp) = tags[0].1.get("cr").unwrap() {
                         *tmp
@@ -114,10 +113,16 @@ impl Kernel for HammingDec {
                     };
                     // info!("\nhamming_cr {} - cr: {}\n", tags[0].0, self.m_cr);
                 }
+                sio.output(0).add_tag(
+                    0,
+                    Tag::NamedAny(
+                        "frame_info".to_string(),
+                        Box::new(Pmt::MapStrPmt(tags.pop_front().unwrap().1)),
+                    ),
+                );
             }
         }
         nitems_to_process = min(nitems_to_process, min(n_input, output.len()));
-
         let cr_app = if self.is_header { 4 } else { self.m_cr };
         let cw_len = cr_app + 4;
         for i in 0..nitems_to_process {
@@ -190,7 +195,7 @@ impl Kernel for HammingDec {
                 output[i] = ((data_nibble_soft & 0b0001) << 3)
                     + ((data_nibble_soft & 0b0010) << 1)
                     + ((data_nibble_soft & 0b0100) >> 1)
-                    + ((data_nibble_soft & 0b1000) >> 2);
+                    + ((data_nibble_soft & 0b1000) >> 3);
             } else {
                 // Hard decoding
                 let input = sio.input(0).slice::<u8>();
@@ -237,6 +242,9 @@ impl Kernel for HammingDec {
                 output[i] = bool2int(&data_nibble);
             }
         }
+        // if nitems_to_process > 0 {
+        //     info!("HammingDec: producing {} samples", nitems_to_process);
+        // }
         sio.input(0).consume(nitems_to_process);
         sio.output(0).produce(nitems_to_process);
 

@@ -157,7 +157,7 @@ pub fn my_modulo(val1: isize, val2: usize) -> usize {
     if val1 >= 0 {
         (val1 as usize) % val2
     } else {
-        (val2 as isize + (val1 % val2 as isize)) as usize
+        (val2 as isize + (val1 % val2 as isize)) as usize % val2
     }
 }
 
