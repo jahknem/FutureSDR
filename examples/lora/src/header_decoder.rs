@@ -231,26 +231,10 @@ impl Kernel for HeaderDecoder {
                         info!("Coding rate:    {}", self.m_cr);
                     }
                     let mut head_err =
-                        header_chk - (c4 << 4) + (c3 << 3) + (c2 << 2) + (c1 << 1) + c0 != 0;
-                    head_err = false; // TODO
+                        header_chk - ((c4 << 4) + (c3 << 3) + (c2 << 2) + (c1 << 1) + c0) != 0;
                     if head_err || self.m_payload_len == 0 {
                         if self.m_print_header && head_err {
-                            info!("input[0]: {:04b}", input[0]);
-                            info!("input[1]: {:04b}", input[1]);
-                            info!("input[2]: {:04b}", input[2]);
-                            info!("input[3]: {:04b}", input[3]);
-                            info!("input[4]: {:04b}", input[4]);
-                            info!("c0: {}", c0);
-                            info!("c1: {}", c1);
-                            info!("c2: {}", c2);
-                            info!("c3: {}", c3);
-                            info!("c4: {}", c4);
-                            info!("header_chk: {}", header_chk);
-                            info!(
-                                "(c4 << 4) + (c3 << 3) + (c2 << 2) + (c1 << 1) + c0: {}",
-                                (c4 << 4) + (c3 << 3) + (c2 << 2) + (c1 << 1) + c0
-                            );
-                            warn!("Header checksum invalid!"); // TODO here
+                            warn!("Header checksum invalid!");
                         }
                         if self.m_print_header && self.m_payload_len == 0 {
                             warn!("Frame can not be empty!");

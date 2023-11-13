@@ -224,7 +224,8 @@ impl Kernel for Deinterleaver {
                 for i in 0..cw_len {
                     for j in 0..sf_app {
                         // std::cout << "T["<<i<<"]["<<j<<"] "<< inter_bin[i][j] << " ";
-                        deinter_bin[(i - j - 1) % sf_app][i] = inter_bin[i][j];
+                        deinter_bin[my_modulo(i as isize - j as isize - 1, sf_app)][i] =
+                            inter_bin[i][j];
                     }
                     // std::cout << std::endl;
                 }

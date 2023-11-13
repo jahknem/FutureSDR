@@ -230,6 +230,7 @@ pub fn volk_32fc_conjugate_32fc(a_vector: &Vec<Complex32>) -> Vec<Complex32> {
     b_vector
 }
 
+#[inline]
 pub fn volk_32fc_x2_multiply_32fc<T: Copy + Mul<T, Output = T>>(
     input_slice_1: &[T],
     input_slice_2: &[T],
@@ -242,6 +243,21 @@ pub fn volk_32fc_x2_multiply_32fc<T: Copy + Mul<T, Output = T>>(
     tmp
 }
 
+// #[inline]
+// pub fn volk_32fc_x2_multiply_32fc<T: Copy + Mul<T, Output = T>, I>(
+//     input_slice_1: &[T],
+//     input_slice_2: &[T],
+// ) -> I
+// where
+//     I: Iterator<Item = T>,
+// {
+//     input_slice_1
+//         .iter()
+//         .zip(input_slice_2.iter())
+//         .map(|(x, y)| *x * *y)
+// }
+
+#[inline]
 pub fn volk_32fc_magnitude_squared_32f(input_slice: &[Complex32]) -> Vec<f32> {
     let tmp: Vec<f32> = input_slice
         .iter()

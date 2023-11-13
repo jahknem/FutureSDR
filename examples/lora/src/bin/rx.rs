@@ -103,6 +103,8 @@ fn main() -> Result<()> {
 
     let src = fg.add_block(src.build().unwrap());
 
+    let soft_decoding: bool = false;
+
     let frame_sync = fg.add_block(FrameSync::new(
         868100000,
         125000,
@@ -115,13 +117,13 @@ fn main() -> Result<()> {
     fg.connect_stream(src, "out", frame_sync, "in")?;
     let null_sink2 = fg.add_block(NullSink::<f32>::new());
     fg.connect_stream(frame_sync, "log_out", null_sink2, "in")?;
-    let fft_demod = fg.add_block(FftDemod::new(true, true, 7));
+    let fft_demod = fg.add_block(FftDemod::new(soft_decoding, true, 7));
     fg.connect_stream(frame_sync, "out", fft_demod, "in")?;
-    let gray_mapping = fg.add_block(GrayMapping::new(true));
+    let gray_mapping = fg.add_block(GrayMapping::new(soft_decoding));
     fg.connect_stream(fft_demod, "out", gray_mapping, "in")?;
-    let deinterleaver = fg.add_block(Deinterleaver::new(true));
+    let deinterleaver = fg.add_block(Deinterleaver::new(soft_decoding));
     fg.connect_stream(gray_mapping, "out", deinterleaver, "in")?;
-    let hamming_dec = fg.add_block(HammingDec::new(true));
+    let hamming_dec = fg.add_block(HammingDec::new(soft_decoding));
     fg.connect_stream(deinterleaver, "out", hamming_dec, "in")?;
     let header_decoder = fg.add_block(HeaderDecoder::new(false, 1, 11, true, false, true));
     fg.connect_stream(hamming_dec, "out", header_decoder, "in")?;

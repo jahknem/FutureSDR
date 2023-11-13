@@ -152,17 +152,18 @@ impl FftDemod {
         // info!("samples: {:?}", samples);
         // info!("self.m_downchirp: {:?}", self.m_downchirp);
         // Multiply with ideal downchirp
-        let m_dechirped = volk_32fc_x2_multiply_32fc(&samples, &self.m_downchirp);
+        let mut m_dechirped = volk_32fc_x2_multiply_32fc(&samples, &self.m_downchirp);
+        assert!(m_dechirped.len() == self.m_samples_per_symbol);
         // info!("m_dechirped: {:?}", m_dechirped);
-        let mut cx_out: Vec<Complex32> = m_dechirped[0..self.m_samples_per_symbol].to_vec();
+        // let mut cx_out: Vec<Complex32> = m_dechirped[0..self.m_samples_per_symbol].to_vec();
         // info!("cx_out: {:?}", cx_out);
         // do the FFT
         FftPlanner::new()
-            .plan_fft(cx_out.len(), FftDirection::Forward)
-            .process(&mut cx_out);
+            .plan_fft(self.m_samples_per_symbol, FftDirection::Forward)
+            .process(&mut m_dechirped);
         // info!("cx_out after fft: {:?}", cx_out);  // TODO here
         // Get magnitude squared
-        let m_fft_mag_sq = volk_32fc_magnitude_squared_32f(&cx_out);
+        let m_fft_mag_sq = volk_32fc_magnitude_squared_32f(&m_dechirped);
         // info!("m_fft_mag_sq: {:?}", m_fft_mag_sq);
         // let rec_en = m_fft_mag_sq.iter().fold(0., |acc, e| acc + e);
         m_fft_mag_sq.iter().map(|x| *x as f64).collect()

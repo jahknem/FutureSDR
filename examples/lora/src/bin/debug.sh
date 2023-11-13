@@ -1,7 +1,7 @@
 #!/bin/bash
 
-#BUILD_TYPE="--release"
 BUILD_TYPE=""
+#BUILD_TYPE="--release"
 CENTER_FREQ="--center-freq=867000000"
 RX_OFFSET="--rx-freq-offset=1.1e6"
 #DEVICE_FILTER="--device-filter=driver=soapy,soapy_driver=uhd,type=b200,name=B200mini"
