@@ -169,8 +169,9 @@ impl FrameSync {
             sync_word
         };
         let m_number_of_bins_tmp = 1_usize << sf;
-        let m_samples_per_symbol_tmp = m_number_of_bins_tmp * os_factor as usize;
-        let (m_upchirp_tmp, m_downchirp_tmp) = build_ref_chirps(sf); // vec![0; m_number_of_bins_tmp]
+        let m_samples_per_symbol_tmp = m_number_of_bins_tmp * os_factor;
+        let (m_upchirp_tmp, m_downchirp_tmp) = build_ref_chirps(sf, 0); // vec![0; m_number_of_bins_tmp]
+                                                                        // let (m_upchirp_tmp, m_downchirp_tmp) = build_ref_chirps(sf, os_factor); // TODO
 
         Block::new(
             BlockMetaBuilder::new("FrameSync").build(),
@@ -664,7 +665,8 @@ impl FrameSync {
             (self.m_samples_per_symbol as f32 * 2.5) as usize,
             Complex32::new(0., 0.),
         ); // we should be able to move up to one quarter of symbol in each direction
-        let (upchirp_tmp, downchirp_tmp) = build_ref_chirps(self.m_sf);
+        let (upchirp_tmp, downchirp_tmp) = build_ref_chirps(self.m_sf, 0);
+        // let (upchirp_tmp, downchirp_tmp) = build_ref_chirps(self.m_sf, self.m_os_factor);  // TODO
         self.m_upchirp = upchirp_tmp;
         self.m_downchirp = downchirp_tmp;
 

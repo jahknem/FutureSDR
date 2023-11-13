@@ -106,13 +106,13 @@ pub fn int2bool(integer: u16, n_bits: usize) -> Vec<bool> {
  *          The boolean vector to convert
  */
 #[inline]
-pub fn bool2int(b: &[bool]) -> u8 {
+pub fn bool2int(b: &[bool]) -> u16 {
     assert!(b.len() <= 8);
     b.iter()
-        .map(|x| *x as u8)
+        .map(|x| *x as u16)
         .zip((0_usize..b.len()).rev())
         .map(|(bit, order)| bit << order)
-        .fold(0_u8, |acc, e| acc + e)
+        .fold(0_u16, |acc, e| acc + e)
 }
 
 /**
@@ -128,24 +128,24 @@ pub fn bool2int(b: &[bool]) -> u8 {
  *          The oversampling factor used to generate the upchirp
  */
 #[inline]
-pub fn build_upchirp(id: usize, sf: usize) -> Vec<Complex32> {
+pub fn build_upchirp(id: usize, sf: usize, os_factor: usize) -> Vec<Complex32> {
     let n = (1 << sf) as f32;
     let n_idx = 1 << sf;
-    let n_fold = n - id as f32;
-    let mut chirp = vec![Complex32::from(0.); 1 << sf];
-    for i in 0..n_idx {
+    let n_fold = n * os_factor as f32 - (id * os_factor) as f32;
+    let mut chirp = vec![Complex32::from(0.); (1 << sf) * os_factor];
+    for i in 0..(n_idx * os_factor) {
         let j = i as f32;
         if n < n_fold {
             chirp[i] = Complex32::new(1.0, 0.0)
                 * Complex32::from_polar(
                     1.,
-                    2.0 * PI * (j * j / (2. * n) + (id as f32 / n as f32 - 0.5) * j),
+                    2.0 * PI * (j * j / (2. * n) + (id as f32 / n - 0.5) * j),
                 );
         } else {
             chirp[i] = Complex32::new(1.0, 0.0)
                 * Complex32::from_polar(
                     1.,
-                    2.0 * PI * (j * j / (2. * n) + (id as f32 / n as f32 - 1.5) * j),
+                    2.0 * PI * (j * j / (2. * n) + (id as f32 / n - 1.5) * j),
                 );
         }
     }
@@ -172,8 +172,8 @@ pub fn my_modulo(val1: isize, val2: usize) -> usize {
  *          The spreading factor to use
  */
 #[inline]
-pub fn build_ref_chirps(sf: usize) -> (Vec<Complex32>, Vec<Complex32>) {
-    let upchirp = build_upchirp(0, sf);
+pub fn build_ref_chirps(sf: usize, os_factor: usize) -> (Vec<Complex32>, Vec<Complex32>) {
+    let upchirp = build_upchirp(0, sf, os_factor);
     let downchirp = volk_32fc_conjugate_32fc(&upchirp);
     (upchirp, downchirp)
 }

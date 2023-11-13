@@ -239,7 +239,7 @@ impl Kernel for HammingDec {
                     //         break;
                     _ => {}
                 }
-                output[i] = bool2int(&data_nibble);
+                output[i] = bool2int(&data_nibble) as u8;
             }
         }
         // if nitems_to_process > 0 {

@@ -231,7 +231,7 @@ impl Kernel for Deinterleaver {
                 }
                 // transform codewords from binary vector to dec
                 for i in 0..sf_app {
-                    output[i] = bool2int(&deinter_bin[i]);
+                    output[i] = bool2int(&deinter_bin[i]) as u8;
                 }
                 // #ifdef GRLORA_DEBUG
                 //                     std::cout << "codewords----" << std::endl;
