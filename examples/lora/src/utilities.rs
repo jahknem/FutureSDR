@@ -4,8 +4,11 @@
 // #include <volk/volk.h>
 // #include <algorithm>
 use futuresdr::num_complex::Complex32;
+use futuresdr::runtime::Pmt;
+use futuresdr::runtime::{ItemTag, Tag};
 use ordered_float::OrderedFloat;
 use rustfft::num_traits::Float;
+use std::any::TypeId;
 use std::cmp::Eq;
 use std::collections::HashMap;
 use std::f32::consts::PI;
@@ -264,4 +267,74 @@ pub fn volk_32fc_magnitude_squared_32f(input_slice: &[Complex32]) -> Vec<f32> {
         .map(|x| x.re * x.re + x.im * x.im)
         .collect();
     tmp
+}
+
+trait TryDowncast<T: Clone> {
+    fn try_downcast(&self) -> Option<T> {
+        None
+    }
+}
+
+impl TryDowncast<String> for String {
+    fn try_downcast(&self) -> Option<String> {
+        Some(self.clone())
+    }
+}
+
+impl TryDowncast<usize> for String {}
+
+impl TryDowncast<f32> for String {}
+
+impl TryDowncast<String> for usize {}
+
+impl TryDowncast<usize> for usize {
+    fn try_downcast(&self) -> Option<usize> {
+        Some(*self)
+    }
+}
+
+impl TryDowncast<f32> for usize {}
+
+impl TryDowncast<String> for f32 {}
+
+impl TryDowncast<usize> for f32 {}
+
+impl TryDowncast<f32> for f32 {
+    fn try_downcast(&self) -> Option<f32> {
+        Some(*self)
+    }
+}
+
+pub fn get_tags_in_window<T: Clone>(
+    tags_in: &Vec<ItemTag>,
+    window_size: usize,
+    tag_name: &str,
+) -> Vec<(usize, T)>
+where
+    String: TryDowncast<T>,
+    usize: TryDowncast<T>,
+    f32: TryDowncast<T>,
+{
+    let tags: Vec<(usize, T)> = tags_in
+        .iter()
+        .filter_map(|x| match x {
+            ItemTag {
+                index,
+                tag: Tag::NamedAny(n, val),
+            } => {
+                if n == tag_name && *index < window_size {
+                    match (**val).downcast_ref().unwrap() {
+                        Pmt::String(payload) => Some((*index, payload.try_downcast().unwrap())),
+                        Pmt::Usize(payload) => Some((*index, payload.try_downcast().unwrap())),
+                        Pmt::F32(payload) => Some((*index, payload.try_downcast().unwrap())),
+                        _ => None,
+                    }
+                } else {
+                    None
+                }
+            }
+            _ => None,
+        })
+        .collect();
+    tags
 }

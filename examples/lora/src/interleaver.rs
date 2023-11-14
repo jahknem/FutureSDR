@@ -58,7 +58,6 @@ impl Interleaver {
                 m_frame_len: 0, // implicit
             },
         )
-        // set_tag_propagation_policy(TPP_ONE_TO_ONE);  // TODO
     }
 
     fn set_cr(&mut self, cr: usize) {
