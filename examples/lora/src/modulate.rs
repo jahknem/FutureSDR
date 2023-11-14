@@ -80,7 +80,7 @@ impl Modulate {
         Block::new(
             BlockMetaBuilder::new("Modulate").build(),
             StreamIoBuilder::new()
-                .add_input::<usize>("in")
+                .add_input::<u16>("in")
                 .add_output::<Complex32>("out")
                 .build(),
             MessageIoBuilder::new().build(),
@@ -129,7 +129,7 @@ impl Kernel for Modulate {
         _m: &mut MessageIo<Self>,
         _b: &mut BlockMeta,
     ) -> Result<()> {
-        let input = sio.input(0).slice::<usize>();
+        let input = sio.input(0).slice::<u16>();
         let out = sio.output(0).slice::<Complex32>();
         let mut nitems_to_process = input.len();
         let noutput_items: usize = out.len();
@@ -243,7 +243,7 @@ impl Kernel for Modulate {
             );
             nitems_to_process = min(nitems_to_process, input.len());
             for i in 0..nitems_to_process {
-                let data_upchirp = build_upchirp(input[i], self.m_sf, self.m_os_factor);
+                let data_upchirp = build_upchirp(input[i] as usize, self.m_sf, self.m_os_factor);
                 out[output_offset..(output_offset + self.m_samples_per_symbol)]
                     .copy_from_slice(&data_upchirp);
                 output_offset += self.m_samples_per_symbol;

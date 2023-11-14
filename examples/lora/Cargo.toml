@@ -11,6 +11,10 @@ edition = "2021"
 name = "rx"
 path = "src/bin/rx.rs"
 
+[[bin]]
+name = "tx"
+path = "src/bin/tx.rs"
+
 [dependencies]
 clap = { version = "4.4.0", features = ["derive"] }
 futuresdr = { path = "../..", features = ["seify"] }

@@ -36,8 +36,8 @@ impl GrayDemap {
         Block::new(
             BlockMetaBuilder::new("GrayDemap").build(),
             StreamIoBuilder::new()
-                .add_input::<usize>("in")
-                .add_output::<usize>("out")
+                .add_input::<u16>("in")
+                .add_output::<u16>("out")
                 .build(),
             MessageIoBuilder::new().build(),
             GrayDemap { m_sf: sf },
@@ -59,8 +59,8 @@ impl Kernel for GrayDemap {
         _m: &mut MessageIo<Self>,
         _b: &mut BlockMeta,
     ) -> Result<()> {
-        let input = sio.input(0).slice::<usize>();
-        let out = sio.output(0).slice::<usize>();
+        let input = sio.input(0).slice::<u16>();
+        let out = sio.output(0).slice::<u16>();
         let nitems_to_process = min(input.len(), out.len());
         let mut tags: Vec<(usize, Tag)> = sio
             .input(0)
@@ -86,10 +86,10 @@ impl Kernel for GrayDemap {
             // #endif
             out[i] = input[i];
             for j in 1..self.m_sf {
-                out[i] = out[i] ^ (input[i] >> j);
+                out[i] = out[i] ^ (input[i] >> j as u16);
             }
             //do the shift of 1
-            out[i] = my_modulo((out[i] + 1) as isize, (1 << self.m_sf));
+            out[i] = my_modulo((out[i] + 1) as isize, (1 << self.m_sf)) as u16;
             // #ifdef GRLORA_DEBUG
             // std::cout<<"0x"<<out[i]<<std::dec<<std::endl;
             // #endif

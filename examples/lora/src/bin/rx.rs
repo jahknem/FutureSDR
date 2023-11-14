@@ -29,9 +29,6 @@ struct Args {
     /// RX Antenna
     #[clap(long)]
     rx_antenna: Option<String>,
-    /// TX Antenna
-    #[clap(long)]
-    tx_antenna: Option<String>,
     /// Soapy device Filter
     #[clap(long)]
     device_filter: Option<String>,

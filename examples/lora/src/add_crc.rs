@@ -152,7 +152,11 @@ impl Kernel for AddCrc {
             }
         }
         if nitems_to_process == 0 {
-            warn!("AddCrc: no space in output buffer, waiting for more.");
+            if out.len() == 0 {
+                warn!("AddCrc: no space in output buffer, waiting for more.");
+            } else {
+                warn!("AddCrc: no samples in input buffer, waiting for more.");
+            }
             return Ok(());
         }
         self.m_cnt += nitems_to_process;

@@ -134,9 +134,13 @@ impl Kernel for Interleaver {
             warn!("Interleaver: not enough space in output buffer for one interleaved block, waiting for more.");
             return Ok(());
         }
-        if nitems_to_process >= sf_app || self.cw_cnt + nitems_to_process == self.m_frame_len {
+        if self.m_frame_len != 0
+            && (nitems_to_process >= sf_app || self.cw_cnt + nitems_to_process == self.m_frame_len)
+        {
             //propagate tag
             if self.cw_cnt == 0 {
+                info!("self.m_frame_len: {}", self.m_frame_len);
+                info!("self.m_sf: {}", self.m_sf);
                 sio.output(0).add_tag(
                     0,
                     Tag::NamedAny(

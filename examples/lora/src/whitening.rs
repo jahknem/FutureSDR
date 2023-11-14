@@ -28,36 +28,27 @@ use crate::utilities::*;
 use rustfft::{FftDirection, FftPlanner};
 
 pub struct Whitening {
-    m_is_hex: bool,    // indicate that the payload is given by a string of hex values
-    m_separator: char, // the separator for file inputs
+    m_is_hex: bool, // indicate that the payload is given by a string of hex values
     // m_payload: Vec<u8>, // store the payload bytes
     payload_str: VecDeque<String>, // payload as a string
     m_use_length_tag: bool, // wheter to use the length tag to separate frames or the separator character
-    m_length_tag_name: String, // name/key of the length tag
     m_input_byte_cnt: usize, // number of bytes from the input already processed
     m_tag_offset: usize,
 }
 
 impl Whitening {
-    pub fn new(
-        is_hex: bool,
-        use_length_tag: bool,
-        separator: char,
-        length_tag_name: &str,
-    ) -> Block {
+    pub fn new(is_hex: bool, use_length_tag: bool) -> Block {
         Block::new(
             BlockMetaBuilder::new("Whitening").build(),
             StreamIoBuilder::new()
-                .add_input::<u8>("in")
+                // .add_input::<u8>("in")
                 .add_output::<u8>("out")
                 .build(),
             MessageIoBuilder::new()
                 .add_input("msg", Self::msg_handler)
                 .build(),
             Whitening {
-                m_separator: separator,
                 m_use_length_tag: use_length_tag,
-                m_length_tag_name: length_tag_name.to_string(),
                 m_is_hex: if use_length_tag { false } else { is_hex }, // cant use length tag if input is given as a string of hex values
                 m_tag_offset: 1,
                 // m_payload: vec![], // implicit
