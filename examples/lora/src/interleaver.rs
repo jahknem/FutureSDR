@@ -130,97 +130,101 @@ impl Kernel for Interleaver {
             self.m_sf
         };
         nitems_to_process = min(nitems_to_process, sf_app);
-        if out.len() < cw_len {
-            warn!("Interleaver: not enough space in output buffer for one interleaved block, waiting for more.");
-            return Ok(());
-        }
-        if self.m_frame_len != 0
-            && (nitems_to_process >= sf_app || self.cw_cnt + nitems_to_process == self.m_frame_len)
-        {
-            //propagate tag
-            if self.cw_cnt == 0 {
-                info!("self.m_frame_len: {}", self.m_frame_len);
-                info!("self.m_sf: {}", self.m_sf);
-                sio.output(0).add_tag(
-                    0,
-                    Tag::NamedAny(
-                        "frame_len".to_string(),
-                        Box::new(Pmt::Usize(
-                            8 + max(
-                                ((self.m_frame_len - self.m_sf + 2) as f64
-                                    / (self.m_sf - if self.m_ldro { 1 } else { 0 }) as f64)
-                                    .ceil() as usize
-                                    * (self.m_cr + 4),
-                                0,
-                            ), //get number of items in frame
-                        )),
-                    ),
-                );
+        if nitems_to_process > 0 {
+            if out.len() < cw_len {
+                warn!("Interleaver: not enough space in output buffer for one interleaved block, waiting for more.");
+                return Ok(());
             }
-            //         //Create the empty matrices
-            //         std::vector<std::vector<bool>> cw_bin(sf_app);
-            let init_bit: Vec<bool> = vec![false; self.m_sf];
-            let mut inter_bin: Vec<Vec<bool>> = vec![init_bit; cw_len];
+            if self.m_frame_len != 0
+                && (nitems_to_process >= sf_app
+                    || self.cw_cnt + nitems_to_process == self.m_frame_len)
+            {
+                //propagate tag
+                if self.cw_cnt == 0 {
+                    info!("self.m_frame_len: {}", self.m_frame_len);
+                    info!("self.m_sf: {}", self.m_sf);
+                    sio.output(0).add_tag(
+                        0,
+                        Tag::NamedAny(
+                            "frame_len".to_string(),
+                            Box::new(Pmt::Usize(
+                                8 + max(
+                                    ((self.m_frame_len - self.m_sf + 2) as f64
+                                        / (self.m_sf - if self.m_ldro { 1 } else { 0 }) as f64)
+                                        .ceil() as usize
+                                        * (self.m_cr + 4),
+                                    0,
+                                ), //get number of items in frame
+                            )),
+                        ),
+                    );
+                }
+                //         //Create the empty matrices
+                //         std::vector<std::vector<bool>> cw_bin(sf_app);
+                let init_bit: Vec<bool> = vec![false; self.m_sf];
+                let mut inter_bin: Vec<Vec<bool>> = vec![init_bit; cw_len];
 
-            //convert to input codewords to binary vector of vector
-            let cw_bin: Vec<Vec<bool>> = input[0..sf_app]
-                .iter()
-                .enumerate()
-                .map(|(i, x)| {
-                    if i >= nitems_to_process {
-                        int2bool(0, cw_len)
-                    } else {
-                        int2bool(*x as u16, cw_len)
+                //convert to input codewords to binary vector of vector
+                let cw_bin: Vec<Vec<bool>> = input[0..sf_app]
+                    .iter()
+                    .enumerate()
+                    .map(|(i, x)| {
+                        if i >= nitems_to_process {
+                            int2bool(0, cw_len)
+                        } else {
+                            int2bool(*x as u16, cw_len)
+                        }
+                    })
+                    .collect();
+                self.cw_cnt += sf_app;
+                // #ifdef GRLORA_DEBUG
+                //         std::cout << "codewords---- " << std::endl;
+                //         for (uint32_t i = 0u; i < sf_app; i++)
+                //         {
+                //           for (int j = 0; j < int(cw_len); j++)
+                //           {
+                //             std::cout << cw_bin[i][j];
+                //           }
+                //           std::cout << " 0x" << std::hex << (int)in[i] << std::dec << std::endl;
+                //         }
+                //         std::cout << std::endl;
+                // #endif
+
+                //Do the actual interleaving
+                for i in 0..cw_len {
+                    for j in 0..sf_app {
+                        inter_bin[i][j] = cw_bin[my_modulo(i as isize - j as isize - 1, sf_app)][i];
                     }
-                })
-                .collect();
-            self.cw_cnt += sf_app;
-            // #ifdef GRLORA_DEBUG
-            //         std::cout << "codewords---- " << std::endl;
-            //         for (uint32_t i = 0u; i < sf_app; i++)
-            //         {
-            //           for (int j = 0; j < int(cw_len); j++)
-            //           {
-            //             std::cout << cw_bin[i][j];
-            //           }
-            //           std::cout << " 0x" << std::hex << (int)in[i] << std::dec << std::endl;
-            //         }
-            //         std::cout << std::endl;
-            // #endif
-
-            //Do the actual interleaving
-            for i in 0..cw_len {
-                for j in 0..sf_app {
-                    inter_bin[i][j] = cw_bin[my_modulo(i as isize - j as isize - 1, sf_app)][i];
+                    //For the first bloc we add a parity bit and a zero in the end of the lora symbol(reduced rate)
+                    if (self.cw_cnt == self.m_sf - 2) || self.m_ldro {
+                        inter_bin[i][sf_app] = inter_bin[i]
+                            .iter()
+                            .fold(0, |acc, e| acc + if *e { 1 } else { 0 })
+                            % 2
+                            != 0;
+                    }
+                    out[i] = bool2int(&inter_bin[i]);
                 }
-                //For the first bloc we add a parity bit and a zero in the end of the lora symbol(reduced rate)
-                if (self.cw_cnt == self.m_sf - 2) || self.m_ldro {
-                    inter_bin[i][sf_app] = inter_bin[i]
-                        .iter()
-                        .fold(0, |acc, e| acc + if *e { 1 } else { 0 })
-                        % 2
-                        != 0;
-                }
-                out[i] = bool2int(&inter_bin[i]);
+                // #ifdef GRLORA_DEBUG
+                //         std::cout << "interleaved------" << std::endl;
+                //         for (uint32_t i = 0u; i < cw_len; i++)
+                //         {
+                //           for (int j = 0; j < int(m_sf); j++)
+                //           {
+                //             std::cout << inter_bin[i][j];
+                //           }
+                //           std::cout << " " << out[i] << std::endl;
+                //         }
+                //         std::cout << std::endl;
+                // #endif
+            } else {
+                warn!("Interleaver: not enough samples in input buffer, waiting for more.");
+                return Ok(());
             }
-            // #ifdef GRLORA_DEBUG
-            //         std::cout << "interleaved------" << std::endl;
-            //         for (uint32_t i = 0u; i < cw_len; i++)
-            //         {
-            //           for (int j = 0; j < int(m_sf); j++)
-            //           {
-            //             std::cout << inter_bin[i][j];
-            //           }
-            //           std::cout << " " << out[i] << std::endl;
-            //         }
-            //         std::cout << std::endl;
-            // #endif
-        } else {
-            warn!("Interleaver: not enough samples in input buffer, waiting for more.");
-            return Ok(());
+            // info! {"Interleaver: producing {} samples.", cw_len};
+            sio.input(0).consume(nitems_to_process);
+            sio.output(0).produce(cw_len);
         }
-        sio.input(0).consume(nitems_to_process);
-        sio.output(0).produce(cw_len);
         Ok(())
     }
 }

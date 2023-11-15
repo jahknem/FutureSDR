@@ -136,6 +136,10 @@ impl Kernel for Modulate {
         let mut output_offset = 0;
 
         // set_output_multiple(m_samples_per_symbol);  // TODO
+        // info!(
+        //     "Modulate: Flag 1 - nitems_to_process: {}",
+        //     nitems_to_process
+        // );
 
         let tags: Vec<(usize, usize)> = sio
             .input(0)
@@ -161,22 +165,40 @@ impl Kernel for Modulate {
         if tags.len() > 0 {
             if tags[0].0 != 0 {
                 nitems_to_process = min(tags[0].0, noutput_items / self.m_samples_per_symbol);
+                // info!(
+                //     "Modulate: Flag 2 - nitems_to_process: {}",
+                //     nitems_to_process
+                // );
             } else {
                 if tags.len() >= 2 {
                     nitems_to_process = min(tags[1].0, noutput_items / self.m_samples_per_symbol);
+                    // info!(
+                    //     "Modulate: Flag 3 - nitems_to_process: {}",
+                    //     nitems_to_process
+                    // );
                 }
                 if self.frame_end {
-                    self.m_frame_len = tags[0].0;
+                    self.m_frame_len = tags[0].1;
+                    // sio.output(0).add_tag(
+                    //     0,
+                    //     Tag::NamedAny(
+                    //         "frame_len".to_string(),
+                    //         Box::new(Pmt::Usize(
+                    //             ((self.m_frame_len as f32 + self.m_preamb_len as f32 + 4.25)
+                    //                 * self.m_samples_per_symbol as f32)
+                    //                 as usize
+                    //                 + self.m_inter_frame_padding,
+                    //         )),
+                    //     ),
+                    // );
                     sio.output(0).add_tag(
                         0,
-                        Tag::NamedAny(
-                            "frame_len".to_string(),
-                            Box::new(Pmt::Usize(
-                                ((self.m_frame_len as f32 + self.m_preamb_len as f32 + 4.25)
-                                    * self.m_samples_per_symbol as f32)
-                                    as usize
-                                    + self.m_inter_frame_padding,
-                            )),
+                        Tag::NamedUsize(
+                            "burst_start".to_string(),
+                            ((self.m_frame_len as f32 + (self.m_preamb_len as f32 + 4.25))
+                                * self.m_samples_per_symbol as f32)
+                                as usize
+                                + self.m_inter_frame_padding,
                         ),
                     );
                     self.samp_cnt = -1;
@@ -187,103 +209,162 @@ impl Kernel for Modulate {
             }
         }
 
-        if self.samp_cnt == -1
-        // preamble
+        // info!(
+        //     "Modulate: Flag 0 - nitems_to_process: {}",
+        //     nitems_to_process
+        // );
+        // info!("Modulate: Flag 0 - self.m_frame_len: {}", self.m_frame_len);
+        // info!("Modulate: Flag 0 - (self.m_frame_len + (self.m_preamb_len + 5)) * self.m_samples_per_symbol: {}", ((self.m_frame_len as f32 + (self.m_preamb_len as f32 + 4.25))
+        //             * self.m_samples_per_symbol as f32) as usize + self.m_inter_frame_padding);
+        // if self.m_frame_len > 0 {
+        if self.m_frame_len > 0
+            && nitems_to_process == self.m_frame_len
+            && noutput_items
+                >= ((self.m_frame_len as f32 + (self.m_preamb_len as f32 + 4.25))
+                    * self.m_samples_per_symbol as f32) as usize
+                    + self.m_inter_frame_padding
         {
-            for i in 0..(noutput_items / self.m_samples_per_symbol) {
-                if self.preamb_samp_cnt < (self.m_preamb_len + 5) * self.m_samples_per_symbol
-                //should output preamble part
-                {
-                    if self.preamb_samp_cnt < (self.m_preamb_len * self.m_samples_per_symbol) {
-                        //upchirps
-                        out[output_offset..(output_offset + self.m_samples_per_symbol)]
-                            .copy_from_slice(&self.m_upchirp)
-                    } else if self.preamb_samp_cnt
-                        == (self.m_preamb_len * self.m_samples_per_symbol)
+            if self.samp_cnt == -1
+            // preamble
+            {
+                for i in 0..(noutput_items / self.m_samples_per_symbol) {
+                    if self.preamb_samp_cnt < (self.m_preamb_len + 5) * self.m_samples_per_symbol
+                    //should output preamble part
                     {
-                        //sync words
-                        let sync_upchirp =
-                            build_upchirp(self.m_sync_words[0], self.m_sf, self.m_os_factor);
-                        out[output_offset..(output_offset + self.m_samples_per_symbol)]
-                            .copy_from_slice(&sync_upchirp);
-                    } else if self.preamb_samp_cnt
-                        == (self.m_preamb_len + 1) * self.m_samples_per_symbol
-                    {
-                        let sync_upchirp =
-                            build_upchirp(self.m_sync_words[1], self.m_sf, self.m_os_factor);
-                        out[output_offset..(output_offset + self.m_samples_per_symbol)]
-                            .copy_from_slice(&sync_upchirp);
-                    } else if self.preamb_samp_cnt
-                        < (self.m_preamb_len + 4) * self.m_samples_per_symbol
-                    {
-                        //2.25 downchirps
-                        out[output_offset..(output_offset + self.m_samples_per_symbol)]
-                            .copy_from_slice(&self.m_downchirp)
-                    } else if self.preamb_samp_cnt
-                        == (self.m_preamb_len + 4) * self.m_samples_per_symbol
-                    {
-                        out[output_offset..(output_offset + self.m_samples_per_symbol / 4)]
-                            .copy_from_slice(&self.m_downchirp[0..(self.m_samples_per_symbol / 4)]);
-                        //correct offset dur to quarter of downchirp
-                        output_offset -= 3 * self.m_samples_per_symbol / 4;
-                        self.samp_cnt = 0;
+                        let mut correct_incomplete_chirp_offset = false;
+                        if self.preamb_samp_cnt < (self.m_preamb_len * self.m_samples_per_symbol) {
+                            //upchirps
+                            out[output_offset..(output_offset + self.m_samples_per_symbol)]
+                                .copy_from_slice(&self.m_upchirp)
+                        } else if self.preamb_samp_cnt
+                            == (self.m_preamb_len * self.m_samples_per_symbol)
+                        {
+                            //sync words
+                            let sync_upchirp =
+                                build_upchirp(self.m_sync_words[0], self.m_sf, self.m_os_factor);
+                            out[output_offset..(output_offset + self.m_samples_per_symbol)]
+                                .copy_from_slice(&sync_upchirp);
+                        } else if self.preamb_samp_cnt
+                            == (self.m_preamb_len + 1) * self.m_samples_per_symbol
+                        {
+                            let sync_upchirp =
+                                build_upchirp(self.m_sync_words[1], self.m_sf, self.m_os_factor);
+                            out[output_offset..(output_offset + self.m_samples_per_symbol)]
+                                .copy_from_slice(&sync_upchirp);
+                        } else if self.preamb_samp_cnt
+                            < (self.m_preamb_len + 4) * self.m_samples_per_symbol
+                        {
+                            //2.25 downchirps
+                            out[output_offset..(output_offset + self.m_samples_per_symbol)]
+                                .copy_from_slice(&self.m_downchirp)
+                        } else if self.preamb_samp_cnt
+                            == (self.m_preamb_len + 4) * self.m_samples_per_symbol
+                        {
+                            out[output_offset..(output_offset + self.m_samples_per_symbol / 4)]
+                                .copy_from_slice(
+                                    &self.m_downchirp[0..(self.m_samples_per_symbol / 4)],
+                                );
+                            correct_incomplete_chirp_offset = true;
+                            self.samp_cnt = 0;
+                        }
+                        output_offset += self.m_samples_per_symbol;
+                        if correct_incomplete_chirp_offset {
+                            //correct offset dur to quarter of downchirp
+                            output_offset -= 3 * self.m_samples_per_symbol / 4;
+                        }
+                        self.preamb_samp_cnt += self.m_samples_per_symbol;
+                    } else {
+                        break;
                     }
-                    output_offset += self.m_samples_per_symbol;
-                    self.preamb_samp_cnt += self.m_samples_per_symbol;
                 }
             }
-        }
-        //output payload
-        if self.samp_cnt < (self.m_frame_len * self.m_samples_per_symbol) as isize
-            && self.samp_cnt > -1
-        {
-            nitems_to_process = min(
-                nitems_to_process,
-                (noutput_items - output_offset) / self.m_samples_per_symbol,
-            );
-            nitems_to_process = min(nitems_to_process, input.len());
-            for i in 0..nitems_to_process {
-                let data_upchirp = build_upchirp(input[i] as usize, self.m_sf, self.m_os_factor);
-                out[output_offset..(output_offset + self.m_samples_per_symbol)]
-                    .copy_from_slice(&data_upchirp);
-                output_offset += self.m_samples_per_symbol;
-                self.samp_cnt += self.m_samples_per_symbol as isize;
+            //output payload
+            // info!("Modulate: Flag 0 - samp_cnt: {}", self.samp_cnt);
+            // info!(
+            //     "Modulate: Flag 0 - (self.m_frame_len * self.m_samples_per_symbol): {}",
+            //     (self.m_frame_len * self.m_samples_per_symbol)
+            // );
+            // info!("Modulate: Flag 0 - self.m_frame_len: {}", self.m_frame_len);
+            // info!(
+            //     "Modulate: Flag 0 - self.m_samples_per_symbol: {}",
+            //     self.m_samples_per_symbol
+            // );
+            if self.samp_cnt < (self.m_frame_len * self.m_samples_per_symbol) as isize
+                && self.samp_cnt > -1
+            {
+                // info!(
+                //     "Modulate: Flag 4.1 - nitems_to_process: {}",
+                //     nitems_to_process
+                // );
+                // info!("Modulate: Flag 4.1 - noutput_items: {}", noutput_items);
+                // info!("Modulate: Flag 4.1 - output_offset: {}", output_offset);
+                // info!(
+                //     "Modulate: Flag 4.1 - m_samples_per_symbol: {}",
+                //     self.m_samples_per_symbol
+                // );
+                nitems_to_process = min(
+                    nitems_to_process,
+                    (noutput_items - output_offset) / self.m_samples_per_symbol,
+                );
+                // info!(
+                //     "Modulate: Flag 4.2 - nitems_to_process: {}",
+                //     nitems_to_process
+                // );
+                nitems_to_process = min(nitems_to_process, input.len());
+                for i in 0..nitems_to_process {
+                    let data_upchirp =
+                        build_upchirp(input[i] as usize, self.m_sf, self.m_os_factor);
+                    out[output_offset..(output_offset + self.m_samples_per_symbol)]
+                        .copy_from_slice(&data_upchirp);
+                    output_offset += self.m_samples_per_symbol;
+                    self.samp_cnt += self.m_samples_per_symbol as isize;
+                }
+                // info!(
+                //     "Modulate: Flag 4.3 - nitems_to_process: {}",
+                //     nitems_to_process
+                // );
+            } else {
+                nitems_to_process = 0;
+                // info!(
+                //     "Modulate: Flag 5 - nitems_to_process: {}",
+                //     nitems_to_process
+                // );
             }
-        } else {
-            nitems_to_process = 0;
-        }
-        //padd frame end with zeros
-        if self.samp_cnt >= (self.m_frame_len * self.m_samples_per_symbol) as isize
-            && self.samp_cnt
-                < (self.m_frame_len * self.m_samples_per_symbol + self.m_inter_frame_padding)
+            //padd frame end with zeros
+            if self.samp_cnt >= (self.m_frame_len * self.m_samples_per_symbol) as isize
+                && self.samp_cnt
+                    < (self.m_frame_len * self.m_samples_per_symbol + self.m_inter_frame_padding)
+                        as isize
+            {
+                self.m_ninput_items_required = 0;
+                let padd_size = min(
+                    noutput_items - output_offset,
+                    self.m_frame_len * self.m_samples_per_symbol + self.m_inter_frame_padding
+                        - self.samp_cnt as usize,
+                );
+                out[output_offset..(output_offset + padd_size)].fill(Complex32::new(0., 0.));
+                self.samp_cnt += padd_size as isize;
+                self.padd_cnt += padd_size;
+                output_offset += padd_size;
+            }
+            if self.samp_cnt
+                == (self.m_frame_len * self.m_samples_per_symbol + self.m_inter_frame_padding)
                     as isize
-        {
-            self.m_ninput_items_required = 0;
-            let padd_size = min(
-                noutput_items - output_offset,
-                self.m_frame_len * self.m_samples_per_symbol + self.m_inter_frame_padding
-                    - self.samp_cnt as usize,
-            );
-            out[output_offset..(output_offset + padd_size)].fill(Complex32::new(0., 0.));
-            self.samp_cnt += padd_size as isize;
-            self.padd_cnt += padd_size;
-            output_offset += padd_size;
+            {
+                self.samp_cnt += 1;
+                self.frame_cnt += 1;
+                self.m_ninput_items_required = 1;
+                self.frame_end = true;
+                // #ifdef GR_LORA_PRINT_INFO
+                //                 std::cout << "Frame " << frame_cnt << " sent\n";
+                // #endif
+            }
+            // if (nitems_to_process)
+            //     std::cout << ninput_items[0] << " " << nitems_to_process << " " << output_offset << " " << noutput_items << std::endl;
+            info! {"Modulate: producing {} samples.", output_offset};
+            sio.input(0).consume(nitems_to_process);
+            sio.output(0).produce(output_offset);
         }
-        if self.samp_cnt
-            == (self.m_frame_len * self.m_samples_per_symbol + self.m_inter_frame_padding) as isize
-        {
-            self.samp_cnt += 1;
-            self.frame_cnt += 1;
-            self.m_ninput_items_required = 1;
-            self.frame_end = true;
-            // #ifdef GR_LORA_PRINT_INFO
-            //                 std::cout << "Frame " << frame_cnt << " sent\n";
-            // #endif
-        }
-        // if (nitems_to_process)
-        //     std::cout << ninput_items[0] << " " << nitems_to_process << " " << output_offset << " " << noutput_items << std::endl;
-        sio.input(0).consume(nitems_to_process);
-        sio.output(0).produce(nitems_to_process);
         Ok(())
     }
 }

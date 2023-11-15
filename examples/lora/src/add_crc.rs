@@ -83,6 +83,8 @@ impl Kernel for AddCrc {
         let mut nitems_to_produce = 0;
         let noutput_items = max(0, out.len() - 4);
         let mut nitems_to_process = min(input.len(), noutput_items);
+        // info! {"AddCrc: Flag 1 - nitems_to_process: {}", nitems_to_process};
+        // info! {"AddCrc: Flag 1 - noutput_items: {}", noutput_items};
         let tags: Vec<(usize, String)> = sio
             .input(0)
             .tags()
@@ -104,12 +106,15 @@ impl Kernel for AddCrc {
                 _ => None,
             })
             .collect();
+        // info! {"AddCrc: {:?}", tags};
         if tags.len() > 0 {
             if tags[0].0 != 0 {
                 nitems_to_process = min(tags[0].0, noutput_items);
+                // info! {"AddCrc: Flag 2 - nitems_to_process: {}", nitems_to_process};
             } else {
                 if tags.len() >= 2 {
                     nitems_to_process = min(tags[1].0, noutput_items);
+                    // info! {"AddCrc: Flag 3 - nitems_to_process: {}", nitems_to_process};
                 }
                 self.m_payload = tags[0].1.chars().collect();
                 //pass tags downstream
@@ -154,9 +159,10 @@ impl Kernel for AddCrc {
         if nitems_to_process == 0 {
             if out.len() == 0 {
                 warn!("AddCrc: no space in output buffer, waiting for more.");
-            } else {
-                warn!("AddCrc: no samples in input buffer, waiting for more.");
             }
+            // else {
+            //     warn!("AddCrc: no samples in input buffer, waiting for more.");
+            // }
             return Ok(());
         }
         self.m_cnt += nitems_to_process;
@@ -182,6 +188,9 @@ impl Kernel for AddCrc {
         } else {
             nitems_to_produce = nitems_to_process;
         }
+        // if nitems_to_produce > 0 {
+        //     info! {"AddCrc: producing {} samples.", nitems_to_produce};
+        // }
         out[0..nitems_to_process].copy_from_slice(&input[0..nitems_to_process]);
         sio.input(0).consume(nitems_to_process);
         sio.output(0).produce(nitems_to_produce);

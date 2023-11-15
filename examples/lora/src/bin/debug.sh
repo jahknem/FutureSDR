@@ -8,10 +8,11 @@ TX_OFFSET="--tx-freq-offset=1.1e6"
 DEVICE_FILTER="--device-filter=driver=aaronia_http,tx_url=http://172.18.0.1:54665,url=http://172.18.0.1:54664"
 RX_GAIN="--rx-gain 10"
 TX_DEVICE_FILTER="--device-filter=driver=soapy,soapy_driver=uhd,type=b200,name=B200mini"
-TX_GAIN="--tx-gain 00"
+TX_GAIN="--tx-gain 40"
 RX_ANTENNA=""
 TX_ANTENNA=""
 SAMPLE_RATE="--sample-rate 125000"
+TX_INTERVAL="--tx-interval 1"
 
 # find port: ss -u
 # nc -u 10.193.0.73 [port] -p 18570 [on novo 3]
@@ -26,5 +27,5 @@ export RUST_BACKTRACE=full
 #export FUTURESDR_CTRLPORT_ENABLE=true
 #export FUTURESDR_CTRLPORT_BIND="0.0.0.0:1348"
 
-#cargo run --bin rx ${BUILD_TYPE} -- ${CENTER_FREQ} ${RX_OFFSET} ${DEVICE_FILTER} ${RX_GAIN} ${RX_ANTENNA} ${SAMPLE_RATE}
-cargo run --bin tx ${BUILD_TYPE} -- ${CENTER_FREQ} ${TX_OFFSET} ${TX_DEVICE_FILTER} ${TX_GAIN} ${TX_ANTENNA} ${SAMPLE_RATE}
+cargo run --bin rx ${BUILD_TYPE} -- ${CENTER_FREQ} ${RX_OFFSET} ${DEVICE_FILTER} ${RX_GAIN} ${RX_ANTENNA} ${SAMPLE_RATE}
+#&> /tmp/log_lora_rx.txt & cargo run --bin tx ${BUILD_TYPE} -- ${TX_INTERVAL} ${CENTER_FREQ} ${TX_OFFSET} ${TX_DEVICE_FILTER} ${TX_GAIN} ${TX_ANTENNA} ${SAMPLE_RATE} &> /tmp/log_lora_tx.txt

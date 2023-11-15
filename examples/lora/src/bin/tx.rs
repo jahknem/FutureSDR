@@ -3,22 +3,26 @@ use futuresdr::futures::channel::mpsc;
 use futuresdr::futures::StreamExt;
 
 use futuresdr::anyhow::Result;
+use futuresdr::async_io::Timer;
 use futuresdr::blocks::seify::SinkBuilder;
 use futuresdr::blocks::Apply;
 use futuresdr::blocks::Combine;
 use futuresdr::blocks::Fft;
 use futuresdr::blocks::MessagePipe;
 use futuresdr::blocks::NullSink;
-use futuresdr::log::info;
+use futuresdr::log::{debug, info};
 use futuresdr::macros::connect;
 use futuresdr::num_complex::Complex32;
+use futuresdr::runtime::buffer::circular::Circular;
 use futuresdr::runtime::Flowgraph;
+use futuresdr::runtime::FlowgraphHandle;
 use futuresdr::runtime::Pmt;
 use futuresdr::runtime::Runtime;
 use lora::utilities::*;
 use lora::{AddCrc, GrayDemap, HammingEnc, Header, Interleaver, Modulate, Whitening};
 use seify::Device;
 use seify::Direction::Tx;
+use std::time::Duration;
 
 #[derive(Parser, Debug)]
 #[clap(version)]
@@ -44,6 +48,9 @@ struct Args {
     /// Soapy RX Channel
     #[clap(long, default_value_t = 0)]
     soapy_tx_channel: usize,
+    /// send periodic messages for testing
+    #[clap(long, value_parser)]
+    tx_interval: Option<f32>,
 }
 
 fn main() -> Result<()> {
@@ -98,14 +105,18 @@ fn main() -> Result<()> {
     let sink = fg.add_block(sink.build().unwrap());
 
     let sf = 7;
-    let samp_rate = 250000;
+    let samp_rate = 125000;
     let impl_head = false;
     let has_crc = true;
     let frame_period = 1000;
     let cr = 1;
     let bw = 125000;
 
-    let whitening = fg.add_block(Whitening::new(false, false));
+    let whitening = Whitening::new(false, false);
+    let fg_tx_port = whitening
+        .message_input_name_to_id("msg")
+        .expect("No message_in port found!");
+    let whitening = fg.add_block(whitening);
     let header = fg.add_block(Header::new(impl_head, has_crc, cr));
     fg.connect_stream(whitening, "out", header, "in")?;
     let add_crc = fg.add_block(AddCrc::new(has_crc));
@@ -125,9 +136,34 @@ fn main() -> Result<()> {
         Some(8),
     ));
     fg.connect_stream(gray_demap, "out", modulate, "in")?;
-    fg.connect_stream(modulate, "out", sink, "in")?;
+    fg.connect_stream_with_type(
+        modulate,
+        "out",
+        sink,
+        "in",
+        Circular::with_size(2 * 4 * 8192),
+    )?;
 
-    let (_fg, _handle) = rt.start_sync(fg);
+    let (_fg, handle) = rt.start_sync(fg);
+
+    // if tx_interval is set, send messages periodically
+    if let Some(tx_interval) = args.tx_interval {
+        // let mut seq = 0u64;
+        let mut myhandle: FlowgraphHandle = handle.clone();
+        rt.spawn_background(async move {
+            loop {
+                Timer::after(Duration::from_secs_f32(tx_interval)).await;
+                let dummy_packet = "hello world!".to_string();
+                myhandle
+                    .call(whitening, fg_tx_port, Pmt::String(dummy_packet))
+                    .await
+                    .unwrap();
+                debug!("sending sample packet.");
+                // seq += 1;
+            }
+        });
+    }
+
     loop {}
 
     Ok(())

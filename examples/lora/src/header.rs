@@ -87,6 +87,7 @@ impl Kernel for Header {
 
         let tags: Vec<(usize, usize)> =
             get_tags_in_window::<usize>(sio.input(0).tags(), input.len(), "frame_len");
+        // info! {"AddCrc: {:?}", tags};
         if tags.len() > 0 {
             if tags[0].0 != 0 {
                 nitems_to_process = min(tags[0].0, out.len());
@@ -102,48 +103,77 @@ impl Kernel for Header {
 
                 let mut tags_tmp: Vec<(usize, String)> =
                     get_tags_in_window::<String>(sio.input(0).tags(), 1, "payload_str");
+                // info! {"Header: {:?}", tags_tmp};
                 self.m_cnt_nibbles = 0;
                 assert!(tags_tmp.len() == 1);
                 self.m_tag_payload_str = tags_tmp.pop().unwrap().1;
             }
         }
-        if self.m_cnt_nibbles == 0 && !self.m_impl_head {
-            if self.m_cnt_header_nibbles == 0 {
-                //create header
-                //payload length
-                self.m_header[0] = (self.m_payload_len >> 4) as u8;
-                self.m_header[1] = (self.m_payload_len & 0x0F) as u8;
-                //coding rate and has_crc
-                self.m_header[2] = ((self.m_cr << 1) as u8) | (self.m_has_crc as u8);
-                //header checksum
-                let c4 = (self.m_header[0] & 0b1000) >> 3
-                    ^ (self.m_header[0] & 0b0100) >> 2
-                    ^ (self.m_header[0] & 0b0010) >> 1
-                    ^ (self.m_header[0] & 0b0001);
-                let c3 = (self.m_header[0] & 0b1000) >> 3
-                    ^ (self.m_header[1] & 0b1000) >> 3
-                    ^ (self.m_header[1] & 0b0100) >> 2
-                    ^ (self.m_header[1] & 0b0010) >> 1
-                    ^ (self.m_header[2] & 0b0001);
-                let c2 = (self.m_header[0] & 0b0100) >> 2
-                    ^ (self.m_header[1] & 0b1000) >> 3
-                    ^ (self.m_header[1] & 0b0001)
-                    ^ (self.m_header[2] & 0b1000) >> 3
-                    ^ (self.m_header[2] & 0b0010) >> 1;
-                let c1 = (self.m_header[0] & 0b0010) >> 1
-                    ^ (self.m_header[1] & 0b0100) >> 2
-                    ^ (self.m_header[1] & 0b0001)
-                    ^ (self.m_header[2] & 0b0100) >> 2
-                    ^ (self.m_header[2] & 0b0010) >> 1
-                    ^ (self.m_header[2] & 0b0001);
-                let c0 = (self.m_header[0] & 0b0001)
-                    ^ (self.m_header[1] & 0b0010) >> 1
-                    ^ (self.m_header[2] & 0b1000) >> 3
-                    ^ (self.m_header[2] & 0b0100) >> 2
-                    ^ (self.m_header[2] & 0b0010) >> 1
-                    ^ (self.m_header[2] & 0b0001);
-                self.m_header[3] = c4;
-                self.m_header[4] = c3 << 3 | c2 << 2 | c1 << 1 | c0;
+        if nitems_to_process > 0 {
+            if self.m_cnt_nibbles == 0 && !self.m_impl_head {
+                if self.m_cnt_header_nibbles == 0 {
+                    //create header
+                    //payload length
+                    self.m_header[0] = (self.m_payload_len >> 4) as u8;
+                    self.m_header[1] = (self.m_payload_len & 0x0F) as u8;
+                    //coding rate and has_crc
+                    self.m_header[2] = ((self.m_cr << 1) as u8) | (self.m_has_crc as u8);
+                    //header checksum
+                    let c4 = (self.m_header[0] & 0b1000) >> 3
+                        ^ (self.m_header[0] & 0b0100) >> 2
+                        ^ (self.m_header[0] & 0b0010) >> 1
+                        ^ (self.m_header[0] & 0b0001);
+                    let c3 = (self.m_header[0] & 0b1000) >> 3
+                        ^ (self.m_header[1] & 0b1000) >> 3
+                        ^ (self.m_header[1] & 0b0100) >> 2
+                        ^ (self.m_header[1] & 0b0010) >> 1
+                        ^ (self.m_header[2] & 0b0001);
+                    let c2 = (self.m_header[0] & 0b0100) >> 2
+                        ^ (self.m_header[1] & 0b1000) >> 3
+                        ^ (self.m_header[1] & 0b0001)
+                        ^ (self.m_header[2] & 0b1000) >> 3
+                        ^ (self.m_header[2] & 0b0010) >> 1;
+                    let c1 = (self.m_header[0] & 0b0010) >> 1
+                        ^ (self.m_header[1] & 0b0100) >> 2
+                        ^ (self.m_header[1] & 0b0001)
+                        ^ (self.m_header[2] & 0b0100) >> 2
+                        ^ (self.m_header[2] & 0b0010) >> 1
+                        ^ (self.m_header[2] & 0b0001);
+                    let c0 = (self.m_header[0] & 0b0001)
+                        ^ (self.m_header[1] & 0b0010) >> 1
+                        ^ (self.m_header[2] & 0b1000) >> 3
+                        ^ (self.m_header[2] & 0b0100) >> 2
+                        ^ (self.m_header[2] & 0b0010) >> 1
+                        ^ (self.m_header[2] & 0b0001);
+                    self.m_header[3] = c4;
+                    self.m_header[4] = c3 << 3 | c2 << 2 | c1 << 1 | c0;
+                    //add tag
+                    sio.output(0).add_tag(
+                        0,
+                        Tag::NamedAny(
+                            "frame_len".to_string(),
+                            Box::new(Pmt::Usize(self.m_tag_payload_len)),
+                        ),
+                    );
+                    sio.output(0).add_tag(
+                        0,
+                        Tag::NamedAny(
+                            "payload_str".to_string(),
+                            Box::new(Pmt::String(self.m_tag_payload_str.clone())),
+                        ),
+                    );
+                }
+                for i in 0..nitems_to_process {
+                    if self.m_cnt_header_nibbles < 5 {
+                        out[i] = self.m_header[self.m_cnt_header_nibbles];
+                        self.m_cnt_header_nibbles += 1;
+                        out_offset += 1;
+                    } else {
+                        break;
+                    }
+                }
+            }
+            if self.m_impl_head && self.m_cnt_nibbles == 0 {
                 //add tag
                 sio.output(0).add_tag(
                     0,
@@ -160,40 +190,15 @@ impl Kernel for Header {
                     ),
                 );
             }
-            for i in 0..nitems_to_process {
-                if self.m_cnt_header_nibbles < 5 {
-                    out[i] = self.m_header[self.m_cnt_header_nibbles];
-                    self.m_cnt_header_nibbles += 1;
-                    out_offset += 1;
-                } else {
-                    break;
-                }
+            for i in out_offset..nitems_to_process {
+                out[i] = input[i - out_offset];
+                self.m_cnt_nibbles += 1;
+                self.m_cnt_header_nibbles = 0;
             }
+            // info! {"Header: producing {} samples.", nitems_to_process};
+            sio.input(0).consume(nitems_to_process - out_offset);
+            sio.output(0).produce(nitems_to_process);
         }
-        if self.m_impl_head && self.m_cnt_nibbles == 0 {
-            //add tag
-            sio.output(0).add_tag(
-                0,
-                Tag::NamedAny(
-                    "frame_len".to_string(),
-                    Box::new(Pmt::Usize(self.m_tag_payload_len)),
-                ),
-            );
-            sio.output(0).add_tag(
-                0,
-                Tag::NamedAny(
-                    "payload_str".to_string(),
-                    Box::new(Pmt::String(self.m_tag_payload_str.clone())),
-                ),
-            );
-        }
-        for i in out_offset..nitems_to_process {
-            out[i] = input[i - out_offset];
-            self.m_cnt_nibbles += 1;
-            self.m_cnt_header_nibbles = 0;
-        }
-        sio.input(0).consume(nitems_to_process - out_offset);
-        sio.output(0).produce(nitems_to_process);
         Ok(())
     }
 }
