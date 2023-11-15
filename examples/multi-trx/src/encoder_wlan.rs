@@ -9,6 +9,7 @@ use futuresdr::anyhow::Result;
 use futuresdr::async_trait::async_trait;
 // use futuresdr::futures::FutureExt;
 use futuresdr::log::warn;
+use futuresdr::macros::message_handler;
 use futuresdr::runtime::Block;
 use futuresdr::runtime::BlockMeta;
 use futuresdr::runtime::BlockMetaBuilder;
@@ -20,7 +21,6 @@ use futuresdr::runtime::StreamIo;
 use futuresdr::runtime::StreamIoBuilder;
 use futuresdr::runtime::Tag;
 use futuresdr::runtime::WorkIo;
-use futuresdr::macros::message_handler;
 // use std::future::Future;
 // use std::pin::Pin;
 
