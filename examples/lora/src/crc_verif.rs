@@ -181,9 +181,10 @@ impl Kernel for CrcVerif {
                 // std::cout << "Calculated " << std::hex << m_crc << std::dec << std::endl;
                 // std::cout << "Got " << std::hex << (in_buff[m_payload_len] + (in_buff[m_payload_len + 1] << 8)) << std::dec << std::endl;
                 // # endif
-                let crc_valid: bool = self.in_buff[self.m_payload_len] as u16
-                    + ((self.in_buff[self.m_payload_len + 1] as u16) << 8)
-                    - m_crc
+                let crc_valid: bool = (self.in_buff[self.m_payload_len] as u16
+                    + ((self.in_buff[self.m_payload_len + 1] as u16) << 8))
+                    as i32
+                    - m_crc as i32
                     == 0;
                 self.curent_tag
                     .insert("crc_valid".to_string(), Pmt::Bool(crc_valid));

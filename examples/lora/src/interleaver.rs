@@ -1,3 +1,4 @@
+use core::slice::Iter;
 use futuresdr::anyhow::Result;
 use futuresdr::async_trait::async_trait;
 use std::cmp::{max, min};
@@ -130,19 +131,22 @@ impl Kernel for Interleaver {
             self.m_sf
         };
         nitems_to_process = min(nitems_to_process, sf_app);
+        // info!("sf_app: {}", sf_app);
+        // info!("nitems_to_process: {}", nitems_to_process);
         if nitems_to_process > 0 {
             if out.len() < cw_len {
                 warn!("Interleaver: not enough space in output buffer for one interleaved block, waiting for more.");
                 return Ok(());
             }
+            let nitems_to_consume = min(sf_app, nitems_to_process);
             if self.m_frame_len != 0
                 && (nitems_to_process >= sf_app
                     || self.cw_cnt + nitems_to_process == self.m_frame_len)
             {
                 //propagate tag
                 if self.cw_cnt == 0 {
-                    info!("self.m_frame_len: {}", self.m_frame_len);
-                    info!("self.m_sf: {}", self.m_sf);
+                    // info!("self.m_frame_len: {}", self.m_frame_len);
+                    // info!("self.m_sf: {}", self.m_sf);
                     sio.output(0).add_tag(
                         0,
                         Tag::NamedAny(
@@ -165,17 +169,34 @@ impl Kernel for Interleaver {
                 let mut inter_bin: Vec<Vec<bool>> = vec![init_bit; cw_len];
 
                 //convert to input codewords to binary vector of vector
-                let cw_bin: Vec<Vec<bool>> = input[0..sf_app]
-                    .iter()
-                    .enumerate()
-                    .map(|(i, x)| {
-                        if i >= nitems_to_process {
-                            int2bool(0, cw_len)
-                        } else {
-                            int2bool(*x as u16, cw_len)
-                        }
-                    })
-                    .collect();
+                let cw_bin: Vec<Vec<bool>> = if nitems_to_consume < sf_app {
+                    input[0..nitems_to_consume]
+                        .iter()
+                        .chain(vec![0_u8; sf_app - nitems_to_consume].iter())
+                        .into_iter()
+                        .enumerate()
+                        .map(|(i, x)| {
+                            if i >= nitems_to_consume {
+                                int2bool(0, cw_len)
+                            } else {
+                                int2bool(*x as u16, cw_len)
+                            }
+                        })
+                        .collect()
+                } else {
+                    input[0..sf_app]
+                        .iter()
+                        .enumerate()
+                        .map(|(i, x)| {
+                            if i >= nitems_to_consume {
+                                int2bool(0, cw_len)
+                            } else {
+                                int2bool(*x as u16, cw_len)
+                            }
+                        })
+                        .collect()
+                };
+
                 self.cw_cnt += sf_app;
                 // #ifdef GRLORA_DEBUG
                 //         std::cout << "codewords---- " << std::endl;
@@ -217,13 +238,13 @@ impl Kernel for Interleaver {
                 //         }
                 //         std::cout << std::endl;
                 // #endif
+                // info! {"Interleaver: producing {} samples.", cw_len};
+                sio.input(0).consume(nitems_to_consume);
+                sio.output(0).produce(cw_len);
             } else {
                 warn!("Interleaver: not enough samples in input buffer, waiting for more.");
                 return Ok(());
             }
-            // info! {"Interleaver: producing {} samples.", cw_len};
-            sio.input(0).consume(nitems_to_process);
-            sio.output(0).produce(cw_len);
         }
         Ok(())
     }

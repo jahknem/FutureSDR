@@ -94,6 +94,7 @@ impl Kernel for GrayDemap {
             // std::cout<<"0x"<<out[i]<<std::dec<<std::endl;
             // #endif
         }
+        info! {"GrayDemap: producing {} samples.", nitems_to_process};
         sio.input(0).consume(nitems_to_process);
         sio.output(0).produce(nitems_to_process);
         Ok(())

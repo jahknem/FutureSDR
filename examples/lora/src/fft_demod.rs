@@ -422,7 +422,7 @@ impl Kernel for FftDemod {
                 }
                 //create downchirp taking CFO_int into account
                 self.m_upchirp =
-                    build_upchirp(my_modulo(cfo_int, self.m_samples_per_symbol), self.m_sf, 0);
+                    build_upchirp(my_modulo(cfo_int, self.m_samples_per_symbol), self.m_sf, 1);
                 self.m_downchirp = volk_32fc_conjugate_32fc(&self.m_upchirp);
                 // adapt the downchirp to the cfo_frac of the frame
                 let tmp: Vec<Complex64> = (0..self.m_samples_per_symbol)
@@ -490,7 +490,10 @@ impl Kernel for FftDemod {
                 // Hard decoding
                 // shift by -1 and use reduce rate if first block (header)
                 self.output.push(
-                    ((self.get_symbol_val(input_tmp) - 1) % (1 << self.m_sf))
+                    my_modulo(
+                        (self.get_symbol_val(input_tmp) as isize - 1),
+                        (1 << self.m_sf),
+                    ) as u16
                         / if self.is_header || self.m_ldro { 4 } else { 1 },
                 );
             }

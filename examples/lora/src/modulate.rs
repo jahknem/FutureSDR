@@ -209,10 +209,18 @@ impl Kernel for Modulate {
             }
         }
 
-        // info!(
-        //     "Modulate: Flag 0 - nitems_to_process: {}",
-        //     nitems_to_process
-        // );
+        info!(
+            "Modulate: Flag 0 - nitems_to_process: {}",
+            nitems_to_process
+        );
+        info!("Modulate: Flag 0 - self.m_frame_len: {}", self.m_frame_len);
+        info!("Modulate: Flag 0 - noutput_items: {}", noutput_items);
+        info!(
+            "Modulate: Flag 0 - frame_size: {}",
+            ((self.m_frame_len as f32 + (self.m_preamb_len as f32 + 4.25))
+                * self.m_samples_per_symbol as f32) as usize
+                + self.m_inter_frame_padding
+        );
         // info!("Modulate: Flag 0 - self.m_frame_len: {}", self.m_frame_len);
         // info!("Modulate: Flag 0 - (self.m_frame_len + (self.m_preamb_len + 5)) * self.m_samples_per_symbol: {}", ((self.m_frame_len as f32 + (self.m_preamb_len as f32 + 4.25))
         //             * self.m_samples_per_symbol as f32) as usize + self.m_inter_frame_padding);

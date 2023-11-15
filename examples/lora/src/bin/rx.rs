@@ -47,6 +47,12 @@ struct Args {
     /// Soapy RX Channel
     #[clap(long, default_value_t = 0)]
     soapy_rx_channel: usize,
+    /// lora spreading factor
+    #[clap(long, default_value_t = 7)]
+    spreading_factor: usize,
+    /// lora bandwidth
+    #[clap(long, default_value_t = 125000)]
+    bandwidth: usize,
 }
 
 fn main() -> Result<()> {
@@ -103,9 +109,9 @@ fn main() -> Result<()> {
     let soft_decoding: bool = false;
 
     let frame_sync = fg.add_block(FrameSync::new(
-        868100000,
-        125000,
-        7,
+        (args.center_freq + args.rx_freq_offset) as u32,
+        args.bandwidth as u32,
+        args.spreading_factor,
         false,
         vec![0x12], // TODO 18?
         1,
@@ -114,7 +120,7 @@ fn main() -> Result<()> {
     fg.connect_stream(src, "out", frame_sync, "in")?;
     let null_sink2 = fg.add_block(NullSink::<f32>::new());
     fg.connect_stream(frame_sync, "log_out", null_sink2, "in")?;
-    let fft_demod = fg.add_block(FftDemod::new(soft_decoding, true, 7));
+    let fft_demod = fg.add_block(FftDemod::new(soft_decoding, true, args.spreading_factor));
     fg.connect_stream(frame_sync, "out", fft_demod, "in")?;
     let gray_mapping = fg.add_block(GrayMapping::new(soft_decoding));
     fg.connect_stream(fft_demod, "out", gray_mapping, "in")?;
@@ -136,8 +142,7 @@ fn main() -> Result<()> {
     let null_sink = fg.add_block(NullSink::<u8>::new());
     fg.connect_stream(crc_verif, "out", null_sink, "in")?;
 
-    let (_fg, _handle) = rt.start_sync(fg);
-    loop {}
+    rt.run(fg);
 
     Ok(())
 }

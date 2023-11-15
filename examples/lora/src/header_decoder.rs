@@ -230,8 +230,9 @@ impl Kernel for HeaderDecoder {
                         info!("CRC presence:   {}", self.m_has_crc);
                         info!("Coding rate:    {}", self.m_cr);
                     }
-                    let mut head_err =
-                        header_chk - ((c4 << 4) + (c3 << 3) + (c2 << 2) + (c1 << 1) + c0) != 0;
+                    let mut head_err = header_chk as i16
+                        - ((c4 << 4) + (c3 << 3) + (c2 << 2) + (c1 << 1) + c0) as i16
+                        != 0;
                     if head_err || self.m_payload_len == 0 {
                         if self.m_print_header && head_err {
                             warn!("Header checksum invalid!");

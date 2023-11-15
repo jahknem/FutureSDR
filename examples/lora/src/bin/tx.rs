@@ -51,6 +51,12 @@ struct Args {
     /// send periodic messages for testing
     #[clap(long, value_parser)]
     tx_interval: Option<f32>,
+    /// lora spreading factor
+    #[clap(long, default_value_t = 7)]
+    spreading_factor: usize,
+    /// lora bandwidth
+    #[clap(long, default_value_t = 125000)]
+    bandwidth: usize,
 }
 
 fn main() -> Result<()> {
@@ -104,13 +110,10 @@ fn main() -> Result<()> {
 
     let sink = fg.add_block(sink.build().unwrap());
 
-    let sf = 7;
-    let samp_rate = 125000;
     let impl_head = false;
     let has_crc = true;
     let frame_period = 1000;
     let cr = 1;
-    let bw = 125000;
 
     let whitening = Whitening::new(false, false);
     let fg_tx_port = whitening
@@ -121,18 +124,23 @@ fn main() -> Result<()> {
     fg.connect_stream(whitening, "out", header, "in")?;
     let add_crc = fg.add_block(AddCrc::new(has_crc));
     fg.connect_stream(header, "out", add_crc, "in")?;
-    let hamming_enc = fg.add_block(HammingEnc::new(cr, sf));
+    let hamming_enc = fg.add_block(HammingEnc::new(cr, args.spreading_factor));
     fg.connect_stream(add_crc, "out", hamming_enc, "in")?;
-    let interleaver = fg.add_block(Interleaver::new(cr as usize, sf, 0, bw));
+    let interleaver = fg.add_block(Interleaver::new(
+        cr as usize,
+        args.spreading_factor,
+        0,
+        args.bandwidth,
+    ));
     fg.connect_stream(hamming_enc, "out", interleaver, "in")?;
-    let gray_demap = fg.add_block(GrayDemap::new(sf));
+    let gray_demap = fg.add_block(GrayDemap::new(args.spreading_factor));
     fg.connect_stream(interleaver, "out", gray_demap, "in")?;
     let modulate = fg.add_block(Modulate::new(
-        sf,
-        samp_rate,
-        bw,
+        args.spreading_factor,
+        args.sample_rate as usize,
+        args.bandwidth,
         vec![8, 16],
-        20 * (1 << sf) * samp_rate / bw,
+        20 * (1 << args.spreading_factor) * args.sample_rate as usize / args.bandwidth,
         Some(8),
     ));
     fg.connect_stream(gray_demap, "out", modulate, "in")?;
@@ -141,7 +149,7 @@ fn main() -> Result<()> {
         "out",
         sink,
         "in",
-        Circular::with_size(2 * 4 * 8192),
+        Circular::with_size(2 * 4 * 8192 * 4 * 8),
     )?;
 
     let (_fg, handle) = rt.start_sync(fg);
@@ -151,15 +159,18 @@ fn main() -> Result<()> {
         // let mut seq = 0u64;
         let mut myhandle: FlowgraphHandle = handle.clone();
         rt.spawn_background(async move {
+            let mut counter: usize = 0;
             loop {
                 Timer::after(Duration::from_secs_f32(tx_interval)).await;
-                let dummy_packet = "hello world!".to_string();
+                let dummy_packet = format!("hello world! {:02}", counter).to_string();
+                // let dummy_packet = "hello world!1".to_string();
                 myhandle
                     .call(whitening, fg_tx_port, Pmt::String(dummy_packet))
                     .await
                     .unwrap();
                 debug!("sending sample packet.");
-                // seq += 1;
+                counter += 1;
+                counter %= 100;
             }
         });
     }

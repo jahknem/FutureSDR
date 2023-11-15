@@ -110,7 +110,7 @@ pub fn int2bool(integer: u16, n_bits: usize) -> Vec<bool> {
  */
 #[inline]
 pub fn bool2int(b: &[bool]) -> u16 {
-    assert!(b.len() <= 8);
+    assert!(b.len() <= 16);
     b.iter()
         .map(|x| *x as u16)
         .zip((0_usize..b.len()).rev())
