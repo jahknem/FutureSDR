@@ -12,6 +12,7 @@ use futuresdr::blocks::NullSink;
 use futuresdr::log::info;
 use futuresdr::macros::connect;
 use futuresdr::num_complex::Complex32;
+use futuresdr::runtime::buffer::circular::Circular;
 use futuresdr::runtime::Flowgraph;
 use futuresdr::runtime::Pmt;
 use futuresdr::runtime::Runtime;
@@ -117,7 +118,14 @@ fn main() -> Result<()> {
         1,
         None,
     ));
-    fg.connect_stream(src, "out", frame_sync, "in")?;
+    fg.connect_stream_with_type(
+        src,
+        "out",
+        frame_sync,
+        "in",
+        Circular::with_size(2 * 4 * 8192 * 4),
+    )?;
+    // fg.connect_stream(src, "out", frame_sync, "in")?;
     let null_sink2 = fg.add_block(NullSink::<f32>::new());
     fg.connect_stream(frame_sync, "log_out", null_sink2, "in")?;
     let fft_demod = fg.add_block(FftDemod::new(soft_decoding, true, args.spreading_factor));

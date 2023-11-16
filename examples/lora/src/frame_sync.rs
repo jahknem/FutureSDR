@@ -713,51 +713,51 @@ impl Kernel for FrameSync {
         let input = sio.input(0).slice::<Complex32>();
         let mut nitems_to_process = input.len();
 
-        // let tags = sio.input(0).tags().iter().filter(|x| x.index < )
-        let tags: Vec<(usize, usize)> = sio
-            .input(0)
-            .tags()
-            .iter()
-            .map(|x| match x {
-                ItemTag {
-                    index,
-                    tag: Tag::NamedAny(n, val),
-                } => {
-                    if n == "new_frame" {
-                        match (**val).downcast_ref().unwrap() {
-                            Pmt::MapStrPmt(map) => {
-                                let sf_tmp = map.get("sf").unwrap();
-                                match sf_tmp {
-                                    Pmt::Usize(sf) => Some((*index, *sf)),
-                                    _ => None,
-                                }
-                            }
-                            _ => None,
-                        }
-                    } else {
-                        None
-                    }
-                }
-                _ => None,
-            })
-            .filter(|x| x.is_some())
-            .map(|x| x.unwrap())
-            .collect();
-        //             get_tags_in_window(tags, 0, 0, ninput_items[0], pmt::string_to_symbol("new_frame"));
-        if tags.len() > 0 {
-            if tags[0].0 != 0 {
-                nitems_to_process = tags[0].0; // only use symbol until the next frame begin (SF might change)
-            } else {
-                if tags.len() >= 2 {
-                    nitems_to_process = tags[1].0 - tags[0].0;
-                }
-
-                let sf = tags[0].1;
-                self.set_sf(sf);
-
-                // std::cout<<"\nhamming_cr "<<tags[0].offset<<" - cr: "<<(int)m_cr<<"\n";
-            }
-        }
+        // // let tags = sio.input(0).tags().iter().filter(|x| x.index < )
+        // let tags: Vec<(usize, usize)> = sio
+        //     .input(0)
+        //     .tags()
+        //     .iter()
+        //     .map(|x| match x {
+        //         ItemTag {
+        //             index,
+        //             tag: Tag::NamedAny(n, val),
+        //         } => {
+        //             if n == "new_frame" {
+        //                 match (**val).downcast_ref().unwrap() {
+        //                     Pmt::MapStrPmt(map) => {
+        //                         let sf_tmp = map.get("sf").unwrap();
+        //                         match sf_tmp {
+        //                             Pmt::Usize(sf) => Some((*index, *sf)),
+        //                             _ => None,
+        //                         }
+        //                     }
+        //                     _ => None,
+        //                 }
+        //             } else {
+        //                 None
+        //             }
+        //         }
+        //         _ => None,
+        //     })
+        //     .filter(|x| x.is_some())
+        //     .map(|x| x.unwrap())
+        //     .collect();
+        // //             get_tags_in_window(tags, 0, 0, ninput_items[0], pmt::string_to_symbol("new_frame"));
+        // if tags.len() > 0 {
+        //     if tags[0].0 != 0 {
+        //         nitems_to_process = tags[0].0; // only use symbol until the next frame begin (SF might change)
+        //     } else {
+        //         if tags.len() >= 2 {
+        //             nitems_to_process = tags[1].0 - tags[0].0;
+        //         }
+        //
+        //         let sf = tags[0].1;
+        //         self.set_sf(sf);
+        //
+        //         // std::cout<<"\nhamming_cr "<<tags[0].offset<<" - cr: "<<(int)m_cr<<"\n";
+        //     }
+        // }
 
         if nitems_to_process < self.m_number_of_bins + 2 {
             // TODO check, condition taken from self.forecast()
@@ -777,6 +777,7 @@ impl Kernel for FrameSync {
 
         match self.m_state {
             DecoderState::Detect => {
+                assert!(nitems_to_process >= self.m_os_factor / 2 + self.m_samples_per_symbol);
                 // info!("FLAGGG!");
                 let bin_idx_new_opt = FrameSync::get_symbol_val(&self.in_down, &self.m_downchirp);
 
@@ -899,6 +900,22 @@ impl Kernel for FrameSync {
                 self.bin_idx = FrameSync::get_symbol_val(&self.symb_corr, &self.m_downchirp);
                 match self.symbol_cnt {
                     SyncState::NetId1 => {
+                        // assert!(
+                        //     nitems_to_process
+                        //         >= self.m_os_factor / 2
+                        //             + self.k_hat * self.m_os_factor
+                        //             + self.m_samples_per_symbol
+                        // );
+                        if nitems_to_process
+                            < self.m_os_factor / 2
+                                + self.k_hat * self.m_os_factor
+                                + self.m_samples_per_symbol
+                        {
+                            // warn!(
+                            //     "FrameSync: not enough samples in input buffer, waiting for more."
+                            // );
+                            return Ok(());
+                        }
                         if self.bin_idx.is_some()
                             && (self.bin_idx.unwrap() == 0
                                 || self.bin_idx.unwrap() == 1
@@ -942,6 +959,9 @@ impl Kernel for FrameSync {
                         }
                     }
                     SyncState::NetId2 => {
+                        assert!(
+                            nitems_to_process >= (self.m_number_of_bins + 1) * self.m_os_factor
+                        );
                         self.symbol_cnt = SyncState::Downchirp1;
                         let net_id_samp_offset = self.m_samples_per_symbol * 5 / 4;
                         let count = (self.m_number_of_bins + 1) * self.m_os_factor;
@@ -1377,7 +1397,9 @@ impl Kernel for FrameSync {
               //     panic!("[LoRa sync] WARNING : No state! Shouldn't happen\n");
               // }
         }
-        assert!(items_to_consume >= 0);
+        // if items_to_consume == 0 {
+        //     warn!("FrameSync: not enough samples in input buffer, waiting for more.")
+        // }
         // info!("FrameSync: consuing {} samples, producing {}", items_to_consume, items_to_output);
         sio.input(0).consume(items_to_consume as usize);
         if items_to_output > 0 {

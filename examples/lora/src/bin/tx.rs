@@ -113,7 +113,7 @@ fn main() -> Result<()> {
     let impl_head = false;
     let has_crc = true;
     let frame_period = 1000;
-    let cr = 1;
+    let cr = 3;
 
     let whitening = Whitening::new(false, false);
     let fg_tx_port = whitening
