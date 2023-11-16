@@ -1,17 +1,8 @@
-use core::slice::Iter;
 use futuresdr::anyhow::Result;
 use futuresdr::async_trait::async_trait;
+use futuresdr::log::warn;
 use std::cmp::{max, min};
-use std::collections::HashMap;
-use std::f32::consts::PI;
-use std::mem;
-// use futuresdr::futures::FutureExt;
-use futuresdr::futures::channel::mpsc;
-use futuresdr::futures::executor::block_on;
-use futuresdr::futures_lite::StreamExt;
-use futuresdr::log::{info, warn};
-use futuresdr::macros::message_handler;
-use futuresdr::num_complex::{Complex32, Complex64};
+
 use futuresdr::runtime::BlockMeta;
 use futuresdr::runtime::BlockMetaBuilder;
 use futuresdr::runtime::Kernel;
@@ -26,15 +17,13 @@ use futuresdr::runtime::{Block, ItemTag};
 
 use crate::utilities::*;
 
-use rustfft::{FftDirection, FftPlanner};
-
 pub struct Interleaver {
     m_cr: usize,        // Transmission coding rate
     m_sf: usize,        // Transmission spreading factor
     cw_cnt: usize,      // count the number of codewords
     m_frame_len: usize, //length of the frame in number of items
     m_ldro: bool,       // use the low datarate optimisation mode
-    m_bw: usize,
+                        // m_bw: usize,
 }
 
 impl Interleaver {
@@ -49,7 +38,7 @@ impl Interleaver {
             Interleaver {
                 m_sf: sf,
                 m_cr: cr,
-                m_bw: bw,
+                // m_bw: bw,
                 m_ldro: if LdroMode::from(ldro) == LdroMode::AUTO {
                     ((1 << sf) as f32) * 1.0e3 / (bw as f32) > LDRO_MAX_DURATION_MS
                 } else {
@@ -61,17 +50,17 @@ impl Interleaver {
         )
     }
 
-    fn set_cr(&mut self, cr: usize) {
-        self.m_cr = cr;
-    }
-
-    fn set_sf(&mut self, sf: usize) {
-        self.m_sf = sf;
-    }
-
-    fn get_cr(&self) -> usize {
-        self.m_cr
-    }
+    // fn set_cr(&mut self, cr: usize) {
+    //     self.m_cr = cr;
+    // }
+    //
+    // fn set_sf(&mut self, sf: usize) {
+    //     self.m_sf = sf;
+    // }
+    //
+    // fn get_cr(&self) -> usize {
+    //     self.m_cr
+    // }
 }
 
 #[async_trait]
@@ -108,7 +97,7 @@ impl Kernel for Interleaver {
                 _ => None,
             })
             .collect();
-        if tags.len() > 0 {
+        if !tags.is_empty() {
             if tags[0].0 != 0 {
                 nitems_to_process = tags[0].0;
             } else {
@@ -173,7 +162,6 @@ impl Kernel for Interleaver {
                     input[0..nitems_to_consume]
                         .iter()
                         .chain(vec![0_u8; sf_app - nitems_to_consume].iter())
-                        .into_iter()
                         .enumerate()
                         .map(|(i, x)| {
                             if i >= nitems_to_consume {

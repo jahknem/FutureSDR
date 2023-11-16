@@ -1,16 +1,11 @@
 use futuresdr::anyhow::Result;
 use futuresdr::async_trait::async_trait;
 use std::cmp::{max, min};
-use std::collections::HashMap;
-use std::f32::consts::PI;
-use std::mem;
+
 // use futuresdr::futures::FutureExt;
-use futuresdr::futures::channel::mpsc;
-use futuresdr::futures::executor::block_on;
-use futuresdr::futures_lite::StreamExt;
-use futuresdr::log::{info, warn};
-use futuresdr::macros::message_handler;
-use futuresdr::num_complex::{Complex32, Complex64};
+
+use futuresdr::log::warn;
+
 use futuresdr::runtime::BlockMeta;
 use futuresdr::runtime::BlockMetaBuilder;
 use futuresdr::runtime::Kernel;
@@ -22,10 +17,6 @@ use futuresdr::runtime::StreamIoBuilder;
 use futuresdr::runtime::Tag;
 use futuresdr::runtime::WorkIo;
 use futuresdr::runtime::{Block, ItemTag};
-
-use crate::utilities::*;
-
-use rustfft::{FftDirection, FftPlanner};
 
 pub struct AddCrc {
     m_has_crc: bool,      //indicate the presence of a payload CRC
@@ -54,18 +45,18 @@ impl AddCrc {
         )
     }
 
-    fn crc16(crcValue_in: u16, newByte_tmp: u8) -> u16 {
-        let mut crcValue = crcValue_in;
-        let mut newByte = newByte_tmp as u16;
-        for i in 0..8 {
-            if ((crcValue & 0x8000) >> 8) ^ (newByte & 0x80) != 0 {
-                crcValue = (crcValue << 1) ^ 0x1021;
+    fn crc16(crc_value_in: u16, new_byte_tmp: u8) -> u16 {
+        let mut crc_value = crc_value_in;
+        let mut new_byte = new_byte_tmp as u16;
+        for _i in 0..8 {
+            if ((crc_value & 0x8000) >> 8) ^ (new_byte & 0x80) != 0 {
+                crc_value = (crc_value << 1) ^ 0x1021;
             } else {
-                crcValue = crcValue << 1;
+                crc_value <<= 1;
             }
-            newByte <<= 1;
+            new_byte <<= 1;
         }
-        return crcValue;
+        crc_value
     }
 }
 
@@ -80,7 +71,6 @@ impl Kernel for AddCrc {
     ) -> Result<()> {
         let input = sio.input(0).slice::<u8>();
         let out = sio.output(0).slice::<u8>();
-        let mut nitems_to_produce = 0;
         let noutput_items = max(0, out.len() - 4);
         let mut nitems_to_process = min(input.len(), noutput_items);
         // info! {"AddCrc: Flag 1 - nitems_to_process: {}", nitems_to_process};
@@ -107,7 +97,7 @@ impl Kernel for AddCrc {
             })
             .collect();
         // info! {"AddCrc: {:?}", tags};
-        if tags.len() > 0 {
+        if !tags.is_empty() {
             if tags[0].0 != 0 {
                 nitems_to_process = min(tags[0].0, noutput_items);
                 // info! {"AddCrc: Flag 2 - nitems_to_process: {}", nitems_to_process};
@@ -140,7 +130,7 @@ impl Kernel for AddCrc {
                             _ => None,
                         })
                         .collect();
-                    if tags_tmp.len() > 0 {
+                    if !tags_tmp.is_empty() {
                         self.m_frame_len = tags_tmp[0].1;
                         sio.output(0).add_tag(
                             0,
@@ -157,7 +147,7 @@ impl Kernel for AddCrc {
             }
         }
         if nitems_to_process == 0 {
-            if out.len() == 0 {
+            if out.is_empty() {
                 warn!("AddCrc: no space in output buffer, waiting for more.");
             }
             // else {
@@ -166,7 +156,7 @@ impl Kernel for AddCrc {
             return Ok(());
         }
         self.m_cnt += nitems_to_process;
-        if self.m_has_crc && self.m_cnt == self.m_frame_len {
+        let nitems_to_produce = if self.m_has_crc && self.m_cnt == self.m_frame_len {
             //append the CRC to the payload
             let mut crc: u16 = 0x0000;
             self.m_payload_len = self.m_payload.len();
@@ -183,11 +173,11 @@ impl Kernel for AddCrc {
             out[nitems_to_process + 1] = ((crc & 0x00F0) >> 4) as u8;
             out[nitems_to_process + 2] = ((crc & 0x0F00) >> 8) as u8;
             out[nitems_to_process + 3] = ((crc & 0xF000) >> 12) as u8;
-            nitems_to_produce = nitems_to_process + 4;
             self.m_payload = vec![];
+            nitems_to_process + 4
         } else {
-            nitems_to_produce = nitems_to_process;
-        }
+            nitems_to_process
+        };
         // if nitems_to_produce > 0 {
         //     info! {"AddCrc: producing {} samples.", nitems_to_produce};
         // }

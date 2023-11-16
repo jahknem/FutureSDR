@@ -1,28 +1,22 @@
 use clap::Parser;
-use futuresdr::futures::channel::mpsc;
-use futuresdr::futures::StreamExt;
 
 use futuresdr::anyhow::Result;
 use futuresdr::blocks::seify::SourceBuilder;
-use futuresdr::blocks::Apply;
-use futuresdr::blocks::Combine;
-use futuresdr::blocks::Fft;
-use futuresdr::blocks::MessagePipe;
+
 use futuresdr::blocks::NullSink;
 use futuresdr::log::info;
-use futuresdr::macros::connect;
-use futuresdr::num_complex::Complex32;
+
 use futuresdr::runtime::buffer::circular::Circular;
 use futuresdr::runtime::Flowgraph;
-use futuresdr::runtime::Pmt;
+
 use futuresdr::runtime::Runtime;
-use lora::utilities::*;
+
 use lora::{
     CrcVerif, Deinterleaver, Dewhitening, FftDemod, FrameSync, GrayMapping, HammingDec,
     HeaderDecoder,
 };
 use seify::Device;
-use seify::Direction::{Rx, Tx};
+use seify::Direction::Rx;
 
 #[derive(Parser, Debug)]
 #[clap(version)]
@@ -150,7 +144,7 @@ fn main() -> Result<()> {
     let null_sink = fg.add_block(NullSink::<u8>::new());
     fg.connect_stream(crc_verif, "out", null_sink, "in")?;
 
-    rt.run(fg);
+    let _ = rt.run(fg);
 
     Ok(())
 }

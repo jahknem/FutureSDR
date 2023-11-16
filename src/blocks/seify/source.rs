@@ -1,10 +1,9 @@
-use seify::Args;
 use seify::Device;
 use seify::DeviceTrait;
 use seify::Direction::Rx;
+use seify::Driver;
 use seify::GenericDevice;
 use seify::RxStreamer;
-use seify::Driver;
 
 use crate::anyhow::{Context, Result};
 use crate::blocks::seify::builder::BuilderType;
@@ -28,11 +27,16 @@ pub struct Source<D: DeviceTrait + Clone> {
     dev: Device<D>,
     streamer: Option<D::RxStreamer>,
     start_time: Option<i64>,
-    driver: Option<Driver>
+    driver: Option<Driver>,
 }
 
 impl<D: DeviceTrait + Clone> Source<D> {
-    pub(super) fn new(dev: Device<D>, channels: Vec<usize>, start_time: Option<i64>, driver: Option<Driver>) -> Block {
+    pub(super) fn new(
+        dev: Device<D>,
+        channels: Vec<usize>,
+        start_time: Option<i64>,
+        driver: Option<Driver>,
+    ) -> Block {
         assert!(!channels.is_empty());
 
         let mut siob = StreamIoBuilder::new();
@@ -60,7 +64,7 @@ impl<D: DeviceTrait + Clone> Source<D> {
                 dev,
                 start_time,
                 streamer: None,
-                driver: driver
+                driver: driver,
             },
         )
     }
@@ -88,10 +92,10 @@ impl<D: DeviceTrait + Clone> Source<D> {
     ) -> Result<Pmt> {
         for c in &self.channels {
             match &p {
-                Pmt::F32(v) => self.dev.set_component_frequency(Rx, *c,  "RF", *v as f64)?,
-                Pmt::F64(v) => self.dev.set_component_frequency(Rx, *c,  "RF", *v)?,
-                Pmt::U32(v) => self.dev.set_component_frequency(Rx, *c,  "RF", *v as f64)?,
-                Pmt::U64(v) => self.dev.set_component_frequency(Rx, *c,  "RF", *v as f64)?,
+                Pmt::F32(v) => self.dev.set_component_frequency(Rx, *c, "RF", *v as f64)?,
+                Pmt::F64(v) => self.dev.set_component_frequency(Rx, *c, "RF", *v)?,
+                Pmt::U32(v) => self.dev.set_component_frequency(Rx, *c, "RF", *v as f64)?,
+                Pmt::U64(v) => self.dev.set_component_frequency(Rx, *c, "RF", *v as f64)?,
                 _ => return Ok(Pmt::InvalidValue),
             };
         }
@@ -115,8 +119,7 @@ impl<D: DeviceTrait + Clone> Source<D> {
                     },
                     _ => panic!("setting offset is only supported for drivers soapy and aaronia_http, current driver: {:?}.", d),
                 }
-            }
-            else {
+            } else {
                 panic!("setting offset is only supported if the device driver is known at runtime, as the API is not consistent at this point.")
             }
             match &p {
@@ -175,8 +178,7 @@ impl<D: DeviceTrait + Clone> Source<D> {
                     Driver::AaroniaHttp => self.dev.set_component_frequency(Rx, *c, "DEMOD", offset)?,
                     _ => panic!("setting offset is only supported for drivers soapy and aaronia_http, current driver: {:?}.", d),
                 }
-            }
-            else {
+            } else {
                 panic!("setting offset is only supported if the device driver is known at runtime, as the API is not consistent at this point.")
             }
             // let f = self.dev.frequency(Rx, *c).unwrap();

@@ -1,13 +1,11 @@
 use futuresdr::anyhow::Result;
 use futuresdr::async_trait::async_trait;
-use std::cmp::min;
+
 use std::collections::HashMap;
-use std::f32::consts::PI;
-use std::mem;
+
 // use futuresdr::futures::FutureExt;
 use futuresdr::log::{info, warn};
-use futuresdr::macros::message_handler;
-use futuresdr::num_complex::{Complex32, Complex64};
+
 use futuresdr::runtime::BlockMeta;
 use futuresdr::runtime::BlockMetaBuilder;
 use futuresdr::runtime::Kernel;
@@ -20,8 +18,6 @@ use futuresdr::runtime::Tag;
 use futuresdr::runtime::WorkIo;
 use futuresdr::runtime::{Block, ItemTag};
 use std::string::String;
-
-use crate::utilities::*;
 
 pub struct CrcVerif {
     m_payload_len: usize, // Payload length in bytes
@@ -52,8 +48,8 @@ impl CrcVerif {
                 m_payload_len: 0,
                 m_crc_presence: false,
                 in_buff: vec![],
-                print_rx_msg: print_rx_msg,
-                output_crc_check: output_crc_check,
+                print_rx_msg,
+                output_crc_check,
                 curent_tag: HashMap::new(),
                 cnt: 0,
             },
@@ -71,15 +67,15 @@ impl CrcVerif {
      */
     fn crc16(data: &[u8], len: usize) -> u16 {
         let mut crc: u16 = 0x0000;
-        for i in 0..len {
-            let mut newByte = data[i];
-            for j in 0..8 {
-                if ((crc & 0x8000) >> 8) as u8 ^ (newByte & 0x80) != 0 {
+        for byte in data[0..len].iter() {
+            let mut new_byte = *byte;
+            for _j in 0..8 {
+                if ((crc & 0x8000) >> 8) as u8 ^ (new_byte & 0x80) != 0 {
                     crc = (crc << 1) ^ 0x1021;
                 } else {
-                    crc = crc << 1;
+                    crc <<= 1;
                 }
-                newByte = newByte << 1;
+                new_byte <<= 1;
             }
         }
         crc
@@ -97,14 +93,14 @@ impl Kernel for CrcVerif {
     ) -> Result<()> {
         let input = sio.input(0).slice::<u8>();
         let nitem_to_consume = input.len();
-        let mut nitem_to_produce_0: usize = 0;
+        let _nitem_to_produce_0: usize = 0;
 
-        let mut out = if sio.outputs().len() > 0 {
+        let out = if !sio.outputs().is_empty() {
             Some(sio.output(0).slice::<u8>())
         } else {
             None
         };
-        let mut out_crc = if self.output_crc_check {
+        let out_crc = if self.output_crc_check {
             Some(sio.output(0).slice::<bool>())
         } else {
             None
@@ -154,7 +150,7 @@ impl Kernel for CrcVerif {
             }
         }
         if let Some(ref out_crc_buf) = out_crc {
-            if out_crc_buf.len() == 0 {
+            if out_crc_buf.is_empty() {
                 warn!("not enough space in crc out buffer, waiting for more space.");
                 return Ok(());
             }
@@ -219,7 +215,7 @@ impl Kernel for CrcVerif {
             if self.print_rx_msg {
                 info!("rx msg: {}", message_str);
             }
-            mio.output_mut(0).post(Pmt::String(message_str));
+            mio.output_mut(0).post(Pmt::String(message_str)).await;
             self.in_buff
                 .drain(0..(self.m_payload_len + if self.m_crc_presence { 2 } else { 0 }));
             sio.output(0).produce(self.m_payload_len);

@@ -1,22 +1,13 @@
 use futuresdr::anyhow::Result;
 use futuresdr::async_trait::async_trait;
-use std::cmp::{max, min};
-use std::collections::HashMap;
-use std::f32::consts::PI;
-use std::mem;
-// use futuresdr::futures::FutureExt;
-use futuresdr::futures::channel::mpsc;
-use futuresdr::futures::executor::block_on;
-use futuresdr::futures_lite::StreamExt;
-use futuresdr::log::{info, warn};
-use futuresdr::macros::message_handler;
-use futuresdr::num_complex::{Complex32, Complex64};
+use std::cmp::min;
+
 use futuresdr::runtime::BlockMeta;
 use futuresdr::runtime::BlockMetaBuilder;
 use futuresdr::runtime::Kernel;
 use futuresdr::runtime::MessageIo;
 use futuresdr::runtime::MessageIoBuilder;
-use futuresdr::runtime::Pmt;
+
 use futuresdr::runtime::StreamIo;
 use futuresdr::runtime::StreamIoBuilder;
 use futuresdr::runtime::Tag;
@@ -24,8 +15,6 @@ use futuresdr::runtime::WorkIo;
 use futuresdr::runtime::{Block, ItemTag};
 
 use crate::utilities::*;
-
-use rustfft::{FftDirection, FftPlanner};
 
 pub struct HammingEnc {
     m_cr: u8,     // Transmission coding rate
@@ -51,17 +40,17 @@ impl HammingEnc {
         // set_tag_propagation_policy(TPP_ONE_TO_ONE);  // TODO
     }
 
-    fn set_cr(&mut self, cr: u8) {
-        self.m_cr = cr;
-    }
-
-    fn set_sf(&mut self, sf: usize) {
-        self.m_sf = sf;
-    }
-
-    fn get_cr(&self) -> usize {
-        self.m_cr as usize
-    }
+    // fn set_cr(&mut self, cr: u8) {
+    //     self.m_cr = cr;
+    // }
+    //
+    // fn set_sf(&mut self, sf: usize) {
+    //     self.m_sf = sf;
+    // }
+    //
+    // fn get_cr(&self) -> usize {
+    //     self.m_cr as usize
+    // }
 }
 
 #[async_trait]
@@ -76,22 +65,20 @@ impl Kernel for HammingEnc {
         let input = sio.input(0).slice::<u8>();
         let out = sio.output(0).slice::<u8>();
         let mut nitems_to_process = min(input.len(), out.len());
-        let mut tags: Vec<(usize, Tag)> = sio
+        let tags: Vec<(usize, Tag)> = sio
             .input(0)
             .tags()
             .iter()
-            .filter_map(|x| match x {
-                ItemTag { index, tag } => {
-                    if *index < nitems_to_process {
-                        Some((*index, tag.clone()))
-                    } else {
-                        None
-                    }
+            .filter_map(|x| {
+                let ItemTag { index, tag } = x;
+                if *index < nitems_to_process {
+                    Some((*index, tag.clone()))
+                } else {
+                    None
                 }
-                _ => None,
             })
             .collect();
-        if tags.len() > 0 {
+        if !tags.is_empty() {
             if tags[0].0 != 0 {
                 nitems_to_process = min(nitems_to_process, tags[0].0);
             } else {

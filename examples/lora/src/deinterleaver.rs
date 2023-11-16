@@ -1,13 +1,11 @@
 use futuresdr::anyhow::Result;
 use futuresdr::async_trait::async_trait;
-use std::cmp::min;
+
 use std::collections::HashMap;
-use std::f32::consts::PI;
-use std::mem;
+
 // use futuresdr::futures::FutureExt;
-use futuresdr::log::{info, warn};
-use futuresdr::macros::message_handler;
-use futuresdr::num_complex::{Complex32, Complex64};
+use futuresdr::log::warn;
+
 use futuresdr::runtime::BlockMeta;
 use futuresdr::runtime::BlockMetaBuilder;
 use futuresdr::runtime::Kernel;
@@ -191,10 +189,8 @@ impl Kernel for Deinterleaver {
                     }
                     // std::cout << std::endl;
                 }
-                for i in 0..sf_app {
-                    output[i] = deinter_bin[i];
-                    // Write only the cw_len bits over the 8 bits space available
-                }
+                output[0..sf_app].copy_from_slice(&deinter_bin[0..sf_app]);
+                // Write only the cw_len bits over the 8 bits space available
             } else {
                 // Hard-Decoding
                 //                     // Create the empty matrices

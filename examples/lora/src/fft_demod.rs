@@ -1,11 +1,10 @@
 use futuresdr::anyhow::Result;
 use futuresdr::async_trait::async_trait;
 use std::collections::HashMap;
-use std::f32::consts::PI;
-use std::mem;
+
 // use futuresdr::futures::FutureExt;
-use futuresdr::log::{info, warn};
-use futuresdr::macros::message_handler;
+use futuresdr::log::warn;
+
 use futuresdr::num_complex::{Complex32, Complex64};
 use futuresdr::runtime::BlockMeta;
 use futuresdr::runtime::BlockMetaBuilder;
@@ -30,9 +29,9 @@ pub struct FftDemod {
     m_cr: usize,           //< Coding rate
     m_soft_decoding: bool, //< Hard/Soft decoding
     max_log_approx: bool,  //< use Max-log approximation in LLR formula
-    m_new_frame: bool,     //< To be notify when receive a new frame to estimate SNR
-    m_ldro: bool,          //< use low datarate optimisation
-    m_symb_numb: usize,    //< number of symbols in the frame
+    // m_new_frame: bool,     //< To be notify when receive a new frame to estimate SNR
+    m_ldro: bool,       //< use low datarate optimisation
+    m_symb_numb: usize, //< number of symbols in the frame
     // m_symb_cnt: usize, //< number of symbol already output in current frame
     // m_Ps_est: f64,               // Signal Power estimation updated at each rx symbol
     // m_Pn_est: f64,               // Signal Power estimation updated at each rx symbo
@@ -45,7 +44,7 @@ pub struct FftDemod {
     // m_dechirped: Vec<Complex32>, //< Dechirped symbol
     // m_fft: Vec<Complex32>, //< Result of the FFT
     output: Vec<u16>, //< Stores the value to be outputted once a full bloc has been received
-    LLRs_block: Vec<[LLR; MAX_SF]>, //< Stores the LLRs to be outputted once a full bloc has been received
+    llrs_block: Vec<[LLR; MAX_SF]>, //< Stores the LLRs to be outputted once a full bloc has been received
     is_header: bool,                //< Indicate that the first block hasn't been fully received
                                     // block_size: usize,         //< The number of lora symbol in one block
 
@@ -75,8 +74,8 @@ impl FftDemod {
             m_sf: 0,
             m_cr: 1, // TODO never initialized in cpp code (would set the value implicitly to 0), but set to 1 in python example
             m_soft_decoding: soft_decoding,
-            max_log_approx: max_log_approx,
-            m_new_frame: true,
+            max_log_approx,
+            // m_new_frame: true,
             // m_symb_cnt: 0,
             // m_Ps_est: 0.,
             // m_Pn_est: 0.,
@@ -87,14 +86,13 @@ impl FftDemod {
             // m_dechirped: vec![],
             // m_fft: vec![],
             output: vec![],
-            LLRs_block: vec![],
+            llrs_block: vec![],
             is_header: false,
             m_ldro: false,
             m_symb_numb: 0,
             // block_size: _,
         };
         fs.set_sf(sf_initial); //accept any new sf
-                               // fs.set_tag_propagation_policy(TPP_DONT);  // TODO
         let mut sio = StreamIoBuilder::new().add_input::<Complex32>("in");
         if soft_decoding {
             sio = sio.add_output::<[LLR; MAX_SF]>("out")
@@ -152,7 +150,7 @@ impl FftDemod {
         // info!("samples: {:?}", samples);
         // info!("self.m_downchirp: {:?}", self.m_downchirp);
         // Multiply with ideal downchirp
-        let mut m_dechirped = volk_32fc_x2_multiply_32fc(&samples, &self.m_downchirp);
+        let mut m_dechirped = volk_32fc_x2_multiply_32fc(samples, &self.m_downchirp);
         assert!(m_dechirped.len() == self.m_samples_per_symbol);
         // info!("m_dechirped: {:?}", m_dechirped);
         // let mut cx_out: Vec<Complex32> = m_dechirped[0..self.m_samples_per_symbol].to_vec();
@@ -185,17 +183,17 @@ impl FftDemod {
         // #ifdef GRLORA_DEBUG
         //             idx_file << idx << ", ";
         // #endif
-        return idx.try_into().unwrap();
+        idx.try_into().unwrap()
     }
 
     ///  Use in Soft-decoding
     /// Compute the Log-Likelihood Ratios of the SF nbr of bits
-    fn get_LLRs(&self, samples: &[Complex32]) -> [LLR; MAX_SF] {
+    fn get_llrs(&self, samples: &[Complex32]) -> [LLR; MAX_SF] {
         let mut m_fft_mag_sq = self.compute_fft_mag(samples);
 
         //             // Compute LLRs of the SF bits
-        let mut LLs: Vec<f64> = vec![0.; self.m_samples_per_symbol]; // 2**sf  Log-Likelihood
-        let mut LLRs: [LLR; MAX_SF] = [0.; MAX_SF]; //      Log-Likelihood Ratios
+        let mut lls: Vec<f64> = vec![0.; self.m_samples_per_symbol]; // 2**sf  Log-Likelihood
+        let mut llrs: [LLR; MAX_SF] = [0.; MAX_SF]; //      Log-Likelihood Ratios
 
         // compute SNR estimate at each received symbol as SNR remains constant during 1 simulation run
         // Estimate signal power
@@ -207,13 +205,13 @@ impl FftDemod {
         let mut noise_energy: f64 = 0.;
 
         let n_adjacent_bins = 1; // Put '0' for best accurate SNR estimation but if symbols energy splitted in 2 bins, put '1' for safety
-        for i in 0..self.m_samples_per_symbol {
-            if ((i as isize - symbol_idx as isize).abs() as usize % (self.m_samples_per_symbol - 1))
+        for (i, &frequency_bin_energy) in m_fft_mag_sq.iter().enumerate() {
+            if ((i as isize - symbol_idx as isize).unsigned_abs() % (self.m_samples_per_symbol - 1))
                 < 1 + n_adjacent_bins
             {
-                signal_energy += m_fft_mag_sq[i];
+                signal_energy += frequency_bin_energy;
             } else {
-                noise_energy += m_fft_mag_sq[i];
+                noise_energy += frequency_bin_energy;
             }
         }
 
@@ -223,8 +221,8 @@ impl FftDemod {
         //Ps_est = p*Ps_est + (1-p)*  signal_energy / m_samples_per_symbol;
         //Pn_est = p*Pn_est + (1-p)* noise_energy / (m_samples_per_symbol-1-2*n_adjacent_bins); // remove used bins for better estimation
         // Signal and noise power estimation for each received symbol
-        let m_Ps_est = signal_energy / self.m_samples_per_symbol as f64;
-        let m_Pn_est = noise_energy / (self.m_samples_per_symbol - 1 - 2 * n_adjacent_bins) as f64;
+        let m_ps_est = signal_energy / self.m_samples_per_symbol as f64;
+        let m_pn_est = noise_energy / (self.m_samples_per_symbol - 1 - 2 * n_adjacent_bins) as f64;
 
         // #ifdef GRLORA_SNR_MEASUREMENTS_SAVE
         //             SNRestim_file << std::setprecision(6) << m_Ps_est << "," << m_Pn_est << std::endl;
@@ -243,18 +241,20 @@ impl FftDemod {
         //                 bessel_file << std::setprecision(8) << std::sqrt(Ps_frame) / Pn_frame * std::sqrt(m_fft_mag_sq[n]) << ","  << Ps_frame << "," << Pn_frame << "," << m_fft_mag_sq[n] << std::endl;
         //             }
         // #endif
-        let SNRdB_estimate = 10. * (m_Ps_est / m_Pn_est).log10();
+        let _snr_db_estimate = 10. * (m_ps_est / m_pn_est).log10();
         // info!("SNR {}", SNRdB_estimate);
         //  Normalize fft_mag to 1 to avoid Bessel overflow
-        for i in 0..self.m_samples_per_symbol {
-            // upgrade to avoid for loop
-            m_fft_mag_sq[i] *= self.m_samples_per_symbol as f64; // Normalized |Y[n]| * sqrt(N) => |Y[n]|² * N (depends on kiss FFT library)  // TODO
-                                                                 //m_fft_mag_sq[i] /= Ps_frame; // // Normalize to avoid Bessel overflow (does not change the performances)
-        }
+        m_fft_mag_sq = m_fft_mag_sq
+            .iter()
+            .map(|x| x * self.m_samples_per_symbol as f64)
+            .collect();
+        // upgrade to avoid for loop
+        // Normalized |Y[n]| * sqrt(N) => |Y[n]|² * N (depends on kiss FFT library)
+        //m_fft_mag_sq[i] /= Ps_frame; // // Normalize to avoid Bessel overflow (does not change the performances)
         //
         let mut clipping = false;
         for n in 0..self.m_samples_per_symbol {
-            let bessel_arg = m_Ps_est.sqrt() / m_Pn_est * (m_fft_mag_sq[n] as f64).sqrt();
+            let bessel_arg = m_ps_est.sqrt() / m_pn_est * m_fft_mag_sq[n].sqrt();
             // Manage overflow of Bessel function
             // 713 ~ log(std::numeric_limits<LLR>::max())
             // if bessel_arg < 713. {
@@ -264,7 +264,7 @@ impl FftDemod {
                 let tmp = bessel::i_nu(0., Complex64::new(bessel_arg, 0.));
                 // info!("tmp: {}", tmp);
                 assert!(tmp.im == 0.);
-                LLs[n] = tmp.re; // compute Bessel safely  // TODO correct construction of complex number?
+                lls[n] = tmp.re; // compute Bessel safely  // TODO correct construction of complex number?
             } else {
                 //std::cerr << RED << "Log-Likelihood clipping :-( SNR: " << SNRdB_estimate << " |Y|: " << std::sqrt(m_fft_mag_sq[n]) << RESET << std::endl;
                 //LLs[n] = std::numeric_limits<LLR>::max();  // clipping
@@ -272,60 +272,60 @@ impl FftDemod {
                 break;
             }
             if self.max_log_approx {
-                LLs[n] = LLs[n].ln(); // Log-Likelihood
+                lls[n] = lls[n].ln(); // Log-Likelihood
                                       //LLs[n] = m_fft_mag_sq[n]; // same performance with just |Y[n]| or |Y[n]|²
             }
         }
         // change to max-log formula with only |Y[n]|² to avoid overflows, solve LLR computation incapacity in high SNR
         if clipping {
-            LLs.copy_from_slice(&m_fft_mag_sq);
+            lls.copy_from_slice(&m_fft_mag_sq);
         }
 
         // Log-Likelihood Ratio estimations
         if self.max_log_approx {
             for i in 0..self.m_sf {
                 // sf bits => sf LLRs
-                let mut max_X1: f64 = 0.;
-                let mut max_X0: f64 = 0.; // X1 = set of symbols where i-th bit is '1'
-                for n in 0..self.m_samples_per_symbol {
+                let mut max_x1: f64 = 0.;
+                let mut max_x0: f64 = 0.; // X1 = set of symbols where i-th bit is '1'
+                for (n, &ll) in lls.iter().enumerate().take(self.m_samples_per_symbol) {
                     // for all symbols n : 0 --> 2^sf
                     // LoRa: shift by -1 and use reduce rate if first block (header)
-                    let mut s: usize = my_modulo((n as isize - 1), (1 << self.m_sf))
+                    let mut s: usize = my_modulo(n as isize - 1, 1 << self.m_sf)
                         / if self.is_header || self.m_ldro { 4 } else { 1 };
                     s = s ^ (s >> 1); // Gray encoding formula               // Gray demap before (in this block)
                     if (s & (1 << i)) != 0 {
                         // if i-th bit of symbol n is '1'
-                        if LLs[n] > max_X1 {
-                            max_X1 = LLs[n]
+                        if ll > max_x1 {
+                            max_x1 = ll
                         }
                     } else {
                         // if i-th bit of symbol n is '0'
-                        if LLs[n] > max_X0 {
-                            max_X0 = LLs[n]
+                        if ll > max_x0 {
+                            max_x0 = ll
                         }
                     }
                 }
-                LLRs[self.m_sf - 1 - i] = max_X1 - max_X0; // [MSB ... ... LSB]
+                llrs[self.m_sf - 1 - i] = max_x1 - max_x0; // [MSB ... ... LSB]
             }
         } else {
             // Without max-log approximation of the LLR estimation
             for i in 0..self.m_sf {
-                let mut sum_X1: f64 = 0.;
-                let mut sum_X0: f64 = 0.; // X1 = set of symbols where i-th bit is '1'
-                for n in 0..self.m_samples_per_symbol {
+                let mut sum_x1: f64 = 0.;
+                let mut sum_x0: f64 = 0.; // X1 = set of symbols where i-th bit is '1'
+                for (n, &ll) in lls.iter().enumerate().take(self.m_samples_per_symbol) {
                     // for all symbols n : 0 --> 2^sf
                     let mut s: usize = ((n - 1) % (1 << self.m_sf))
                         / if self.is_header || self.m_ldro { 4 } else { 1 };
                     s = s ^ (s >> 1); // Gray demap
                     if (s & (1 << i)) != 0 {
-                        sum_X1 += LLs[n];
+                        sum_x1 += ll;
                     }
                     // Likelihood
                     else {
-                        sum_X0 += LLs[n];
+                        sum_x0 += ll;
                     }
                 }
-                LLRs[self.m_sf - 1 - i] = sum_X1.ln() - sum_X0.ln();
+                llrs[self.m_sf - 1 - i] = sum_x1.ln() - sum_x0.ln();
                 // [MSB ... ... LSB]
             }
         }
@@ -343,7 +343,7 @@ impl FftDemod {
         //             LLR_file.close();
         // #endif
 
-        LLRs
+        llrs
     }
 
     // /// Handles the reception of the coding rate received by the header_decoder block.
@@ -374,7 +374,7 @@ impl Kernel for FftDemod {
         let mut tag_tmp: Option<HashMap<String, Pmt>> =
             sio.input(0).tags().iter().find_map(|x| match x {
                 ItemTag {
-                    index,
+                    index: _,
                     tag: Tag::NamedAny(n, val),
                 } => {
                     if n == "frame_info" {
@@ -446,7 +446,7 @@ impl Kernel for FftDemod {
                     .map(|x| Complex32::new(x.re as f32, x.im as f32))
                     .collect();
                 if self.m_soft_decoding {
-                    self.LLRs_block.clear(); // TODO not cleared in original code
+                    self.llrs_block.clear(); // TODO not cleared in original code
                 } else {
                     self.output.clear();
                 }
@@ -472,7 +472,7 @@ impl Kernel for FftDemod {
         let block_size = 4 + if self.is_header { 4 } else { self.m_cr };
 
         while self.output.len() < block_size  // only consume more if not currently waiting for space in out buffer
-            && self.LLRs_block.len() < block_size
+            && self.llrs_block.len() < block_size
             && nitems_to_process >= self.m_samples_per_symbol
         {
             // TODO changed to loop as preceding block produces burst of samples and then stalls, leading to scheduler calling this work function only once.
@@ -485,15 +485,12 @@ impl Kernel for FftDemod {
                 &input[items_to_consume..(items_to_consume + self.m_samples_per_symbol)];
             // info!("input_tmp: {:?}", input_tmp);
             if self.m_soft_decoding {
-                self.LLRs_block.push(self.get_LLRs(input_tmp)); // Store 'sf' LLRs
+                self.llrs_block.push(self.get_llrs(input_tmp)); // Store 'sf' LLRs
             } else {
                 // Hard decoding
                 // shift by -1 and use reduce rate if first block (header)
                 self.output.push(
-                    my_modulo(
-                        (self.get_symbol_val(input_tmp) as isize - 1),
-                        (1 << self.m_sf),
-                    ) as u16
+                    my_modulo(self.get_symbol_val(input_tmp) as isize - 1, 1 << self.m_sf) as u16
                         / if self.is_header || self.m_ldro { 4 } else { 1 },
                 );
             }
@@ -518,7 +515,7 @@ impl Kernel for FftDemod {
         // }
 
         if !self.m_soft_decoding && self.output.len() == block_size {
-            let mut out_buf = sio.output(0).slice::<u16>();
+            let out_buf = sio.output(0).slice::<u16>();
             if out_buf.len() >= block_size {
                 out_buf[0..block_size].copy_from_slice(&self.output);
                 self.output.clear();
@@ -526,11 +523,11 @@ impl Kernel for FftDemod {
             } else {
                 warn!("FftDemod: not enough space in output buffer.");
             }
-        } else if self.m_soft_decoding && self.LLRs_block.len() == block_size {
-            let mut out_buf = sio.output(0).slice::<[LLR; MAX_SF]>();
+        } else if self.m_soft_decoding && self.llrs_block.len() == block_size {
+            let out_buf = sio.output(0).slice::<[LLR; MAX_SF]>();
             if out_buf.len() >= block_size {
-                out_buf[0..block_size].copy_from_slice(&self.LLRs_block);
-                self.LLRs_block.clear();
+                out_buf[0..block_size].copy_from_slice(&self.llrs_block);
+                self.llrs_block.clear();
                 items_to_output = block_size
             } else {
                 warn!("FftDemod: not enough space in output buffer.");

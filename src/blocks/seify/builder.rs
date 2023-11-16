@@ -1,4 +1,3 @@
-use std::fmt::Display;
 use seify::Args;
 use seify::Device;
 use seify::DeviceTrait;
@@ -35,7 +34,7 @@ pub struct Builder<D: DeviceTrait + Clone> {
     dev: Option<Device<D>>,
     start_time: Option<i64>,
     builder_type: BuilderType,
-    driver: Option<&'static str>
+    driver: Option<&'static str>,
 }
 
 impl<D: DeviceTrait + Clone> Builder<D> {
@@ -48,7 +47,7 @@ impl<D: DeviceTrait + Clone> Builder<D> {
             dev: None,
             start_time: None,
             builder_type,
-            driver: None
+            driver: None,
         }
     }
     /// Arguments
@@ -65,7 +64,7 @@ impl<D: DeviceTrait + Clone> Builder<D> {
             dev: Some(dev),
             start_time: self.start_time,
             builder_type: self.builder_type,
-            driver: self.driver
+            driver: self.driver,
         }
     }
     /// Channel
@@ -114,14 +113,14 @@ impl<D: DeviceTrait + Clone> Builder<D> {
         match self.dev.take() {
             Some(dev) => match self.builder_type {
                 BuilderType::Sink => {
-                    let driver  = driver_from_str(self.driver);
+                    let driver = driver_from_str(self.driver);
                     self.config.apply(&dev, &self.channels, Direction::Tx)?;
                     Ok(Sink::new(dev, self.channels, self.start_time, driver))
                 }
                 BuilderType::Source => {
-                    let driver  = driver_from_str(self.driver);
+                    let driver = driver_from_str(self.driver);
                     self.config.apply(&dev, &self.channels, Direction::Rx)?;
-                    Ok(Source::new(dev, self.channels, self.start_time,driver))
+                    Ok(Source::new(dev, self.channels, self.start_time, driver))
                 }
             },
             None => {
@@ -135,10 +134,14 @@ impl<D: DeviceTrait + Clone> Builder<D> {
                 };
                 let driver = if driver.is_none() {
                     if let Some(d) = self.driver {
-                        &self.args.set("driver", d);
-                        driver_from_str(self.driver)  // TODO
-                    } else {None}
-                } else {driver};
+                        let _ = &self.args.set("driver", d);
+                        driver_from_str(self.driver) // TODO
+                    } else {
+                        None
+                    }
+                } else {
+                    driver
+                };
                 let dev = Device::from_args(&self.args)?;
                 match self.builder_type {
                     BuilderType::Sink => {

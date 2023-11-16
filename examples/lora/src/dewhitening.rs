@@ -2,12 +2,9 @@ use futuresdr::anyhow::Result;
 use futuresdr::async_trait::async_trait;
 use std::cmp::min;
 use std::collections::HashMap;
-use std::f32::consts::PI;
-use std::mem;
+
 // use futuresdr::futures::FutureExt;
-use futuresdr::log::{info, warn};
-use futuresdr::macros::message_handler;
-use futuresdr::num_complex::{Complex32, Complex64};
+
 use futuresdr::runtime::BlockMeta;
 use futuresdr::runtime::BlockMetaBuilder;
 use futuresdr::runtime::Kernel;
@@ -21,8 +18,6 @@ use futuresdr::runtime::WorkIo;
 use futuresdr::runtime::{Block, ItemTag};
 
 use crate::utilities::*;
-
-const HEADER_LEN: usize = 5; // size of the header in nibbles
 
 pub struct Dewhitening {
     m_payload_len: usize, // Payload length in bytes
@@ -71,11 +66,11 @@ impl Kernel for Dewhitening {
         &mut self,
         _io: &mut WorkIo,
         sio: &mut StreamIo,
-        mio: &mut MessageIo<Self>,
+        _mio: &mut MessageIo<Self>,
         _b: &mut BlockMeta,
     ) -> Result<()> {
         let input = sio.input(0).slice::<u8>();
-        let mut out = sio.output(0).slice::<u8>();
+        let out = sio.output(0).slice::<u8>();
         let mut nitem_to_process = input.len();
 
         let tags: Vec<(usize, HashMap<String, Pmt>)> = sio
@@ -99,7 +94,7 @@ impl Kernel for Dewhitening {
                 _ => None,
             })
             .collect();
-        if tags.len() > 0 {
+        if !tags.is_empty() {
             if tags[0].0 != 0 {
                 nitem_to_process = tags[0].0;
             } else {

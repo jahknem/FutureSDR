@@ -1,16 +1,14 @@
 use futuresdr::anyhow::Result;
 use futuresdr::async_trait::async_trait;
-use std::cmp::{max, min};
-use std::collections::{HashMap, VecDeque};
-use std::f32::consts::PI;
-use std::mem;
+
+use std::collections::VecDeque;
+
 // use futuresdr::futures::FutureExt;
-use futuresdr::futures::channel::mpsc;
-use futuresdr::futures::executor::block_on;
-use futuresdr::futures_lite::StreamExt;
-use futuresdr::log::{info, warn};
+
+use futuresdr::log::warn;
 use futuresdr::macros::message_handler;
-use futuresdr::num_complex::{Complex32, Complex64};
+
+use futuresdr::runtime::Block;
 use futuresdr::runtime::BlockMeta;
 use futuresdr::runtime::BlockMetaBuilder;
 use futuresdr::runtime::Kernel;
@@ -21,19 +19,16 @@ use futuresdr::runtime::StreamIo;
 use futuresdr::runtime::StreamIoBuilder;
 use futuresdr::runtime::Tag;
 use futuresdr::runtime::WorkIo;
-use futuresdr::runtime::{Block, ItemTag};
 
 use crate::utilities::*;
-
-use rustfft::{FftDirection, FftPlanner};
 
 pub struct Whitening {
     m_is_hex: bool, // indicate that the payload is given by a string of hex values
     // m_payload: Vec<u8>, // store the payload bytes
     payload_str: VecDeque<String>, // payload as a string
-    m_use_length_tag: bool, // wheter to use the length tag to separate frames or the separator character
-    m_input_byte_cnt: usize, // number of bytes from the input already processed
-    m_tag_offset: usize,
+                                   // m_use_length_tag: bool, // wheter to use the length tag to separate frames or the separator character
+                                   // m_input_byte_cnt: usize, // number of bytes from the input already processed
+                                   // m_tag_offset: usize,
 }
 
 impl Whitening {
@@ -48,12 +43,12 @@ impl Whitening {
                 .add_input("msg", Self::msg_handler)
                 .build(),
             Whitening {
-                m_use_length_tag: use_length_tag,
+                // m_use_length_tag: use_length_tag,
                 m_is_hex: if use_length_tag { false } else { is_hex }, // cant use length tag if input is given as a string of hex values
-                m_tag_offset: 1,
+                // m_tag_offset: 1,
                 // m_payload: vec![], // implicit
                 payload_str: VecDeque::new(),
-                m_input_byte_cnt: 0,
+                // m_input_byte_cnt: 0,
             },
         )
     }
@@ -91,7 +86,7 @@ impl Kernel for Whitening {
         if self.payload_str.len() >= 100 && self.payload_str.len() % 100 == 0 {
             warn!("Whitening: frames in waiting list. Transmitter has issue to keep up at that transmission frequency.");
         }
-        if self.payload_str.len() != 0
+        if !self.payload_str.is_empty()
             && out.len()
                 >= if self.m_is_hex { 1 } else { 2 } * self.payload_str.front().unwrap().len()
         {

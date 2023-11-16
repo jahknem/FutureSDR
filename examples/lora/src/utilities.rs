@@ -8,7 +8,7 @@ use futuresdr::runtime::Pmt;
 use futuresdr::runtime::{ItemTag, Tag};
 use ordered_float::OrderedFloat;
 use rustfft::num_traits::Float;
-use std::any::TypeId;
+
 use std::cmp::Eq;
 use std::collections::HashMap;
 use std::f32::consts::PI;
@@ -67,11 +67,11 @@ pub enum LdroMode {
 impl From<usize> for LdroMode {
     fn from(orig: usize) -> Self {
         match orig {
-            0_usize => return LdroMode::DISABLE,
-            1_usize => return LdroMode::ENABLE,
-            2_usize => return LdroMode::AUTO,
+            0_usize => LdroMode::DISABLE,
+            1_usize => LdroMode::ENABLE,
+            2_usize => LdroMode::AUTO,
             _ => panic!("invalid value to ldro_mode"),
-        };
+        }
     }
 }
 // /**
@@ -115,7 +115,7 @@ pub fn bool2int(b: &[bool]) -> u16 {
         .map(|x| *x as u16)
         .zip((0_usize..b.len()).rev())
         .map(|(bit, order)| bit << order)
-        .fold(0_u16, |acc, e| acc + e)
+        .sum::<u16>()
 }
 
 /**
@@ -135,24 +135,29 @@ pub fn build_upchirp(id: usize, sf: usize, os_factor: usize) -> Vec<Complex32> {
     let n = (1 << sf) as f32;
     let n_idx = 1 << sf;
     let n_fold = n * os_factor as f32 - (id * os_factor) as f32;
-    let mut chirp = vec![Complex32::from(0.); (1 << sf) * os_factor];
-    for i in 0..(n_idx * os_factor) {
-        let j = i as f32;
-        if n < n_fold {
-            chirp[i] = Complex32::new(1.0, 0.0)
-                * Complex32::from_polar(
-                    1.,
-                    2.0 * PI * (j * j / (2. * n) + (id as f32 / n - 0.5) * j),
-                );
-        } else {
-            chirp[i] = Complex32::new(1.0, 0.0)
-                * Complex32::from_polar(
-                    1.,
-                    2.0 * PI * (j * j / (2. * n) + (id as f32 / n - 1.5) * j),
-                );
-        }
+    if n < n_fold {
+        (0..(n_idx * os_factor))
+            .map(|i| i as f32)
+            .map(|j| {
+                Complex32::new(1.0, 0.0)
+                    * Complex32::from_polar(
+                        1.,
+                        2.0 * PI * (j * j / (2. * n) + (id as f32 / n - 0.5) * j),
+                    )
+            })
+            .collect()
+    } else {
+        (0..(n_idx * os_factor))
+            .map(|i| i as f32)
+            .map(|j| {
+                Complex32::new(1.0, 0.0)
+                    * Complex32::from_polar(
+                        1.,
+                        2.0 * PI * (j * j / (2. * n) + (id as f32 / n - 1.5) * j),
+                    )
+            })
+            .collect()
     }
-    chirp
 }
 
 #[inline]
@@ -269,7 +274,7 @@ pub fn volk_32fc_magnitude_squared_32f(input_slice: &[Complex32]) -> Vec<f32> {
     tmp
 }
 
-trait TryDowncast<T: Clone> {
+pub trait TryDowncast<T: Clone> {
     fn try_downcast(&self) -> Option<T> {
         None
     }
@@ -306,7 +311,7 @@ impl TryDowncast<f32> for f32 {
 }
 
 pub fn get_tags_in_window<T: Clone>(
-    tags_in: &Vec<ItemTag>,
+    tags_in: &[ItemTag],
     window_size: usize,
     tag_name: &str,
 ) -> Vec<(usize, T)>

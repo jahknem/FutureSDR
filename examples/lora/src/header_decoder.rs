@@ -2,12 +2,10 @@ use futuresdr::anyhow::Result;
 use futuresdr::async_trait::async_trait;
 use std::cmp::min;
 use std::collections::HashMap;
-use std::f32::consts::PI;
-use std::mem;
+
 // use futuresdr::futures::FutureExt;
 use futuresdr::log::{info, warn};
-use futuresdr::macros::message_handler;
-use futuresdr::num_complex::{Complex32, Complex64};
+
 use futuresdr::runtime::BlockMeta;
 use futuresdr::runtime::BlockMetaBuilder;
 use futuresdr::runtime::Kernel;
@@ -19,8 +17,6 @@ use futuresdr::runtime::StreamIoBuilder;
 use futuresdr::runtime::Tag;
 use futuresdr::runtime::WorkIo;
 use futuresdr::runtime::{Block, ItemTag};
-
-use crate::utilities::*;
 
 const HEADER_LEN: usize = 5; // size of the header in nibbles
 
@@ -71,7 +67,6 @@ impl HeaderDecoder {
     }
 
     async fn publish_frame_info(
-        &self,
         sio: &mut StreamIo,
         mio: &mut MessageIo<Self>,
         cr: usize,
@@ -138,7 +133,7 @@ impl Kernel for HeaderDecoder {
                 _ => None,
             })
             .collect();
-        if tags.len() > 0 {
+        if !tags.is_empty() {
             if tags[0].0 != 0 {
                 nitem_to_consume = tags[0].0;
             } else {
@@ -166,7 +161,7 @@ impl Kernel for HeaderDecoder {
             if self.is_header {
                 if self.m_impl_header {
                     //implicit header, all parameters should have been provided
-                    self.publish_frame_info(
+                    Self::publish_frame_info(
                         sio,
                         mio,
                         self.m_cr,
@@ -177,13 +172,13 @@ impl Kernel for HeaderDecoder {
                     )
                     .await;
 
-                    for i in 0..nitem_to_consume {
+                    for sample in input[0..nitem_to_consume].iter() {
                         //only output payload or CRC
                         if self.pay_cnt
                             < self.m_payload_len * 2 + if self.m_has_crc { 4 } else { 0 }
                         {
                             self.pay_cnt += 1;
-                            out[nitem_to_produce] = input[i];
+                            out[nitem_to_produce] = *sample;
                             nitem_to_produce += 1;
                         }
                     }
@@ -241,20 +236,21 @@ impl Kernel for HeaderDecoder {
                             warn!("Frame can not be empty!");
                             warn!("item to process= {}", nitem_to_consume);
                         }
-                        mio.output_mut(1).post(Pmt::Bool(true));
+                        mio.output_mut(1).post(Pmt::Bool(true)).await;
                         head_err = true;
                         nitem_to_produce = 0;
-                    } else {
-                        if self.m_print_header {
-                            info!("Header checksum valid!");
-                        }
-                        // #ifdef GRLORA_DEBUG
-                        //                         std::cout << "should have " << (int)header_chk << std::endl;
-                        //                         std::cout << "got: " << (int)(c4 << 4) + (c3 << 3) + (c2 << 2) + (c1 << 1) + c0 << std::endl;
-                        // #endif
-                        // nitem_to_produce = nitem_to_consume - HEADER_LEN;
+                        // } else {
+                        //     if self.m_print_header {
+                    } else if self.m_print_header {
+                        info!("Header checksum valid!");
                     }
-                    self.publish_frame_info(
+                    // #ifdef GRLORA_DEBUG
+                    //                         std::cout << "should have " << (int)header_chk << std::endl;
+                    //                         std::cout << "got: " << (int)(c4 << 4) + (c3 << 3) + (c2 << 2) + (c1 << 1) + c0 << std::endl;
+                    // #endif
+                    // nitem_to_produce = nitem_to_consume - HEADER_LEN;
+                    // }
+                    Self::publish_frame_info(
                         sio,
                         mio,
                         self.m_cr,
@@ -265,21 +261,21 @@ impl Kernel for HeaderDecoder {
                     )
                     .await;
                     // print("pub header info");
-                    for i in HEADER_LEN..nitem_to_consume {
+                    for sample in input[HEADER_LEN..nitem_to_consume].iter() {
                         self.pay_cnt += 1;
-                        out[nitem_to_produce] = input[i];
+                        out[nitem_to_produce] = *sample;
                         nitem_to_produce += 1;
                     }
                 }
             } else {
                 // info!("HeaderDecoder: asdf");
                 // no header to decode
-                for i in 0..nitem_to_consume {
+                for sample in input[0..nitem_to_consume].iter() {
                     // TODO can be simplified to range assignment
                     if self.pay_cnt < self.m_payload_len * 2 + if self.m_has_crc { 4 } else { 0 } {
                         //only output usefull value (payload and CRC if any)
                         self.pay_cnt += 1;
-                        out[nitem_to_produce] = input[i];
+                        out[nitem_to_produce] = *sample;
                         nitem_to_produce += 1;
                     }
                 }

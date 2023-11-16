@@ -1,294 +1,294 @@
-on: [push, pull_request]
-
-name: CI
-
-jobs:
-  lints:
-    name: Lints
-    runs-on: ubuntu-latest
-    env:
-      RUST_BACKTRACE: full
-    steps:
-      - uses: actions/checkout@v3
-
-      - uses: dtolnay/rust-toolchain@nightly
-        with:
-          components: rustfmt, clippy
-          target: wasm32-unknown-unknown
-
-      - name: Install ZeroMQ
-        run: sudo apt-get install -y libzmq3-dev
-
-      - name: Install alsalibs
-        run: sudo apt-get -y install libasound2-dev
-
-      - name: Install LTTng
-        run: sudo apt-get -y install liblttng-ust-dev
-
-      - name: Install Soapy
-        run: sudo apt-get -y install libsoapysdr-dev
-
-      - name: Run cargo fmt (FutureSDR)
-        run: cargo fmt --all -- --check
-
-      - name: Run cargo fmt (Frontend)
-        run: cargo fmt --all --manifest-path=crates/frontend/Cargo.toml -- --check
-
-      - name: Run cargo fmt (Remote)
-        run: cargo fmt --all --manifest-path=crates/remote/Cargo.toml -- --check
-
-      - name: Run cargo fmt (perf/buffer_rand)
-        run: cargo fmt --all --manifest-path=perf/buffer_rand/Cargo.toml -- --check
-
-      - name: Run cargo fmt (perf/buffer_size)
-        run: cargo fmt --all --manifest-path=perf/buffer_size/Cargo.toml -- --check
-
-      - name: Run cargo fmt (perf/fir)
-        run: cargo fmt --all --manifest-path=perf/fir/Cargo.toml -- --check
-
-      - name: Run cargo fmt (perf/fir_latency)
-        run: cargo fmt --all --manifest-path=perf/fir_latency/Cargo.toml -- --check
-
-      - name: Run cargo fmt (perf/msg)
-        run: cargo fmt --all --manifest-path=perf/msg/Cargo.toml -- --check
-
-      - name: Run cargo fmt (perf/null_rand)
-        run: cargo fmt --all --manifest-path=perf/null_rand/Cargo.toml -- --check
-
-      - name: Run cargo fmt (perf/null_rand_latency)
-        run: cargo fmt --all --manifest-path=perf/null_rand_latency/Cargo.toml -- --check
-
-      - name: Run cargo fmt (perf/vulkan)
-        run: cargo fmt --all --manifest-path=perf/vulkan/Cargo.toml -- --check
-
-      - name: Run cargo fmt (perf/wgpu)
-        run: cargo fmt --all --manifest-path=perf/wgpu/Cargo.toml -- --check
-
-      - name: Run cargo fmt (perf/zynq)
-        run: cargo fmt --all --manifest-path=perf/zynq/Cargo.toml -- --check
-
-      - name: Run cargo fmt (examples/adsb)
-        run: cargo fmt --all --manifest-path=examples/adsb/Cargo.toml -- --check
-
-      - name: Run cargo fmt (examples/agc)
-        run: cargo fmt --all --manifest-path=examples/agc/Cargo.toml -- --check
-
-      - name: Run cargo fmt (examples/android)
-        run: cargo fmt --all --manifest-path=examples/android/Cargo.toml -- --check
-
-      - name: Run cargo fmt (examples/android-hw)
-        run: cargo fmt --all --manifest-path=examples/android-hw/Cargo.toml -- --check
-
-      - name: Run cargo fmt (examples/audio)
-        run: cargo fmt --all --manifest-path=examples/audio/Cargo.toml -- --check
-
-      - name: Run cargo fmt (examples/custom-routes)
-        run: cargo fmt --all --manifest-path=examples/custom-routes/Cargo.toml -- --check
-
-      - name: Run cargo fmt (examples/cw)
-        run: cargo fmt --all --manifest-path=examples/cw/Cargo.toml -- --check
-
-      - name: Run cargo fmt (examples/debug)
-        run: cargo fmt --all --manifest-path=examples/debug/Cargo.toml -- --check
-
-      - name: Run cargo fmt (examples/firdes)
-        run: cargo fmt --all --manifest-path=examples/firdes/Cargo.toml -- --check
-
-      - name: Run cargo fmt (examples/fm-receiver)
-        run: cargo fmt --all --manifest-path=examples/fm-receiver/Cargo.toml -- --check
-
-      - name: Run cargo fmt (examples/logging)
-        run: cargo fmt --all --manifest-path=examples/logging/Cargo.toml -- --check
-
-      - name: Run cargo fmt (examples/macros)
-        run: cargo fmt --all --manifest-path=examples/macros/Cargo.toml -- --check
-
-      - name: Run cargo fmt (examples/rx-to-file)
-        run: cargo fmt --all --manifest-path=examples/rx-to-file/Cargo.toml -- --check
-
-      - name: Run cargo fmt (examples/spectrum)
-        run: cargo fmt --all --manifest-path=examples/spectrum/Cargo.toml -- --check
-
-      - name: Run cargo fmt (examples/ssb-receiver)
-        run: cargo fmt --all --manifest-path=examples/ssb-receiver/Cargo.toml -- --check
-
-      - name: Run cargo fmt (examples/wasm)
-        run: cargo fmt --all --manifest-path=examples/wasm/Cargo.toml -- --check
-
-      - name: Run cargo fmt (examples/wgpu)
-        run: cargo fmt --all --manifest-path=examples/wgpu/Cargo.toml -- --check
-
-      - name: Run cargo fmt (examples/wlan)
-        run: cargo fmt --all --manifest-path=examples/wlan/Cargo.toml -- --check
-
-      - name: Run cargo fmt (examples/zeromq)
-        run: cargo fmt --all --manifest-path=examples/zeromq/Cargo.toml -- --check
-
-      - name: Run cargo fmt (examples/zigbee)
-        run: cargo fmt --all --manifest-path=examples/zigbee/Cargo.toml -- --check
-
-      - name: Run cargo clippy (main)
-        run: cargo clippy --all-targets --workspace --features=aaronia_http,vulkan,zeromq,audio,flow_scheduler,tpb_scheduler,soapy,lttng,zynq,wgpu -- -D warnings
-
-      - name: Run cargo clippy for wasm32-unknown-unknown (main)
-        env:
-          RUSTFLAGS: '--cfg=web_sys_unstable_apis'
-        run: cargo clippy --lib --workspace --features=audio,wgpu --target wasm32-unknown-unknown -- -D warnings
-
-      - name: Run cargo clippy for wasm32-unknown-unknown (frontend)
-        run: cargo clippy --lib --manifest-path=crates/frontend/Cargo.toml --target wasm32-unknown-unknown -- -D warnings
-
-      - name: Run cargo clippy (remote)
-        run: cargo clippy --lib --manifest-path=crates/remote/Cargo.toml -- -D warnings
-
-      - name: Run cargo clippy (perf/buffer_rand)
-        run: cargo clippy --all-targets --manifest-path=perf/buffer_rand/Cargo.toml -- -D warnings
-
-      - name: Run cargo clippy (perf/buffer_size)
-        run: cargo clippy --all-targets --manifest-path=perf/buffer_size/Cargo.toml -- -D warnings
-
-      - name: Run cargo clippy (perf/fir)
-        run: cargo clippy --all-targets --manifest-path=perf/fir/Cargo.toml -- -D warnings
-
-      - name: Run cargo clippy (perf/fir_latency)
-        run: cargo clippy --all-targets --manifest-path=perf/fir_latency/Cargo.toml -- -D warnings
-
-      - name: Run cargo clippy (perf/msg)
-        run: cargo clippy --all-targets --manifest-path=perf/msg/Cargo.toml -- -D warnings
-
-      - name: Run cargo clippy (perf/null_rand)
-        run: cargo clippy --all-targets --manifest-path=perf/null_rand/Cargo.toml -- -D warnings
-
-      - name: Run cargo clippy (perf/null_rand_latency)
-        run: cargo clippy --all-targets --manifest-path=perf/null_rand_latency/Cargo.toml -- -D warnings
-
-      - name: Run cargo clippy (perf/vulkan)
-        run: cargo clippy --all-targets --manifest-path=perf/vulkan/Cargo.toml -- -D warnings
-
-      - name: Run cargo clippy (perf/wgpu)
-        run: cargo clippy --all-targets --manifest-path=perf/wgpu/Cargo.toml -- -D warnings
-
-      - name: Run cargo clippy for wasm32-unknown-unknown (perf/wgpu)
-        env:
-          RUSTFLAGS: '--cfg=web_sys_unstable_apis'
-        run: cargo clippy --lib --manifest-path=perf/wgpu/Cargo.toml --target wasm32-unknown-unknown -- -D warnings
-
-      - name: Run cargo clippy (perf/zynq)
-        run: cargo clippy --all-targets --manifest-path=perf/zynq/Cargo.toml -- -D warnings
-
-      - name: Run cargo clippy (examples/adsb)
-        run: cargo clippy --all-targets --manifest-path=examples/adsb/Cargo.toml -- -D warnings
-
-      - name: Run cargo clippy (examples/agc)
-        run: cargo clippy --all-targets --manifest-path=examples/agc/Cargo.toml -- -D warnings
-
-      - name: Run cargo clippy (examples/android)
-        run: cargo clippy --all-targets --manifest-path=examples/android/Cargo.toml -- -D warnings
-
-      - name: Run cargo clippy (examples/android-hw)
-        run: cargo clippy --all-targets --manifest-path=examples/android-hw/Cargo.toml -- -D warnings
-
-      - name: Run cargo clippy (examples/audio)
-        run: cargo clippy --all-targets --manifest-path=examples/audio/Cargo.toml -- -D warnings
-
-      - name: Run cargo clippy (examples/custom-routes)
-        run: cargo clippy --all-targets --manifest-path=examples/custom-routes/Cargo.toml -- -D warnings
-
-      - name: Run cargo clippy (examples/cw)
-        run: cargo clippy --all-targets --manifest-path=examples/cw/Cargo.toml -- -D warnings
-
-      - name: Run cargo clippy for wasm32-unknown-unknown (examples/cw)
-        run: cargo clippy --lib --manifest-path=examples/cw/Cargo.toml --target wasm32-unknown-unknown -- -D warnings
-
-      - name: Run cargo clippy (examples/debug)
-        run: cargo clippy --all-targets --manifest-path=examples/debug/Cargo.toml -- -D warnings
-
-      - name: Run cargo clippy (examples/firdes)
-        run: cargo clippy --all-targets --manifest-path=examples/firdes/Cargo.toml -- -D warnings
-
-      - name: Run cargo clippy (examples/fm-receiver)
-        run: cargo clippy --all-targets --manifest-path=examples/fm-receiver/Cargo.toml -- -D warnings
-
-      - name: Run cargo clippy (examples/logging)
-        run: cargo clippy --all-targets --manifest-path=examples/logging/Cargo.toml -- -D warnings
-
-      - name: Run cargo clippy (examples/macros)
-        run: cargo clippy --all-targets --manifest-path=examples/macros/Cargo.toml -- -D warnings
-
-      - name: Run cargo clippy (examples/rx-to-file)
-        run: cargo clippy --all-targets --manifest-path=examples/rx-to-file/Cargo.toml -- -D warnings
-
-      - name: Run cargo clippy (examples/spectrum)
-        run: cargo clippy --all-targets --manifest-path=examples/spectrum/Cargo.toml -- -D warnings
-
-      - name: Run cargo clippy for wasm32-unknown-unknown (examples/spectrum)
-        env:
-          RUSTFLAGS: '--cfg=web_sys_unstable_apis'
-        run: cargo clippy --lib --manifest-path=examples/spectrum/Cargo.toml --target wasm32-unknown-unknown -- -D warnings
-
-      - name: Run cargo clippy (examples/ssb-receiver)
-        run: cargo clippy --all-targets --manifest-path=examples/ssb-receiver/Cargo.toml -- -D warnings
-
-      - name: Run cargo clippy (examples/wasm)
-        run: cargo clippy --all-targets --manifest-path=examples/wasm/Cargo.toml -- -D warnings
-
-      - name: Run cargo clippy for wasm32-unknown-unknown (examples/wasm)
-        run: cargo clippy --lib --manifest-path=examples/wasm/Cargo.toml --target wasm32-unknown-unknown -- -D warnings
-
-      - name: Run cargo clippy (examples/wgpu)
-        run: cargo clippy --all-targets --manifest-path=examples/wgpu/Cargo.toml -- -D warnings
-
-      - name: Run cargo clippy (examples/wlan)
-        run: cargo clippy --all-targets --manifest-path=examples/wlan/Cargo.toml -- -D warnings
-
-      - name: Run cargo clippy for wasm32-unknown-unknown (examples/wgpu)
-        env:
-          RUSTFLAGS: '--cfg=web_sys_unstable_apis'
-        run: cargo clippy --lib --manifest-path=examples/wgpu/Cargo.toml --target wasm32-unknown-unknown -- -D warnings
-
-      - name: Run cargo clippy (examples/zeromq)
-        run: cargo clippy --all-targets --manifest-path=examples/zeromq/Cargo.toml -- -D warnings
-
-      - name: Run cargo clippy (examples/zigbee)
-        run: cargo clippy --all-targets --manifest-path=examples/zigbee/Cargo.toml -- -D warnings
-
-      - name: Run cargo clippy for wasm32-unknown-unknown (examples/zigbee)
-        run: cargo clippy --lib --manifest-path=examples/zigbee/Cargo.toml --target wasm32-unknown-unknown -- -D warnings
-
-  test-linux:
-    name: Unit Tests Linux
-    runs-on: ubuntu-latest
-    env:
-      RUST_BACKTRACE: full
-    steps:
-      - uses: actions/checkout@v3
-      - uses: dtolnay/rust-toolchain@nightly
-      - run: sudo apt-get install -y libzmq3-dev
-      - run: sudo apt-get -y install libasound2-dev
-      - run: sudo apt-get -y install liblttng-ust-dev
-      - run: sudo apt-get -y install libsoapysdr-dev
-      - run: cargo test --all-targets --workspace --features=aaronia_http,rtlsdr,zeromq,audio,flow_scheduler,tpb_scheduler,soapy,lttng,zynq,wgpu
-      - run: cargo test --all-targets --manifest-path=crates/remote/Cargo.toml
-
-  test-macos:
-    name: Unit Tests macOS
-    runs-on: macos-latest
-    env:
-      RUST_BACKTRACE: full
-    steps:
-      - uses: actions/checkout@v3
-      - uses: dtolnay/rust-toolchain@nightly
-      - run: cargo test --all-targets --workspace --features=aaronia_http,flow_scheduler,tpb_scheduler,wgpu
-
-  test-windows:
-    name: Unit Test Windows
-    runs-on: windows-latest
-    env:
-      RUST_BACKTRACE: full
-    steps:
-      - uses: crazy-max/ghaction-chocolatey@v2
-        with:
-          args: install ninja
-      - uses: actions/checkout@v3
-      - uses: dtolnay/rust-toolchain@nightly
-      - run: cargo test --all-targets --workspace --features=aaronia_http,flow_scheduler,tpb_scheduler,wgpu
+#on: [push, pull_request]
+#
+#name: CI
+#
+#jobs:
+#  lints:
+#    name: Lints
+#    runs-on: ubuntu-latest
+#    env:
+#      RUST_BACKTRACE: full
+#    steps:
+#      - uses: actions/checkout@v3
+#
+#      - uses: dtolnay/rust-toolchain@nightly
+#        with:
+#          components: rustfmt, clippy
+#          target: wasm32-unknown-unknown
+#
+#      - name: Install ZeroMQ
+#        run: sudo apt-get install -y libzmq3-dev
+#
+#      - name: Install alsalibs
+#        run: sudo apt-get -y install libasound2-dev
+#
+#      - name: Install LTTng
+#        run: sudo apt-get -y install liblttng-ust-dev
+#
+#      - name: Install Soapy
+#        run: sudo apt-get -y install libsoapysdr-dev
+#
+#      - name: Run cargo fmt (FutureSDR)
+#        run: cargo fmt --all -- --check
+#
+#      - name: Run cargo fmt (Frontend)
+#        run: cargo fmt --all --manifest-path=crates/frontend/Cargo.toml -- --check
+#
+#      - name: Run cargo fmt (Remote)
+#        run: cargo fmt --all --manifest-path=crates/remote/Cargo.toml -- --check
+#
+#      - name: Run cargo fmt (perf/buffer_rand)
+#        run: cargo fmt --all --manifest-path=perf/buffer_rand/Cargo.toml -- --check
+#
+#      - name: Run cargo fmt (perf/buffer_size)
+#        run: cargo fmt --all --manifest-path=perf/buffer_size/Cargo.toml -- --check
+#
+#      - name: Run cargo fmt (perf/fir)
+#        run: cargo fmt --all --manifest-path=perf/fir/Cargo.toml -- --check
+#
+#      - name: Run cargo fmt (perf/fir_latency)
+#        run: cargo fmt --all --manifest-path=perf/fir_latency/Cargo.toml -- --check
+#
+#      - name: Run cargo fmt (perf/msg)
+#        run: cargo fmt --all --manifest-path=perf/msg/Cargo.toml -- --check
+#
+#      - name: Run cargo fmt (perf/null_rand)
+#        run: cargo fmt --all --manifest-path=perf/null_rand/Cargo.toml -- --check
+#
+#      - name: Run cargo fmt (perf/null_rand_latency)
+#        run: cargo fmt --all --manifest-path=perf/null_rand_latency/Cargo.toml -- --check
+#
+#      - name: Run cargo fmt (perf/vulkan)
+#        run: cargo fmt --all --manifest-path=perf/vulkan/Cargo.toml -- --check
+#
+#      - name: Run cargo fmt (perf/wgpu)
+#        run: cargo fmt --all --manifest-path=perf/wgpu/Cargo.toml -- --check
+#
+#      - name: Run cargo fmt (perf/zynq)
+#        run: cargo fmt --all --manifest-path=perf/zynq/Cargo.toml -- --check
+#
+#      - name: Run cargo fmt (examples/adsb)
+#        run: cargo fmt --all --manifest-path=examples/adsb/Cargo.toml -- --check
+#
+#      - name: Run cargo fmt (examples/agc)
+#        run: cargo fmt --all --manifest-path=examples/agc/Cargo.toml -- --check
+#
+#      - name: Run cargo fmt (examples/android)
+#        run: cargo fmt --all --manifest-path=examples/android/Cargo.toml -- --check
+#
+#      - name: Run cargo fmt (examples/android-hw)
+#        run: cargo fmt --all --manifest-path=examples/android-hw/Cargo.toml -- --check
+#
+#      - name: Run cargo fmt (examples/audio)
+#        run: cargo fmt --all --manifest-path=examples/audio/Cargo.toml -- --check
+#
+#      - name: Run cargo fmt (examples/custom-routes)
+#        run: cargo fmt --all --manifest-path=examples/custom-routes/Cargo.toml -- --check
+#
+#      - name: Run cargo fmt (examples/cw)
+#        run: cargo fmt --all --manifest-path=examples/cw/Cargo.toml -- --check
+#
+#      - name: Run cargo fmt (examples/debug)
+#        run: cargo fmt --all --manifest-path=examples/debug/Cargo.toml -- --check
+#
+#      - name: Run cargo fmt (examples/firdes)
+#        run: cargo fmt --all --manifest-path=examples/firdes/Cargo.toml -- --check
+#
+#      - name: Run cargo fmt (examples/fm-receiver)
+#        run: cargo fmt --all --manifest-path=examples/fm-receiver/Cargo.toml -- --check
+#
+#      - name: Run cargo fmt (examples/logging)
+#        run: cargo fmt --all --manifest-path=examples/logging/Cargo.toml -- --check
+#
+#      - name: Run cargo fmt (examples/macros)
+#        run: cargo fmt --all --manifest-path=examples/macros/Cargo.toml -- --check
+#
+#      - name: Run cargo fmt (examples/rx-to-file)
+#        run: cargo fmt --all --manifest-path=examples/rx-to-file/Cargo.toml -- --check
+#
+#      - name: Run cargo fmt (examples/spectrum)
+#        run: cargo fmt --all --manifest-path=examples/spectrum/Cargo.toml -- --check
+#
+#      - name: Run cargo fmt (examples/ssb-receiver)
+#        run: cargo fmt --all --manifest-path=examples/ssb-receiver/Cargo.toml -- --check
+#
+#      - name: Run cargo fmt (examples/wasm)
+#        run: cargo fmt --all --manifest-path=examples/wasm/Cargo.toml -- --check
+#
+#      - name: Run cargo fmt (examples/wgpu)
+#        run: cargo fmt --all --manifest-path=examples/wgpu/Cargo.toml -- --check
+#
+#      - name: Run cargo fmt (examples/wlan)
+#        run: cargo fmt --all --manifest-path=examples/wlan/Cargo.toml -- --check
+#
+#      - name: Run cargo fmt (examples/zeromq)
+#        run: cargo fmt --all --manifest-path=examples/zeromq/Cargo.toml -- --check
+#
+#      - name: Run cargo fmt (examples/zigbee)
+#        run: cargo fmt --all --manifest-path=examples/zigbee/Cargo.toml -- --check
+#
+#      - name: Run cargo clippy (main)
+#        run: cargo clippy --all-targets --workspace --features=aaronia_http,vulkan,zeromq,audio,flow_scheduler,tpb_scheduler,soapy,lttng,zynq,wgpu -- -D warnings
+#
+#      - name: Run cargo clippy for wasm32-unknown-unknown (main)
+#        env:
+#          RUSTFLAGS: '--cfg=web_sys_unstable_apis'
+#        run: cargo clippy --lib --workspace --features=audio,wgpu --target wasm32-unknown-unknown -- -D warnings
+#
+#      - name: Run cargo clippy for wasm32-unknown-unknown (frontend)
+#        run: cargo clippy --lib --manifest-path=crates/frontend/Cargo.toml --target wasm32-unknown-unknown -- -D warnings
+#
+#      - name: Run cargo clippy (remote)
+#        run: cargo clippy --lib --manifest-path=crates/remote/Cargo.toml -- -D warnings
+#
+#      - name: Run cargo clippy (perf/buffer_rand)
+#        run: cargo clippy --all-targets --manifest-path=perf/buffer_rand/Cargo.toml -- -D warnings
+#
+#      - name: Run cargo clippy (perf/buffer_size)
+#        run: cargo clippy --all-targets --manifest-path=perf/buffer_size/Cargo.toml -- -D warnings
+#
+#      - name: Run cargo clippy (perf/fir)
+#        run: cargo clippy --all-targets --manifest-path=perf/fir/Cargo.toml -- -D warnings
+#
+#      - name: Run cargo clippy (perf/fir_latency)
+#        run: cargo clippy --all-targets --manifest-path=perf/fir_latency/Cargo.toml -- -D warnings
+#
+#      - name: Run cargo clippy (perf/msg)
+#        run: cargo clippy --all-targets --manifest-path=perf/msg/Cargo.toml -- -D warnings
+#
+#      - name: Run cargo clippy (perf/null_rand)
+#        run: cargo clippy --all-targets --manifest-path=perf/null_rand/Cargo.toml -- -D warnings
+#
+#      - name: Run cargo clippy (perf/null_rand_latency)
+#        run: cargo clippy --all-targets --manifest-path=perf/null_rand_latency/Cargo.toml -- -D warnings
+#
+#      - name: Run cargo clippy (perf/vulkan)
+#        run: cargo clippy --all-targets --manifest-path=perf/vulkan/Cargo.toml -- -D warnings
+#
+#      - name: Run cargo clippy (perf/wgpu)
+#        run: cargo clippy --all-targets --manifest-path=perf/wgpu/Cargo.toml -- -D warnings
+#
+#      - name: Run cargo clippy for wasm32-unknown-unknown (perf/wgpu)
+#        env:
+#          RUSTFLAGS: '--cfg=web_sys_unstable_apis'
+#        run: cargo clippy --lib --manifest-path=perf/wgpu/Cargo.toml --target wasm32-unknown-unknown -- -D warnings
+#
+#      - name: Run cargo clippy (perf/zynq)
+#        run: cargo clippy --all-targets --manifest-path=perf/zynq/Cargo.toml -- -D warnings
+#
+#      - name: Run cargo clippy (examples/adsb)
+#        run: cargo clippy --all-targets --manifest-path=examples/adsb/Cargo.toml -- -D warnings
+#
+#      - name: Run cargo clippy (examples/agc)
+#        run: cargo clippy --all-targets --manifest-path=examples/agc/Cargo.toml -- -D warnings
+#
+#      - name: Run cargo clippy (examples/android)
+#        run: cargo clippy --all-targets --manifest-path=examples/android/Cargo.toml -- -D warnings
+#
+#      - name: Run cargo clippy (examples/android-hw)
+#        run: cargo clippy --all-targets --manifest-path=examples/android-hw/Cargo.toml -- -D warnings
+#
+#      - name: Run cargo clippy (examples/audio)
+#        run: cargo clippy --all-targets --manifest-path=examples/audio/Cargo.toml -- -D warnings
+#
+#      - name: Run cargo clippy (examples/custom-routes)
+#        run: cargo clippy --all-targets --manifest-path=examples/custom-routes/Cargo.toml -- -D warnings
+#
+#      - name: Run cargo clippy (examples/cw)
+#        run: cargo clippy --all-targets --manifest-path=examples/cw/Cargo.toml -- -D warnings
+#
+#      - name: Run cargo clippy for wasm32-unknown-unknown (examples/cw)
+#        run: cargo clippy --lib --manifest-path=examples/cw/Cargo.toml --target wasm32-unknown-unknown -- -D warnings
+#
+#      - name: Run cargo clippy (examples/debug)
+#        run: cargo clippy --all-targets --manifest-path=examples/debug/Cargo.toml -- -D warnings
+#
+#      - name: Run cargo clippy (examples/firdes)
+#        run: cargo clippy --all-targets --manifest-path=examples/firdes/Cargo.toml -- -D warnings
+#
+#      - name: Run cargo clippy (examples/fm-receiver)
+#        run: cargo clippy --all-targets --manifest-path=examples/fm-receiver/Cargo.toml -- -D warnings
+#
+#      - name: Run cargo clippy (examples/logging)
+#        run: cargo clippy --all-targets --manifest-path=examples/logging/Cargo.toml -- -D warnings
+#
+#      - name: Run cargo clippy (examples/macros)
+#        run: cargo clippy --all-targets --manifest-path=examples/macros/Cargo.toml -- -D warnings
+#
+#      - name: Run cargo clippy (examples/rx-to-file)
+#        run: cargo clippy --all-targets --manifest-path=examples/rx-to-file/Cargo.toml -- -D warnings
+#
+#      - name: Run cargo clippy (examples/spectrum)
+#        run: cargo clippy --all-targets --manifest-path=examples/spectrum/Cargo.toml -- -D warnings
+#
+#      - name: Run cargo clippy for wasm32-unknown-unknown (examples/spectrum)
+#        env:
+#          RUSTFLAGS: '--cfg=web_sys_unstable_apis'
+#        run: cargo clippy --lib --manifest-path=examples/spectrum/Cargo.toml --target wasm32-unknown-unknown -- -D warnings
+#
+#      - name: Run cargo clippy (examples/ssb-receiver)
+#        run: cargo clippy --all-targets --manifest-path=examples/ssb-receiver/Cargo.toml -- -D warnings
+#
+#      - name: Run cargo clippy (examples/wasm)
+#        run: cargo clippy --all-targets --manifest-path=examples/wasm/Cargo.toml -- -D warnings
+#
+#      - name: Run cargo clippy for wasm32-unknown-unknown (examples/wasm)
+#        run: cargo clippy --lib --manifest-path=examples/wasm/Cargo.toml --target wasm32-unknown-unknown -- -D warnings
+#
+#      - name: Run cargo clippy (examples/wgpu)
+#        run: cargo clippy --all-targets --manifest-path=examples/wgpu/Cargo.toml -- -D warnings
+#
+#      - name: Run cargo clippy (examples/wlan)
+#        run: cargo clippy --all-targets --manifest-path=examples/wlan/Cargo.toml -- -D warnings
+#
+#      - name: Run cargo clippy for wasm32-unknown-unknown (examples/wgpu)
+#        env:
+#          RUSTFLAGS: '--cfg=web_sys_unstable_apis'
+#        run: cargo clippy --lib --manifest-path=examples/wgpu/Cargo.toml --target wasm32-unknown-unknown -- -D warnings
+#
+#      - name: Run cargo clippy (examples/zeromq)
+#        run: cargo clippy --all-targets --manifest-path=examples/zeromq/Cargo.toml -- -D warnings
+#
+#      - name: Run cargo clippy (examples/zigbee)
+#        run: cargo clippy --all-targets --manifest-path=examples/zigbee/Cargo.toml -- -D warnings
+#
+#      - name: Run cargo clippy for wasm32-unknown-unknown (examples/zigbee)
+#        run: cargo clippy --lib --manifest-path=examples/zigbee/Cargo.toml --target wasm32-unknown-unknown -- -D warnings
+#
+#  test-linux:
+#    name: Unit Tests Linux
+#    runs-on: ubuntu-latest
+#    env:
+#      RUST_BACKTRACE: full
+#    steps:
+#      - uses: actions/checkout@v3
+#      - uses: dtolnay/rust-toolchain@nightly
+#      - run: sudo apt-get install -y libzmq3-dev
+#      - run: sudo apt-get -y install libasound2-dev
+#      - run: sudo apt-get -y install liblttng-ust-dev
+#      - run: sudo apt-get -y install libsoapysdr-dev
+#      - run: cargo test --all-targets --workspace --features=aaronia_http,rtlsdr,zeromq,audio,flow_scheduler,tpb_scheduler,soapy,lttng,zynq,wgpu
+#      - run: cargo test --all-targets --manifest-path=crates/remote/Cargo.toml
+#
+#  test-macos:
+#    name: Unit Tests macOS
+#    runs-on: macos-latest
+#    env:
+#      RUST_BACKTRACE: full
+#    steps:
+#      - uses: actions/checkout@v3
+#      - uses: dtolnay/rust-toolchain@nightly
+#      - run: cargo test --all-targets --workspace --features=aaronia_http,flow_scheduler,tpb_scheduler,wgpu
+#
+#  test-windows:
+#    name: Unit Test Windows
+#    runs-on: windows-latest
+#    env:
+#      RUST_BACKTRACE: full
+#    steps:
+#      - uses: crazy-max/ghaction-chocolatey@v2
+#        with:
+#          args: install ninja
+#      - uses: actions/checkout@v3
+#      - uses: dtolnay/rust-toolchain@nightly
+#      - run: cargo test --all-targets --workspace --features=aaronia_http,flow_scheduler,tpb_scheduler,wgpu

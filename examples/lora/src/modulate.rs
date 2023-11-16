@@ -1,16 +1,10 @@
 use futuresdr::anyhow::Result;
 use futuresdr::async_trait::async_trait;
-use std::cmp::{max, min};
-use std::collections::HashMap;
-use std::f32::consts::PI;
-use std::mem;
-// use futuresdr::futures::FutureExt;
-use futuresdr::futures::channel::mpsc;
-use futuresdr::futures::executor::block_on;
-use futuresdr::futures_lite::StreamExt;
-use futuresdr::log::{info, warn};
-use futuresdr::macros::message_handler;
-use futuresdr::num_complex::{Complex32, Complex64};
+use std::cmp::min;
+
+use futuresdr::log::info;
+
+use futuresdr::num_complex::Complex32;
 use futuresdr::runtime::BlockMeta;
 use futuresdr::runtime::BlockMetaBuilder;
 use futuresdr::runtime::Kernel;
@@ -25,13 +19,11 @@ use futuresdr::runtime::{Block, ItemTag};
 
 use crate::utilities::*;
 
-use rustfft::{FftDirection, FftPlanner};
-
 pub struct Modulate {
-    m_sf: usize,                 // Transmission spreading factor
-    m_samp_rate: usize,          // Transmission sampling rate
-    m_bw: usize,                 // Transmission bandwidth (Works only for samp_rate=bw)
-    m_number_of_bins: usize,     // number of bin per loar symbol
+    m_sf: usize, // Transmission spreading factor
+    // m_samp_rate: usize,          // Transmission sampling rate
+    // m_bw: usize,                 // Transmission bandwidth (Works only for samp_rate=bw)
+    // m_number_of_bins: usize,     // number of bin per loar symbol
     m_samples_per_symbol: usize, // samples per symbols(Works only for 2^sf)
     m_sync_words: Vec<usize>,    // sync words (network id)
 
@@ -86,9 +78,9 @@ impl Modulate {
             MessageIoBuilder::new().build(),
             Modulate {
                 m_sf: sf,
-                m_samp_rate: samp_rate,
-                m_bw: bw,
-                m_number_of_bins: number_of_bins_tmp,
+                // m_samp_rate: samp_rate,
+                // m_bw: bw,
+                // m_number_of_bins: number_of_bins_tmp,
                 m_sync_words: sync_words_tmp,
                 m_os_factor: os_factor_tmp,
                 m_samples_per_symbol: number_of_bins_tmp * os_factor_tmp,
@@ -108,16 +100,16 @@ impl Modulate {
         // set_output_multiple(m_samples_per_symbol);
     }
 
-    fn set_sf(&mut self, sf: usize) {
-        self.m_sf = sf;
-        self.m_number_of_bins = 1 << self.m_sf;
-        // self.m_os_factor = self.m_samp_rate / self.m_bw;  // noop, as both values didn't change
-        self.m_samples_per_symbol = self.m_number_of_bins * self.m_os_factor;
-
-        let (ref_upchirp, ref_downchirp) = build_ref_chirps(self.m_sf, self.m_os_factor);
-        self.m_downchirp = ref_downchirp;
-        self.m_upchirp = ref_upchirp;
-    }
+    // fn set_sf(&mut self, sf: usize) {
+    //     self.m_sf = sf;
+    //     self.m_number_of_bins = 1 << self.m_sf;
+    //     // self.m_os_factor = self.m_samp_rate / self.m_bw;  // noop, as both values didn't change
+    //     self.m_samples_per_symbol = self.m_number_of_bins * self.m_os_factor;
+    //
+    //     let (ref_upchirp, ref_downchirp) = build_ref_chirps(self.m_sf, self.m_os_factor);
+    //     self.m_downchirp = ref_downchirp;
+    //     self.m_upchirp = ref_upchirp;
+    // }
 }
 
 #[async_trait]
@@ -134,12 +126,6 @@ impl Kernel for Modulate {
         let mut nitems_to_process = input.len();
         let noutput_items: usize = out.len();
         let mut output_offset = 0;
-
-        // set_output_multiple(m_samples_per_symbol);  // TODO
-        // info!(
-        //     "Modulate: Flag 1 - nitems_to_process: {}",
-        //     nitems_to_process
-        // );
 
         let tags: Vec<(usize, usize)> = sio
             .input(0)
@@ -162,7 +148,7 @@ impl Kernel for Modulate {
                 _ => None,
             })
             .collect();
-        if tags.len() > 0 {
+        if !tags.is_empty() {
             if tags[0].0 != 0 {
                 nitems_to_process = min(tags[0].0, noutput_items / self.m_samples_per_symbol);
                 // info!(
@@ -235,7 +221,7 @@ impl Kernel for Modulate {
             if self.samp_cnt == -1
             // preamble
             {
-                for i in 0..(noutput_items / self.m_samples_per_symbol) {
+                for _i in 0..(noutput_items / self.m_samples_per_symbol) {
                     if self.preamb_samp_cnt < (self.m_preamb_len + 5) * self.m_samples_per_symbol
                     //should output preamble part
                     {
@@ -319,9 +305,8 @@ impl Kernel for Modulate {
                 //     nitems_to_process
                 // );
                 nitems_to_process = min(nitems_to_process, input.len());
-                for i in 0..nitems_to_process {
-                    let data_upchirp =
-                        build_upchirp(input[i] as usize, self.m_sf, self.m_os_factor);
+                for sample in input[0..nitems_to_process].iter() {
+                    let data_upchirp = build_upchirp(*sample as usize, self.m_sf, self.m_os_factor);
                     out[output_offset..(output_offset + self.m_samples_per_symbol)]
                         .copy_from_slice(&data_upchirp);
                     output_offset += self.m_samples_per_symbol;

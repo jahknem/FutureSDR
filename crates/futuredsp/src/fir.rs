@@ -10,12 +10,10 @@ use crate::{ComputationStatus, TapsAccessor, UnaryKernel};
 use num_complex::Complex;
 use num_traits::{Float, Zero};
 
-pub trait UpdateableFirFilterKernel<TA, TT>
-// pub trait UpdateableFirFilterKernel<TT>
-// where
-//     TA: TapsAccessor<TapType = TT>,
-{
+/// A trait providing an update function for the fir filter tap coefficients of a filter kernel
+pub trait UpdateableFirFilterKernel<TA, TT> {
     // fn update_taps<T>(self, new_taps: T) where T: 'static + TapsAccessor<TapType = TT> + Send ;
+    /// Update the taps of the fir filter by replacing the old taps with new_taps, the old taps are dropped
     fn update_taps(&mut self, new_taps: TA);
 }
 

@@ -1,16 +1,15 @@
 use futuresdr::anyhow::Result;
 use futuresdr::async_trait::async_trait;
-use std::cmp::{max, min};
+
 use std::collections::HashMap;
 use std::f32::consts::PI;
-use std::mem;
-// use futuresdr::futures::FutureExt;
+
 use futuresdr::futures::channel::mpsc;
-use futuresdr::futures::executor::block_on;
-use futuresdr::futures_lite::StreamExt;
+
 use futuresdr::log::{info, warn};
 use futuresdr::macros::message_handler;
-use futuresdr::num_complex::{Complex32, Complex64};
+use futuresdr::num_complex::Complex32;
+use futuresdr::runtime::Block;
 use futuresdr::runtime::BlockMeta;
 use futuresdr::runtime::BlockMetaBuilder;
 use futuresdr::runtime::Kernel;
@@ -21,7 +20,6 @@ use futuresdr::runtime::StreamIo;
 use futuresdr::runtime::StreamIoBuilder;
 use futuresdr::runtime::Tag;
 use futuresdr::runtime::WorkIo;
-use futuresdr::runtime::{Block, ItemTag};
 
 use crate::utilities::*;
 
@@ -69,9 +67,9 @@ impl From<usize> for SyncState {
         }
     }
 }
-impl Into<usize> for SyncState {
-    fn into(self) -> usize {
-        match self {
+impl From<SyncState> for usize {
+    fn from(orig: SyncState) -> Self {
+        match orig {
             SyncState::NetId1 => 0_usize,
             SyncState::NetId2 => 1_usize,
             SyncState::Downchirp1 => 2_usize,
@@ -133,13 +131,12 @@ pub struct FrameSync {
     m_cfo_frac: f64, //< fractional part of CFO
     // m_cfo_frac_bernier: f32, //< fractional part of CFO using Berniers algo
     // m_cfo_int: i32,                               //< integer part of CFO
-    m_sto_frac: f32,                     //< fractional part of CFO
-    sfo_hat: f32,                        //< estimated sampling frequency offset
-    sfo_cum: f32,                        //< cumulation of the sfo
+    m_sto_frac: f32,                 //< fractional part of CFO
+    sfo_hat: f32,                    //< estimated sampling frequency offset
+    sfo_cum: f32,                    //< cumulation of the sfo
     cfo_frac_sto_frac_est: bool, //< indicate that the estimation of CFO_frac and STO_frac has been performed
     cfo_frac_correc: Vec<Complex32>, //< cfo frac correction vector
-    cfo_sfo_frac_correc: Vec<Complex32>, //< correction vector accounting for cfo and sfo
-
+    // cfo_sfo_frac_correc: Vec<Complex32>, //< correction vector accounting for cfo and sfo
     symb_corr: Vec<Complex32>, //< symbol with CFO frac corrected
     down_val: Option<usize>,   //< value of the preamble downchirps
     // net_id_off: i32,                    //< offset of the network identifier
@@ -218,7 +215,7 @@ impl FrameSync {
                     (preamble_len_tmp + 3) * m_number_of_bins_tmp
                 ], //<vector containing the upsampled preamble upchirps without any synchronization
                 cfo_frac_correc: vec![Complex32::new(0., 0.); m_number_of_bins_tmp], //< cfo frac correction vector
-                cfo_sfo_frac_correc: vec![Complex32::new(0., 0.); m_number_of_bins_tmp], //< correction vector accounting for cfo and sfo
+                // cfo_sfo_frac_correc: vec![Complex32::new(0., 0.); m_number_of_bins_tmp], //< correction vector accounting for cfo and sfo
                 symb_corr: vec![Complex32::new(0., 0.); m_number_of_bins_tmp], //< symbol with CFO frac corrected
                 in_down: vec![Complex32::new(0., 0.); m_number_of_bins_tmp],   //< downsampled input
                 preamble_raw: vec![Complex32::new(0., 0.); m_number_of_bins_tmp * preamble_len_tmp], //<vector containing the preamble upchirps without any synchronization
@@ -398,7 +395,7 @@ impl FrameSync {
                 )
             })
             .collect();
-        let preamble_upchirps = volk_32fc_x2_multiply_32fc(&samples, &cfo_frac_correc_aug);
+        let preamble_upchirps = volk_32fc_x2_multiply_32fc(samples, &cfo_frac_correc_aug);
         (preamble_upchirps, cfo_frac)
     }
 
@@ -447,7 +444,7 @@ impl FrameSync {
         let k0 = argmax_float(&fft_mag_sq);
 
         // get three spectral lines
-        let y_1 = fft_mag_sq[my_modulo((k0 as isize - 1), (2 * self.m_number_of_bins))] as f64;
+        let y_1 = fft_mag_sq[my_modulo(k0 as isize - 1, 2 * self.m_number_of_bins)] as f64;
         let y0 = fft_mag_sq[k0] as f64;
         let y1 = fft_mag_sq[(k0 + 1) % (2 * self.m_number_of_bins)] as f64;
 
@@ -458,9 +455,8 @@ impl FrameSync {
         let wa = (y1 - y_1) / (u * (y1 + y_1) + v * y0);
         let ka = wa * self.m_number_of_bins as f64 / std::f64::consts::PI;
         let k_residual = ((k0 as f64 + ka) / 2.) % (1.);
-        let sto_frac = (k_residual - if k_residual > 0.5 { 1. } else { 0. }) as f32;
 
-        sto_frac
+        (k_residual - if k_residual > 0.5 { 1. } else { 0. }) as f32
     }
 
     fn get_symbol_val(samples: &[Complex32], ref_chirp: &[Complex32]) -> Option<usize> {
@@ -471,7 +467,7 @@ impl FrameSync {
         // kiss_fft_cfg cfg = kiss_fft_alloc(m_number_of_bins, 0, 0, 0);
 
         // Multiply with ideal downchirp
-        let dechirped = volk_32fc_x2_multiply_32fc(&samples, &ref_chirp);
+        let dechirped = volk_32fc_x2_multiply_32fc(samples, ref_chirp);
 
         let mut cx_out: Vec<Complex32> = dechirped;
         // do the FFT
@@ -486,11 +482,11 @@ impl FrameSync {
         let sig_en: f64 = fft_mag.iter().map(|x| *x as f64).fold(0., |acc, e| acc + e);
         // Return argmax here
 
-        return if sig_en != 0. {
+        if sig_en != 0. {
             Some(argmax_float(&fft_mag))
         } else {
             None
-        };
+        }
     }
 
     // fn determine_energy(&self, samples: &Vec<Complex32>, length: Option<usize>) -> f32 {
@@ -510,7 +506,7 @@ impl FrameSync {
         // kiss_fft_cfg cfg = kiss_fft_alloc(m_number_of_bins, 0, 0, 0);
 
         // Multiply with ideal downchirp
-        let dechirped = volk_32fc_x2_multiply_32fc(&samples, &self.m_downchirp);
+        let dechirped = volk_32fc_x2_multiply_32fc(samples, &self.m_downchirp);
 
         let mut cx_out: Vec<Complex32> = dechirped;
         // do the FFT
@@ -526,10 +522,10 @@ impl FrameSync {
         // Return argmax here
         let max_idx = argmax_float(&fft_mag);
         let sig_en = fft_mag[max_idx] as f64;
-        return (10. * (sig_en / (tot_en - sig_en)).log10()) as f32;
+        (10. * (sig_en / (tot_en - sig_en)).log10()) as f32
     }
 
-    // TODO self.m_noise_est only referenced here, so a noop?
+    // self.m_noise_est only referenced here, so a noop?
     // #[message_handler]
     // fn noise_est_handler(
     //     &mut self,
@@ -631,50 +627,50 @@ impl FrameSync {
         Ok(Pmt::Null)
     }
 
-    fn set_sf(&mut self, sf: usize) {
-        self.m_sf = sf;
-        self.m_number_of_bins = 1 << self.m_sf;
-        self.m_samples_per_symbol = self.m_number_of_bins * self.m_os_factor;
-        self.additional_symbol_samp
-            .resize(2 * self.m_samples_per_symbol, Complex32::new(0., 0.));
-        self.m_upchirp
-            .resize(self.m_number_of_bins, Complex32::new(0., 0.));
-        self.m_downchirp
-            .resize(self.m_number_of_bins, Complex32::new(0., 0.));
-        self.preamble_upchirps.resize(
-            self.m_preamb_len * self.m_number_of_bins,
-            Complex32::new(0., 0.),
-        );
-        self.preamble_raw_up.resize(
-            (self.m_preamb_len + 3) * self.m_samples_per_symbol,
-            Complex32::new(0., 0.),
-        );
-        self.cfo_frac_correc
-            .resize(self.m_number_of_bins, Complex32::new(0., 0.));
-        self.cfo_sfo_frac_correc
-            .resize(self.m_number_of_bins, Complex32::new(0., 0.));
-        self.symb_corr
-            .resize(self.m_number_of_bins, Complex32::new(0., 0.));
-        self.in_down
-            .resize(self.m_number_of_bins, Complex32::new(0., 0.));
-        self.preamble_raw.resize(
-            self.m_preamb_len * self.m_number_of_bins,
-            Complex32::new(0., 0.),
-        );
-        self.net_id_samp.resize(
-            (self.m_samples_per_symbol as f32 * 2.5) as usize,
-            Complex32::new(0., 0.),
-        ); // we should be able to move up to one quarter of symbol in each direction
-        let (upchirp_tmp, downchirp_tmp) = build_ref_chirps(self.m_sf, 1);
-        // let (upchirp_tmp, downchirp_tmp) = build_ref_chirps(self.m_sf, self.m_os_factor);  // TODO
-        self.m_upchirp = upchirp_tmp;
-        self.m_downchirp = downchirp_tmp;
-
-        // Constrain the noutput_items argument passed to forecast and general_work.
-        // set_output_multiple causes the scheduler to ensure that the noutput_items argument passed to forecast and general_work will be an integer multiple of
-        // https://www.gnuradio.org/doc/doxygen/classgr_1_1block.html#a63d67fd758b70c6f2d7b7d4edcec53b3
-        // set_output_multiple(m_number_of_bins);  // unnecessary, noutput_items is only used for the noutput_items < m_number_of_bins check, which is equal noutput_items / self.m_number_of_bins < 1
-    }
+    // fn set_sf(&mut self, sf: usize) {
+    //     self.m_sf = sf;
+    //     self.m_number_of_bins = 1 << self.m_sf;
+    //     self.m_samples_per_symbol = self.m_number_of_bins * self.m_os_factor;
+    //     self.additional_symbol_samp
+    //         .resize(2 * self.m_samples_per_symbol, Complex32::new(0., 0.));
+    //     self.m_upchirp
+    //         .resize(self.m_number_of_bins, Complex32::new(0., 0.));
+    //     self.m_downchirp
+    //         .resize(self.m_number_of_bins, Complex32::new(0., 0.));
+    //     self.preamble_upchirps.resize(
+    //         self.m_preamb_len * self.m_number_of_bins,
+    //         Complex32::new(0., 0.),
+    //     );
+    //     self.preamble_raw_up.resize(
+    //         (self.m_preamb_len + 3) * self.m_samples_per_symbol,
+    //         Complex32::new(0., 0.),
+    //     );
+    //     self.cfo_frac_correc
+    //         .resize(self.m_number_of_bins, Complex32::new(0., 0.));
+    //     self.cfo_sfo_frac_correc
+    //         .resize(self.m_number_of_bins, Complex32::new(0., 0.));
+    //     self.symb_corr
+    //         .resize(self.m_number_of_bins, Complex32::new(0., 0.));
+    //     self.in_down
+    //         .resize(self.m_number_of_bins, Complex32::new(0., 0.));
+    //     self.preamble_raw.resize(
+    //         self.m_preamb_len * self.m_number_of_bins,
+    //         Complex32::new(0., 0.),
+    //     );
+    //     self.net_id_samp.resize(
+    //         (self.m_samples_per_symbol as f32 * 2.5) as usize,
+    //         Complex32::new(0., 0.),
+    //     ); // we should be able to move up to one quarter of symbol in each direction
+    //     let (upchirp_tmp, downchirp_tmp) = build_ref_chirps(self.m_sf, 1);
+    //     // let (upchirp_tmp, downchirp_tmp) = build_ref_chirps(self.m_sf, self.m_os_factor);  // TODO
+    //     self.m_upchirp = upchirp_tmp;
+    //     self.m_downchirp = downchirp_tmp;
+    //
+    //     // Constrain the noutput_items argument passed to forecast and general_work.
+    //     // set_output_multiple causes the scheduler to ensure that the noutput_items argument passed to forecast and general_work will be an integer multiple of
+    //     // https://www.gnuradio.org/doc/doxygen/classgr_1_1block.html#a63d67fd758b70c6f2d7b7d4edcec53b3
+    //     // set_output_multiple(m_number_of_bins);  // unnecessary, noutput_items is only used for the noutput_items < m_number_of_bins check, which is equal noutput_items / self.m_number_of_bins < 1
+    // }
 }
 
 #[async_trait]
@@ -694,9 +690,9 @@ impl Kernel for FrameSync {
         //         {
         //             const gr_complex *in = (const gr_complex *)input_items[0];
         //             gr_complex *out = (gr_complex *)output_items[0];
-        let mut items_to_output: usize = 0;
-        let mut items_to_consume: isize = 0; //< Number of items to consume after each iteration of the general_work function
-                                             //
+        let mut items_to_output: usize;
+        let mut items_to_consume: isize; //< Number of items to consume after each iteration of the general_work function
+                                         //
         let out = sio.output(0).slice::<Complex32>();
         // check if there is enough space in the output buffer
         if out.len() < self.m_number_of_bins {
@@ -711,7 +707,7 @@ impl Kernel for FrameSync {
             false
         };
         let input = sio.input(0).slice::<Complex32>();
-        let mut nitems_to_process = input.len();
+        let nitems_to_process = input.len();
 
         // // let tags = sio.input(0).tags().iter().filter(|x| x.index < )
         // let tags: Vec<(usize, usize)> = sio
@@ -772,7 +768,7 @@ impl Kernel for FrameSync {
             [indexing_offset..(indexing_offset + self.m_number_of_bins * self.m_os_factor)]
             .iter()
             .step_by(self.m_os_factor)
-            .map(|x| *x)
+            .copied()
             .collect();
 
         match self.m_state {
@@ -1081,7 +1077,7 @@ impl Kernel for FrameSync {
                                 ..(preamble_raw_up_offset + self.m_os_factor * count)]
                             .iter()
                             .step_by(self.m_os_factor)
-                            .map(|x| *x)
+                            .copied()
                             .collect();
                         corr_preamb.rotate_left(cfo_int_modulo);
                         // apply cfo correction
@@ -1142,7 +1138,7 @@ impl Kernel for FrameSync {
                             [start_off..(start_off + count * self.m_os_factor)]
                             .iter()
                             .step_by(self.m_os_factor)
-                            .map(|x| *x)
+                            .copied()
                             .collect();
                         net_ids_samp_dec =
                             volk_32fc_x2_multiply_32fc(&net_ids_samp_dec, &cfo_int_correc);
@@ -1249,9 +1245,8 @@ impl Kernel for FrameSync {
                                 self.m_sto_frac = 0.;
                                 // items_to_consume = 0;
                             }
-                        } else
-                        // net ID 1 valid
-                        {
+                        } else {
+                            // net ID 1 valid
                             // info!("FLAAAAAAAAAG 3!");
                             let net_id_off = netid1 as isize - self.m_sync_words[0] as isize;
                             if ((netid2 as isize - net_id_off) % self.m_number_of_bins as isize)
@@ -1347,16 +1342,14 @@ impl Kernel for FrameSync {
                 // info!("FLAAAAAAAAAG 6!");
                 // transmit only useful symbols (at least 8 symbol for PHY header)
 
-                if let Ok(frame_info_tag_tmp) =
+                if let Ok(Some(frame_info_tag)) =
                     self.tag_from_msg_handler_to_work_channel.1.try_next()
                 {
-                    if let Some(frame_info_tag) = frame_info_tag_tmp {
-                        // info!("new frame_info tag: {:?}", frame_info_tag);
-                        sio.output(0).add_tag(
-                            0,
-                            Tag::NamedAny("frame_info".to_string(), Box::new(frame_info_tag)),
-                        );
-                    }
+                    // info!("new frame_info tag: {:?}", frame_info_tag);
+                    sio.output(0).add_tag(
+                        0,
+                        Tag::NamedAny("frame_info".to_string(), Box::new(frame_info_tag)),
+                    );
                 }
 
                 if Into::<usize>::into(self.symbol_cnt) < 8

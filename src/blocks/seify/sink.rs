@@ -1,7 +1,7 @@
-use seify::{Args, Driver};
 use seify::Device;
 use seify::DeviceTrait;
 use seify::Direction::{Rx, Tx};
+use seify::Driver;
 use seify::GenericDevice;
 use seify::TxStreamer;
 
@@ -30,11 +30,16 @@ pub struct Sink<D: DeviceTrait + Clone> {
     dev: Device<D>,
     streamer: Option<D::TxStreamer>,
     start_time: Option<i64>,
-    driver: Option<Driver>
+    driver: Option<Driver>,
 }
 
 impl<D: DeviceTrait + Clone> Sink<D> {
-    pub(super) fn new(dev: Device<D>, channels: Vec<usize>, start_time: Option<i64>, driver: Option<Driver>) -> Block {
+    pub(super) fn new(
+        dev: Device<D>,
+        channels: Vec<usize>,
+        start_time: Option<i64>,
+        driver: Option<Driver>,
+    ) -> Block {
         assert!(!channels.is_empty());
 
         let mut siob = StreamIoBuilder::new();
@@ -61,7 +66,7 @@ impl<D: DeviceTrait + Clone> Sink<D> {
                 dev,
                 start_time,
                 streamer: None,
-                driver: driver
+                driver: driver,
             },
         )
     }
@@ -90,9 +95,9 @@ impl<D: DeviceTrait + Clone> Sink<D> {
         for c in &self.channels {
             match &p {
                 Pmt::F32(v) => self.dev.set_component_frequency(Tx, *c, "RF", *v as f64)?,
-                Pmt::F64(v) => self.dev.set_component_frequency(Tx, *c,  "RF", *v)?,
-                Pmt::U32(v) => self.dev.set_component_frequency(Tx, *c,  "RF", *v as f64)?,
-                Pmt::U64(v) => self.dev.set_component_frequency(Tx, *c,  "RF", *v as f64)?,
+                Pmt::F64(v) => self.dev.set_component_frequency(Tx, *c, "RF", *v)?,
+                Pmt::U32(v) => self.dev.set_component_frequency(Tx, *c, "RF", *v as f64)?,
+                Pmt::U64(v) => self.dev.set_component_frequency(Tx, *c, "RF", *v as f64)?,
                 _ => return Ok(Pmt::InvalidValue),
             };
         }
@@ -147,7 +152,6 @@ impl<D: DeviceTrait + Clone> Sink<D> {
         _meta: &mut BlockMeta,
         p: Pmt,
     ) -> Result<Pmt> {
-        let mut args = Args::new();
         let offset = match &p {
             Pmt::F32(v) => *v as f64,
             Pmt::F64(v) => *v,
@@ -166,8 +170,7 @@ impl<D: DeviceTrait + Clone> Sink<D> {
                     },
                     _ => panic!("setting offset is only supported for drivers soapy and aaronia_http, current driver: {:?}.", d),
                 }
-            }
-            else {
+            } else {
                 panic!("setting offset is only supported if the device driver is known at runtime, as the API is not consistent at this point.")
             }
         }

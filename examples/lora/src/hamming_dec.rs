@@ -2,12 +2,9 @@ use futuresdr::anyhow::Result;
 use futuresdr::async_trait::async_trait;
 use std::cmp::min;
 use std::collections::{HashMap, VecDeque};
-use std::f32::consts::PI;
-use std::mem;
+
 // use futuresdr::futures::FutureExt;
-use futuresdr::log::{info, warn};
-use futuresdr::macros::message_handler;
-use futuresdr::num_complex::{Complex32, Complex64};
+
 use futuresdr::runtime::BlockMeta;
 use futuresdr::runtime::BlockMetaBuilder;
 use futuresdr::runtime::Kernel;
@@ -89,7 +86,7 @@ impl Kernel for HammingDec {
                 _ => None,
             })
             .collect();
-        if tags.len() > 0 {
+        if !tags.is_empty() {
             if tags[0].0 != 0 {
                 nitems_to_process = tags[0].0; // only decode codewords until the next frame begin
             } else {
@@ -146,10 +143,10 @@ impl Kernel for HammingDec {
                  *      For LUT, store the decimal value instead of bit matrix, same LUT for CR 4/6, 4/7 and 4/8 (just crop)
                  *      e.g.    139 = [ 1 0 0 0 | 1 0 1 1 ] = [ d0 d1 d2 d3 | p0 p1 p2 p3]
                  */
-                let cw_LUT: [u8; CW_NBR] = [
+                let cw_lut: [u8; CW_NBR] = [
                     0, 23, 45, 58, 78, 89, 99, 116, 139, 156, 166, 177, 197, 210, 232, 255,
                 ];
-                let cw_LUT_cr5: [u8; CW_NBR] = [
+                let cw_lut_cr5: [u8; CW_NBR] = [
                     0, 24, 40, 48, 72, 80, 96, 120, 136, 144, 160, 184, 192, 216, 232, 240,
                 ]; // Different for cr = 4/5
                 let mut cw_proba: [LLR; CW_NBR] = [0.; CW_NBR];
@@ -160,9 +157,9 @@ impl Kernel for HammingDec {
                         // Select correct bit
                         let bit: bool = ((if cr_app != 1 {
                             // from correct LUT
-                            cw_LUT[n]
+                            cw_lut[n]
                         } else {
-                            cw_LUT_cr5[n]
+                            cw_lut_cr5[n]
                         }) >> (8 - cw_len))  // crop table (cr)
                             & (1_u8 << (cw_len - 1 - j))  // bit position mask
                             != 0;
@@ -179,7 +176,7 @@ impl Kernel for HammingDec {
                 // Select the codeword with the maximum probability (ML)
                 let idx_max = argmax_float(&cw_proba);
                 // convert LLR to binary => Hard decision
-                let data_nibble_soft: u8 = cw_LUT[idx_max] >> 4; // Take data bits of the correct codeword (=> discard hamming code part)
+                let data_nibble_soft: u8 = cw_lut[idx_max] >> 4; // Take data bits of the correct codeword (=> discard hamming code part)
 
                 // #ifdef GRLORA_DEBUG
                 //                     // for (int n = 0; n < cw_nbr; n++) std::cout << cw_proba[n] << std::endl;
@@ -207,22 +204,23 @@ impl Kernel for HammingDec {
                 let codeword = int2bool(input[i] as u16, cr_app + 4);
                 let mut data_nibble: Vec<bool> = codeword[0..4].to_vec();
                 data_nibble.reverse(); // reorganized msb-first
-                match cr_app {
-                    3 => {
-                        // get syndrom
-                        let s0 = codeword[0] ^ codeword[1] ^ codeword[2] ^ codeword[4];
-                        let s1 = codeword[1] ^ codeword[2] ^ codeword[3] ^ codeword[5];
-                        let s2 = codeword[0] ^ codeword[1] ^ codeword[3] ^ codeword[6];
-                        let syndrom = s0 as u8 + ((s1 as u8) << 1) + ((s2 as u8) << 2);
+                                       // match cr_app {
+                if cr_app == 3 {
+                    // 3 => {
+                    // get syndrom
+                    let s0 = codeword[0] ^ codeword[1] ^ codeword[2] ^ codeword[4];
+                    let s1 = codeword[1] ^ codeword[2] ^ codeword[3] ^ codeword[5];
+                    let s2 = codeword[0] ^ codeword[1] ^ codeword[3] ^ codeword[6];
+                    let syndrom = s0 as u8 + ((s1 as u8) << 1) + ((s2 as u8) << 2);
 
-                        match syndrom {
-                            5 => data_nibble[3] = !data_nibble[3],
-                            7 => data_nibble[2] = !data_nibble[2],
-                            3 => data_nibble[1] = !data_nibble[1],
-                            6 => data_nibble[0] = !data_nibble[0],
-                            _ => {} // either parity bit wrong or no error
-                        }
+                    match syndrom {
+                        5 => data_nibble[3] = !data_nibble[3],
+                        7 => data_nibble[2] = !data_nibble[2],
+                        3 => data_nibble[1] = !data_nibble[1],
+                        6 => data_nibble[0] = !data_nibble[0],
+                        _ => {} // either parity bit wrong or no error
                     }
+                    // }
                     // TODO noops
                     // 2 => {
                     //     s0 = codeword[0] ^ codeword[1] ^ codeword[2] ^ codeword[4];
@@ -237,7 +235,7 @@ impl Kernel for HammingDec {
                     // case 4:
                     //     if (!(count(codeword.begin(), codeword.end(), true) % 2))  // Don't correct if even number of errors
                     //         break;
-                    _ => {}
+                    // _ => {}
                 }
                 output[i] = bool2int(&data_nibble) as u8;
             }

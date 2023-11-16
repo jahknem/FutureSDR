@@ -1,8 +1,6 @@
 use futuresdr::anyhow::Result;
 use futuresdr::async_trait::async_trait;
-use futuresdr::log::{info, warn};
-use futuresdr::macros::message_handler;
-use futuresdr::num_complex::{Complex32, Complex64};
+
 use futuresdr::runtime::BlockMeta;
 use futuresdr::runtime::BlockMetaBuilder;
 use futuresdr::runtime::Kernel;
@@ -17,8 +15,6 @@ use futuresdr::runtime::{Block, ItemTag};
 use std::cmp::min;
 use std::collections::HashMap;
 use std::collections::VecDeque;
-use std::f32::consts::PI;
-use std::mem;
 
 use crate::utilities::*;
 
@@ -95,7 +91,7 @@ impl Kernel for GrayMapping {
             })
             .collect();
         //             get_tags_in_window(tags, 0, 0, ninput_items[0], pmt::string_to_symbol("new_frame"));
-        if tags.len() > 0 {
+        if !tags.is_empty() {
             if tags[0].0 != 0 {
                 nitems_to_process = tags[0].0; // only use symbol until the next frame begin (SF might change)
             } else {

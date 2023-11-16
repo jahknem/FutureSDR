@@ -1,16 +1,10 @@
 use futuresdr::anyhow::Result;
 use futuresdr::async_trait::async_trait;
-use std::cmp::{max, min};
-use std::collections::HashMap;
-use std::f32::consts::PI;
-use std::mem;
+use std::cmp::min;
+
 // use futuresdr::futures::FutureExt;
-use futuresdr::futures::channel::mpsc;
-use futuresdr::futures::executor::block_on;
-use futuresdr::futures_lite::StreamExt;
-use futuresdr::log::{info, warn};
-use futuresdr::macros::message_handler;
-use futuresdr::num_complex::{Complex32, Complex64};
+
+use futuresdr::runtime::Block;
 use futuresdr::runtime::BlockMeta;
 use futuresdr::runtime::BlockMetaBuilder;
 use futuresdr::runtime::Kernel;
@@ -21,11 +15,8 @@ use futuresdr::runtime::StreamIo;
 use futuresdr::runtime::StreamIoBuilder;
 use futuresdr::runtime::Tag;
 use futuresdr::runtime::WorkIo;
-use futuresdr::runtime::{Block, ItemTag};
 
 use crate::utilities::*;
-
-use rustfft::{FftDirection, FftPlanner};
 
 pub struct Header {
     m_impl_head: bool,           // indicate if the header is implicit
@@ -62,13 +53,13 @@ impl Header {
         )
     }
 
-    fn set_cr(&mut self, cr: u8) {
-        self.m_cr = cr;
-    }
-
-    fn get_cr(&self) -> u8 {
-        return self.m_cr;
-    }
+    // fn set_cr(&mut self, cr: u8) {
+    //     self.m_cr = cr;
+    // }
+    //
+    // fn get_cr(&self) -> u8 {
+    //     return self.m_cr;
+    // }
 }
 
 #[async_trait]
@@ -88,7 +79,7 @@ impl Kernel for Header {
         let tags: Vec<(usize, usize)> =
             get_tags_in_window::<usize>(sio.input(0).tags(), input.len(), "frame_len");
         // info! {"AddCrc: {:?}", tags};
-        if tags.len() > 0 {
+        if !tags.is_empty() {
             if tags[0].0 != 0 {
                 nitems_to_process = min(tags[0].0, out.len());
             } else {
@@ -117,7 +108,7 @@ impl Kernel for Header {
                     self.m_header[0] = (self.m_payload_len >> 4) as u8;
                     self.m_header[1] = (self.m_payload_len & 0x0F) as u8;
                     //coding rate and has_crc
-                    self.m_header[2] = ((self.m_cr << 1) as u8) | (self.m_has_crc as u8);
+                    self.m_header[2] = (self.m_cr << 1) | (self.m_has_crc as u8);
                     //header checksum
                     let c4 = (self.m_header[0] & 0b1000) >> 3
                         ^ (self.m_header[0] & 0b0100) >> 2
@@ -163,9 +154,9 @@ impl Kernel for Header {
                         ),
                     );
                 }
-                for i in 0..nitems_to_process {
+                for out_slot in out.iter_mut().take(nitems_to_process) {
                     if self.m_cnt_header_nibbles < 5 {
-                        out[i] = self.m_header[self.m_cnt_header_nibbles];
+                        *out_slot = self.m_header[self.m_cnt_header_nibbles];
                         self.m_cnt_header_nibbles += 1;
                         out_offset += 1;
                     } else {

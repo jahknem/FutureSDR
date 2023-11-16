@@ -1,24 +1,12 @@
 use clap::Parser;
-use futuresdr::futures::channel::mpsc;
-use futuresdr::futures::StreamExt;
-
 use futuresdr::anyhow::Result;
 use futuresdr::async_io::Timer;
 use futuresdr::blocks::seify::SinkBuilder;
-use futuresdr::blocks::Apply;
-use futuresdr::blocks::Combine;
-use futuresdr::blocks::Fft;
-use futuresdr::blocks::MessagePipe;
-use futuresdr::blocks::NullSink;
 use futuresdr::log::{debug, info};
-use futuresdr::macros::connect;
-use futuresdr::num_complex::Complex32;
 use futuresdr::runtime::buffer::circular::Circular;
 use futuresdr::runtime::Flowgraph;
-use futuresdr::runtime::FlowgraphHandle;
 use futuresdr::runtime::Pmt;
 use futuresdr::runtime::Runtime;
-use lora::utilities::*;
 use lora::{AddCrc, GrayDemap, HammingEnc, Header, Interleaver, Modulate, Whitening};
 use seify::Device;
 use seify::Direction::Tx;
@@ -112,7 +100,7 @@ fn main() -> Result<()> {
 
     let impl_head = false;
     let has_crc = true;
-    let frame_period = 1000;
+    let _frame_period = 1000;
     let cr = 3;
 
     let whitening = Whitening::new(false, false);
@@ -152,19 +140,16 @@ fn main() -> Result<()> {
         Circular::with_size(2 * 4 * 8192 * 4 * 8),
     )?;
 
-    let (_fg, handle) = rt.start_sync(fg);
-
     // if tx_interval is set, send messages periodically
     if let Some(tx_interval) = args.tx_interval {
-        // let mut seq = 0u64;
-        let mut myhandle: FlowgraphHandle = handle.clone();
+        let (_fg, mut handle) = rt.start_sync(fg);
         rt.spawn_background(async move {
             let mut counter: usize = 0;
             loop {
                 Timer::after(Duration::from_secs_f32(tx_interval)).await;
                 let dummy_packet = format!("hello world! {:02}", counter).to_string();
                 // let dummy_packet = "hello world!1".to_string();
-                myhandle
+                handle
                     .call(whitening, fg_tx_port, Pmt::String(dummy_packet))
                     .await
                     .unwrap();
@@ -173,9 +158,9 @@ fn main() -> Result<()> {
                 counter %= 100;
             }
         });
+    } else {
+        let _ = rt.run(fg);
     }
-
-    loop {}
 
     Ok(())
 }
