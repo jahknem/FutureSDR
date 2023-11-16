@@ -12,7 +12,7 @@ RX_GAIN="--rx-gain 10"
 RX_ANTENNA=""
 #TX_ANTENNA=""
 SAMPLE_RATE="--sample-rate 125000"
-SPREADING_FACTOR="--spreading-factor 12"
+SPREADING_FACTOR="--spreading-factor 8"
 BANDWIDTH="--bandwidth 125000"
 
 export FUTURESDR_LOG_LEVEL=debug

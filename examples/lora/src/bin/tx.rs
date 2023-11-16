@@ -143,7 +143,7 @@ fn main() -> Result<()> {
     // if tx_interval is set, send messages periodically
     if let Some(tx_interval) = args.tx_interval {
         let (_fg, mut handle) = rt.start_sync(fg);
-        rt.spawn_background(async move {
+        rt.block_on(async move {
             let mut counter: usize = 0;
             loop {
                 Timer::after(Duration::from_secs_f32(tx_interval)).await;
