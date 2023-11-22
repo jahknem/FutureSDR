@@ -1,0 +1,24 @@
+[package]
+name = "lora"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[workspace]
+
+[[bin]]
+name = "rx"
+path = "src/bin/rx.rs"
+
+[[bin]]
+name = "tx"
+path = "src/bin/tx.rs"
+
+[dependencies]
+clap = { version = "4.4.0", features = ["derive"] }
+futuresdr = { path = "../..", features = ["seify"] }
+seify = { version = ">=0.9.0", features = ["aaronia_http"] }
+rustfft = "6.1.0"
+ordered-float = "3.9.1"
+scilib = "1.0.0"
