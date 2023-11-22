@@ -10,10 +10,13 @@ use futuresdr::runtime::buffer::circular::Circular;
 use futuresdr::runtime::Flowgraph;
 
 use futuresdr::runtime::Runtime;
+use rustfft::num_complex::Complex32;
 
+use futuredsp::firdes::lowpass;
+use futuredsp::windows::hamming;
 use lora::{
     CrcVerif, Deinterleaver, Dewhitening, FftDemod, FrameSync, GrayMapping, HammingDec,
-    HeaderDecoder,
+    HeaderDecoder, PfbChannelizer, StreamDeinterleaver,
 };
 use seify::Device;
 use seify::Direction::Rx;
@@ -56,13 +59,14 @@ fn main() -> Result<()> {
     let rt = Runtime::new();
     let mut fg = Flowgraph::new();
 
-    let filter = args.device_filter.unwrap_or_else(|| "".to_string());
+    let filter = args.device_filter.unwrap_or_else(|| String::new());
     let is_soapy_dev = filter.clone().contains("driver=soapy");
     println!("is_soapy_dev: {}", is_soapy_dev);
     let seify_dev = Device::from_args(&*filter).unwrap();
 
     seify_dev
-        .set_sample_rate(Rx, args.soapy_rx_channel, args.sample_rate)
+        // .set_sample_rate(Rx, args.soapy_rx_channel, args.sample_rate)
+        .set_sample_rate(Rx, args.soapy_rx_channel, 375000.0)
         .unwrap();
 
     if is_soapy_dev {
@@ -103,8 +107,23 @@ fn main() -> Result<()> {
 
     let soft_decoding: bool = false;
 
+    let deinterleaver = fg.add_block(StreamDeinterleaver::<Complex32>::new(3));
+    fg.connect_stream(src, "out", deinterleaver, "in")?;
+    let filter_coefs = lowpass(0.208333333, &hamming(24, false));
+    let channelizer = fg.add_block(PfbChannelizer::new(3, &filter_coefs, 1.));
+    fg.connect_stream(deinterleaver, "out0", channelizer, "in0")?;
+    fg.connect_stream(deinterleaver, "out1", channelizer, "in1")?;
+    fg.connect_stream(deinterleaver, "out2", channelizer, "in2")?;
+    let null_sink21 = fg.add_block(NullSink::<Complex32>::new());
+    let null_sink23 = fg.add_block(NullSink::<Complex32>::new());
+    fg.connect_stream(channelizer, "out0", null_sink21, "in")?;
+    fg.connect_stream(channelizer, "out2", null_sink23, "in")?;
+    // fg.connect_stream(deinterleaver, "out0", null_sink21, "in")?;
+    // fg.connect_stream(deinterleaver, "out1", null_sink23, "in")?;
+
     let frame_sync = fg.add_block(FrameSync::new(
         (args.center_freq + args.rx_freq_offset) as u32,
+        // 868300,
         args.bandwidth as u32,
         args.spreading_factor,
         false,
@@ -112,14 +131,20 @@ fn main() -> Result<()> {
         1,
         None,
     ));
+    // fg.connect_stream_with_type(
+    //     src,
+    //     "out",
+    //     frame_sync,
+    //     "in",
+    //     Circular::with_size(2 * 4 * 8192 * 4),
+    // )?;
     fg.connect_stream_with_type(
-        src,
-        "out",
+        channelizer,
+        "out1",
         frame_sync,
         "in",
         Circular::with_size(2 * 4 * 8192 * 4),
     )?;
-    // fg.connect_stream(src, "out", frame_sync, "in")?;
     let null_sink2 = fg.add_block(NullSink::<f32>::new());
     fg.connect_stream(frame_sync, "log_out", null_sink2, "in")?;
     let fft_demod = fg.add_block(FftDemod::new(soft_decoding, true, args.spreading_factor));

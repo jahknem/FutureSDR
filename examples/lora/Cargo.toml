@@ -15,9 +15,14 @@ path = "src/bin/rx.rs"
 name = "tx"
 path = "src/bin/tx.rs"
 
+[[bin]]
+name = "pfb_test"
+path = "src/bin/pfb_test.rs"
+
 [dependencies]
 clap = { version = "4.4.0", features = ["derive"] }
 futuresdr = { path = "../..", features = ["seify"] }
+futuredsp = { path = "../../crates/futuredsp"}
 seify = { version = ">=0.9.0", features = ["aaronia_http"] }
 rustfft = "6.1.0"
 ordered-float = "3.9.1"

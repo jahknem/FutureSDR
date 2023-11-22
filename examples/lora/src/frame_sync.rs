@@ -1,6 +1,7 @@
 use futuresdr::anyhow::Result;
 use futuresdr::async_trait::async_trait;
 
+use std::cmp::min;
 use std::collections::HashMap;
 use std::f32::consts::PI;
 
@@ -762,8 +763,12 @@ impl Kernel for FrameSync {
         }
 
         // downsampling
-        let indexing_offset = self.m_os_factor / 2
-            - FrameSync::my_roundf(self.m_sto_frac * self.m_os_factor as f32) as usize;
+        let indexing_offset = min(
+            0,
+            ((self.m_os_factor / 2) as isize
+                - FrameSync::my_roundf(self.m_sto_frac * self.m_os_factor as f32) as isize)
+                as usize,
+        );
         self.in_down = input
             [indexing_offset..(indexing_offset + self.m_number_of_bins * self.m_os_factor)]
             .iter()

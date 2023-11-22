@@ -53,7 +53,7 @@ fn main() -> Result<()> {
     let rt = Runtime::new();
     let mut fg = Flowgraph::new();
 
-    let filter = args.device_filter.unwrap_or_else(|| "".to_string());
+    let filter = args.device_filter.unwrap_or_else(|| String::new());
     let is_soapy_dev = filter.clone().contains("driver=soapy");
     println!("is_soapy_dev: {}", is_soapy_dev);
     let seify_dev = Device::from_args(&*filter).unwrap();
@@ -100,7 +100,6 @@ fn main() -> Result<()> {
 
     let impl_head = false;
     let has_crc = true;
-    let _frame_period = 1000;
     let cr = 3;
 
     let whitening = Whitening::new(false, false);
