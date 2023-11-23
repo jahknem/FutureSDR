@@ -1,6 +1,7 @@
 use clap::Parser;
 use futuresdr::anyhow::Result;
 use futuresdr::blocks::seify::SourceBuilder;
+use futuresdr::blocks::BlobToUdp;
 use futuresdr::blocks::FirBuilder;
 use futuresdr::blocks::NullSink;
 use futuresdr::macros::connect;
@@ -82,11 +83,15 @@ fn main() -> Result<()> {
     let hamming_dec = HammingDec::new(soft_decoding);
     let header_decoder = HeaderDecoder::new(HeaderMode::Explicit, false);
     let decoder = Decoder::new();
+    let udp_data = BlobToUdp::new("127.0.0.1:55555");
+    let udp_rftap = BlobToUdp::new("127.0.0.1:55556");
 
     connect!(fg, src > downsample [Circular::with_size(2 * 4 * 8192 * 4)] frame_sync > fft_demod > gray_mapping > deinterleaver > hamming_dec > header_decoder;
         frame_sync.log_out > null_sink;
         header_decoder.frame_info | frame_sync.frame_info;
         header_decoder | decoder;
+        decoder.data | udp_data;
+        decoder.rftap | udp_rftap;
     );
     let _ = rt.run(fg);
 

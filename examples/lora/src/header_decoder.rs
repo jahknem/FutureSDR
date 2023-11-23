@@ -97,7 +97,7 @@ impl HeaderDecoder {
 impl Kernel for HeaderDecoder {
     async fn work(
         &mut self,
-        _io: &mut WorkIo,
+        io: &mut WorkIo,
         sio: &mut StreamIo,
         mio: &mut MessageIo<Self>,
         _b: &mut BlockMeta,
@@ -245,12 +245,16 @@ impl Kernel for HeaderDecoder {
             }
 
             // assert!(nitem_to_consume <= self.left);
-            nitem_to_consume = std::cmp::min(nitem_to_consume, self.left);
-            self.frame.nibbles.extend_from_slice(&input[0..nitem_to_consume]);
-            self.left -= nitem_to_consume;
+            println!("consume: {}, left: {}, frame {:?}", nitem_to_consume, self.left, &self.frame);
+            if self.left > 0 {
+                nitem_to_consume = std::cmp::min(nitem_to_consume, self.left);
+                self.frame.nibbles.extend_from_slice(&input[0..nitem_to_consume]);
+                self.left -= nitem_to_consume;
 
-            if self.left == 0 {
-                mio.output_mut(0).post(Pmt::Any(Box::new(std::mem::take(&mut self.frame)))).await;
+                if self.left == 0 {
+                    mio.output_mut(0).post(Pmt::Any(Box::new(std::mem::take(&mut self.frame)))).await;
+                }
+                io.call_again = true;
             }
             sio.input(0).consume(nitem_to_consume);
 
