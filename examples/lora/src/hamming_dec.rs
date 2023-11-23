@@ -1,12 +1,9 @@
 use futuresdr::anyhow::Result;
-use futuresdr::async_trait::async_trait;
-use std::cmp::min;
-use std::collections::{HashMap, VecDeque};
-
-// use futuresdr::futures::FutureExt;
-
+use futuresdr::macros::async_trait;
+use futuresdr::runtime::Block;
 use futuresdr::runtime::BlockMeta;
 use futuresdr::runtime::BlockMetaBuilder;
+use futuresdr::runtime::ItemTag;
 use futuresdr::runtime::Kernel;
 use futuresdr::runtime::MessageIo;
 use futuresdr::runtime::MessageIoBuilder;
@@ -15,13 +12,14 @@ use futuresdr::runtime::StreamIo;
 use futuresdr::runtime::StreamIoBuilder;
 use futuresdr::runtime::Tag;
 use futuresdr::runtime::WorkIo;
-use futuresdr::runtime::{Block, ItemTag};
+use std::cmp::min;
+use std::collections::HashMap;
+use std::collections::VecDeque;
 
 use crate::utilities::*;
 
 pub struct HammingDec {
     m_cr: usize, // Transmission coding rate
-    // cr_app: usize,         // Coding rate use for the block
     is_header: bool,       // Indicate that it is the first block
     m_soft_decoding: bool, // Hard/Soft decoding
 }
@@ -38,14 +36,13 @@ impl HammingDec {
         Block::new(
             BlockMetaBuilder::new("HammingDec").build(),
             sio.build(),
-            MessageIoBuilder::new().build(),
+            MessageIoBuilder::new().add_output("out").build(),
             HammingDec {
                 m_soft_decoding: soft_decoding,
                 is_header: false,
                 m_cr: 1, // TODO
             },
         )
-        // set_tag_propagation_policy(TPP_ONE_TO_ONE);  // TODO
     }
 }
 

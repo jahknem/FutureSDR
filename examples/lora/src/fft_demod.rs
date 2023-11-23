@@ -1,5 +1,5 @@
 use futuresdr::anyhow::Result;
-use futuresdr::async_trait::async_trait;
+use futuresdr::macros::async_trait;
 use std::collections::HashMap;
 
 // use futuresdr::futures::FutureExt;

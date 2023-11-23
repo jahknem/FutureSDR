@@ -17,6 +17,7 @@ use lora::FrameSync;
 use lora::GrayMapping;
 use lora::HammingDec;
 use lora::HeaderDecoder;
+use lora::HeaderMode;
 
 #[derive(Parser, Debug)]
 #[clap(version)]
@@ -80,14 +81,11 @@ fn main() -> Result<()> {
     let gray_mapping = GrayMapping::new(soft_decoding);
     let deinterleaver = Deinterleaver::new(soft_decoding);
     let hamming_dec = HammingDec::new(soft_decoding);
-    let header_decoder = HeaderDecoder::new(false, 1, 11, true, false, true);
+    let header_decoder = HeaderDecoder::new(HeaderMode::Explicit, false);
     let dewhitening = Dewhitening::new();
     let crc_verif = CrcVerif::new(true);
-    let null_sink2 = NullSink::<bool>::new();
-    let null_sink3 = NullSink::<u8>::new();
 
-    connect!(fg, src > downsample [Circular::with_size(2 * 4 * 8192 * 4)] frame_sync > fft_demod > gray_mapping > deinterleaver > hamming_dec > header_decoder > dewhitening > crc_verif > null_sink3;
-        crc_verif.out1 > null_sink2;
+    connect!(fg, src > downsample [Circular::with_size(2 * 4 * 8192 * 4)] frame_sync > fft_demod > gray_mapping > deinterleaver > hamming_dec > header_decoder > dewhitening > crc_verif;
         frame_sync.log_out > null_sink;
         header_decoder.frame_info | frame_sync.frame_info;
     );

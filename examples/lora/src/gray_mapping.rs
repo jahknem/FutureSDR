@@ -1,6 +1,5 @@
 use futuresdr::anyhow::Result;
-use futuresdr::async_trait::async_trait;
-
+use futuresdr::macros::async_trait;
 use futuresdr::runtime::BlockMeta;
 use futuresdr::runtime::BlockMetaBuilder;
 use futuresdr::runtime::Kernel;
@@ -19,7 +18,6 @@ use std::collections::VecDeque;
 use crate::utilities::*;
 
 pub struct GrayMapping {
-    // m_sf: usize,           // Spreading factor
     m_soft_decoding: bool, // Hard/Soft decoding
 }
 
@@ -38,11 +36,9 @@ impl GrayMapping {
             sio.build(),
             MessageIoBuilder::new().build(),
             GrayMapping {
-                // m_sf: sf,
                 m_soft_decoding: soft_decoding,
             },
         )
-        // set_tag_propagation_policy(TPP_ONE_TO_ONE);  // TODO
     }
 }
 

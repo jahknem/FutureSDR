@@ -83,14 +83,8 @@ fn main() -> Result<()> {
     }
 
     let mut sink = SinkBuilder::new()
-        .driver(if is_soapy_dev {
-            "soapy"
-        } else {
-            "aaronia_http"
-        })
         .device(seify_dev)
         .gain(args.tx_gain);
-    // .dev_channels(vec![args.soapy_rx_channel]);
 
     if let Some(a) = args.tx_antenna {
         sink = sink.antenna(a);
