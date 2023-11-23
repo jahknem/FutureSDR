@@ -834,7 +834,7 @@ impl Kernel for FrameSync {
                 }
                 self.bin_idx = bin_idx_new_opt;
                 if self.symbol_cnt == self.m_n_up_req {
-                    info!("FrameSync: detected Frame.");
+                    info!("..:: Frame Detected");
                     // info!(
                     //     "FrameSync: detected required nuber of upchirps ({})",
                     //     Into::<usize>::into(self.m_n_up_req)

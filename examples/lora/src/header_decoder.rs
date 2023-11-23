@@ -126,7 +126,6 @@ impl Kernel for HeaderDecoder {
             })
             .collect();
         if !tags.is_empty() {
-            dbg!(tags[0].1);
             if tags[0].0 != 0 {
                 nitem_to_consume = tags[0].0;
             } else {
@@ -209,7 +208,7 @@ impl Kernel for HeaderDecoder {
                     ^ (input[2] & 0b0010) >> 1
                     ^ (input[2] & 0b0001);
 
-                info!("\n--------Header--------");
+                info!("..:: Header");
                 info!("Payload length: {}", payload_len);
                 info!("CRC presence:   {}", has_crc);
                 info!("Coding rate:    {}", code_rate);

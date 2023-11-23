@@ -1,4 +1,5 @@
 use futuresdr::anyhow::Result;
+use futuresdr::log::info;
 use futuresdr::macros::async_trait;
 use futuresdr::macros::message_handler;
 use futuresdr::runtime::Block;
@@ -73,6 +74,8 @@ impl Decoder {
                         dewhitened.push((high_nib << 4) | low_nib);
                     }
 
+                    info!("..:: Payload");
+
                     if frame.has_crc {
                         let l = frame.nibbles.len();
                         let low_nib = frame.nibbles[l - 4];
@@ -90,10 +93,10 @@ impl Decoder {
                             ((dewhitened[l - 2] as u16) + ((dewhitened[l - 1] as u16) << 8)) as i32
                                 == crc as i32;
                         if !crc_valid {
-                            futuresdr::log::info!("crc check failed");
+                            info!("crc check failed");
                             return Ok(Pmt::Ok);
                         } else {
-                            futuresdr::log::info!("crc check passed");
+                            info!("crc check passed");
                         }
                     }
 
@@ -117,7 +120,7 @@ impl Decoder {
                     mio.output_mut(1).post(Pmt::Blob(rftap.clone())).await;
 
                     let data = String::from_utf8_lossy(&dewhitened);
-                    futuresdr::log::info!("received frame: {}", data);
+                    info!("received frame: {}", data);
                     mio.output_mut(0).post(Pmt::Blob(dewhitened)).await;
 
                     Pmt::Ok
