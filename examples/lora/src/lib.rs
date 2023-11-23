@@ -15,8 +15,6 @@ pub use header_decoder::HeaderDecoder;
 pub use header_decoder::HeaderMode;
 pub mod decoder;
 pub use decoder::Decoder;
-pub mod crc_verif;
-pub use crc_verif::CrcVerif;
 pub mod modulate;
 pub use modulate::Modulate;
 pub mod gray_demap;

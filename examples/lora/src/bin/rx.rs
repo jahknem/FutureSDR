@@ -10,8 +10,8 @@ use futuresdr::runtime::buffer::circular::Circular;
 use futuresdr::runtime::Flowgraph;
 use futuresdr::runtime::Runtime;
 
-use lora::Deinterleaver;
 use lora::Decoder;
+use lora::Deinterleaver;
 use lora::FftDemod;
 use lora::FrameSync;
 use lora::GrayMapping;

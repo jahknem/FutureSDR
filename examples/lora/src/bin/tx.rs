@@ -82,9 +82,7 @@ fn main() -> Result<()> {
             .unwrap();
     }
 
-    let mut sink = SinkBuilder::new()
-        .device(seify_dev)
-        .gain(args.tx_gain);
+    let mut sink = SinkBuilder::new().device(seify_dev).gain(args.tx_gain);
 
     if let Some(a) = args.tx_antenna {
         sink = sink.antenna(a);

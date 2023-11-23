@@ -19,7 +19,7 @@ use std::collections::VecDeque;
 use crate::utilities::*;
 
 pub struct HammingDec {
-    m_cr: usize, // Transmission coding rate
+    m_cr: usize,           // Transmission coding rate
     is_header: bool,       // Indicate that it is the first block
     m_soft_decoding: bool, // Hard/Soft decoding
 }

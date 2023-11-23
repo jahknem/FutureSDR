@@ -57,7 +57,6 @@ impl Decoder {
         let ret = match pmt {
             Pmt::Any(a) => {
                 if let Some(frame) = a.downcast_ref::<Frame>() {
-                    dbg!(&frame);
                     let mut dewhitened: Vec<u8> = vec![];
                     let start = if frame.implicit_header { 0 } else { 5 };
                     let end = if frame.has_crc {
@@ -98,28 +97,24 @@ impl Decoder {
                         }
                     }
 
-                    if !frame.implicit_header {
-                        let mut rftap = vec![0; dewhitened.len() + 12 + 15];
-                        rftap[0..4].copy_from_slice("RFta".as_bytes());
-                        rftap[4..6].copy_from_slice(&3u16.to_le_bytes());
-                        rftap[6..8].copy_from_slice(&1u16.to_le_bytes());
-                        rftap[8..12].copy_from_slice(&270u32.to_le_bytes());
-                        rftap[12] = 0; // version
-                        rftap[13] = 0; // padding
-                        rftap[14..16].copy_from_slice(&15u16.to_be_bytes()); // header len
-                        rftap[16..20].copy_from_slice(&868100000u32.to_be_bytes()); // frequency
-                        rftap[20] = 1; // bandwidth
-                        rftap[21] = 7; // spreading factor
-                        rftap[22] = 0; // packet rssi
-                        rftap[23] = 0; // max_rssi
-                        rftap[24] = 0; // current_rssi
-                        rftap[25] = 0; // snr
-                        rftap[26] = 0x12; // sync word
-
-                        // rftap[12..17].copy_from_slice(&frame.nibbles[0..5]);
-                        rftap[27..].copy_from_slice(&dewhitened);
-                        mio.output_mut(1).post(Pmt::Blob(rftap.clone())).await;
-                    }
+                    let mut rftap = vec![0; dewhitened.len() + 12 + 15];
+                    rftap[0..4].copy_from_slice("RFta".as_bytes());
+                    rftap[4..6].copy_from_slice(&3u16.to_le_bytes());
+                    rftap[6..8].copy_from_slice(&1u16.to_le_bytes());
+                    rftap[8..12].copy_from_slice(&270u32.to_le_bytes());
+                    rftap[12] = 0; // version
+                    rftap[13] = 0; // padding
+                    rftap[14..16].copy_from_slice(&15u16.to_be_bytes()); // header len
+                    rftap[16..20].copy_from_slice(&868100000u32.to_be_bytes()); // frequency
+                    rftap[20] = 1; // bandwidth
+                    rftap[21] = 7; // spreading factor
+                    rftap[22] = 0; // packet rssi
+                    rftap[23] = 0; // max_rssi
+                    rftap[24] = 0; // current_rssi
+                    rftap[25] = 0; // snr
+                    rftap[26] = 0x12; // sync word
+                    rftap[27..].copy_from_slice(&dewhitened);
+                    mio.output_mut(1).post(Pmt::Blob(rftap.clone())).await;
 
                     let data = String::from_utf8_lossy(&dewhitened);
                     futuresdr::log::info!("received frame: {}", data);
