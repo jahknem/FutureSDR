@@ -9,9 +9,8 @@ use futuresdr::runtime::buffer::circular::Circular;
 use futuresdr::runtime::Flowgraph;
 use futuresdr::runtime::Runtime;
 
-use lora::CrcVerif;
 use lora::Deinterleaver;
-use lora::Dewhitening;
+use lora::Decoder;
 use lora::FftDemod;
 use lora::FrameSync;
 use lora::GrayMapping;
@@ -82,12 +81,12 @@ fn main() -> Result<()> {
     let deinterleaver = Deinterleaver::new(soft_decoding);
     let hamming_dec = HammingDec::new(soft_decoding);
     let header_decoder = HeaderDecoder::new(HeaderMode::Explicit, false);
-    let dewhitening = Dewhitening::new();
-    let crc_verif = CrcVerif::new(true);
+    let decoder = Decoder::new();
 
-    connect!(fg, src > downsample [Circular::with_size(2 * 4 * 8192 * 4)] frame_sync > fft_demod > gray_mapping > deinterleaver > hamming_dec > header_decoder > dewhitening > crc_verif;
+    connect!(fg, src > downsample [Circular::with_size(2 * 4 * 8192 * 4)] frame_sync > fft_demod > gray_mapping > deinterleaver > hamming_dec > header_decoder;
         frame_sync.log_out > null_sink;
         header_decoder.frame_info | frame_sync.frame_info;
+        header_decoder | decoder;
     );
     let _ = rt.run(fg);
 

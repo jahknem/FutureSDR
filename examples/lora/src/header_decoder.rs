@@ -15,12 +15,12 @@ use futuresdr::runtime::{Block, ItemTag};
 use std::cmp::min;
 use std::collections::HashMap;
 
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 pub struct Frame {
-    nibbles: Vec<u8>,
-    implicit_header: bool,
-    has_crc: bool,
-    code_rate: usize,
+    pub nibbles: Vec<u8>,
+    pub implicit_header: bool,
+    pub has_crc: bool,
+    pub code_rate: usize,
 }
 
 impl Default for Frame {
@@ -73,7 +73,6 @@ impl HeaderDecoder {
     }
 
     async fn publish_frame_info(
-        sio: &mut StreamIo,
         mio: &mut MessageIo<Self>,
         cr: usize,
         pay_len: usize,
@@ -91,16 +90,6 @@ impl HeaderDecoder {
         mio.output_mut(1)
             .post(Pmt::MapStrPmt(header_content.clone()))
             .await;
-        if !err {
-            // propagate downstream that a frame was detected
-            sio.output(0).add_tag(
-                0,
-                Tag::NamedAny(
-                    "frame_info".to_string(),
-                    Box::new(Pmt::MapStrPmt(header_content)),
-                ),
-            );
-        }
     }
 }
 
@@ -169,7 +158,6 @@ impl Kernel for HeaderDecoder {
                     };
 
                     Self::publish_frame_info(
-                        sio,
                         mio,
                         code_rate,
                         payload_len,
@@ -236,7 +224,6 @@ impl Kernel for HeaderDecoder {
                     }
 
                     Self::publish_frame_info(
-                        sio,
                         mio,
                         code_rate,
                         payload_len,
@@ -257,7 +244,8 @@ impl Kernel for HeaderDecoder {
                 }
             }
 
-            assert!(nitem_to_consume <= self.left);
+            // assert!(nitem_to_consume <= self.left);
+            nitem_to_consume = std::cmp::min(nitem_to_consume, self.left);
             self.frame.nibbles.extend_from_slice(&input[0..nitem_to_consume]);
             self.left -= nitem_to_consume;
 
