@@ -1,12 +1,9 @@
 use futuresdr::anyhow::Result;
 use futuresdr::async_trait::async_trait;
-use std::cmp::min;
-use std::collections::HashMap;
-
-// use futuresdr::futures::FutureExt;
-
+use futuresdr::runtime::Block;
 use futuresdr::runtime::BlockMeta;
 use futuresdr::runtime::BlockMetaBuilder;
+use futuresdr::runtime::ItemTag;
 use futuresdr::runtime::Kernel;
 use futuresdr::runtime::MessageIo;
 use futuresdr::runtime::MessageIoBuilder;
@@ -15,15 +12,15 @@ use futuresdr::runtime::StreamIo;
 use futuresdr::runtime::StreamIoBuilder;
 use futuresdr::runtime::Tag;
 use futuresdr::runtime::WorkIo;
-use futuresdr::runtime::{Block, ItemTag};
+use std::cmp::min;
+use std::collections::HashMap;
 
 use crate::utilities::*;
 
 pub struct Dewhitening {
     m_payload_len: usize, // Payload length in bytes
     m_crc_presence: bool, // indicate the precence of a CRC
-    offset: usize,        // The offset in the whitening table
-                          // dewhitened: Vec<u8>,  // The dewhitened bytes
+    offset: usize,        // The offset in the whitening table dewhitened
 }
 
 impl Dewhitening {
@@ -39,25 +36,9 @@ impl Dewhitening {
                 m_payload_len: 0,
                 m_crc_presence: false,
                 offset: 0,
-                // dewhitened: vec![],
             },
         )
-        // set_tag_propagation_policy(TPP_DONT); // TODO
     }
-
-    // void dewhitening_impl::header_pay_len_handler(pmt::pmt_t payload_len)
-    // {
-    //     m_payload_len = pmt::to_long(payload_len);
-    // };
-    //
-    // void dewhitening_impl::new_frame_handler(pmt::pmt_t id)
-    // {
-    //     offset = 0;
-    // }
-    // void dewhitening_impl::header_crc_handler(pmt::pmt_t crc_presence)
-    // {
-    //     m_crc_presence = pmt::to_long(crc_presence);
-    // };
 }
 
 #[async_trait]
@@ -120,7 +101,6 @@ impl Kernel for Dewhitening {
                         Box::new(Pmt::MapStrPmt(tags[0].1.clone())),
                     ),
                 );
-                // std::cout<<"\ndewi_crc "<<tags[0].offset<<" - crc: "<<(int)m_crc_presence<<" - pay_len: "<<(int)m_payload_len<<"\n";
             }
         }
         let nitem_to_process = min(nitem_to_process, min(input.len(), out.len() * 2));
@@ -141,13 +121,6 @@ impl Kernel for Dewhitening {
             }
             self.offset += 1;
         }
-        // #ifdef GRLORA_DEBUG
-        //             for (unsigned int i = 0; i < dewhitened.size(); i++)
-        //             {
-        //                 std::cout << (char)(int)dewhitened[i] << "    0x" << std::hex << (int)dewhitened[i] << std::dec << std::endl;
-        //             }
-        // #endif
-        // info!("Dewhitening: producing {} samples", dewhitened.len());
         out[0..dewhitened.len()].copy_from_slice(&dewhitened);
         sio.input(0).consume(dewhitened.len() * 2); //ninput_items[0]/2*2
         sio.output(0).produce(dewhitened.len());

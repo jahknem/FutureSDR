@@ -82,7 +82,7 @@ fn main() -> Result<()> {
     let hamming_dec = HammingDec::new(soft_decoding);
     let header_decoder = HeaderDecoder::new(false, 1, 11, true, false, true);
     let dewhitening = Dewhitening::new();
-    let crc_verif = CrcVerif::new(true, false);
+    let crc_verif = CrcVerif::new(true);
     let null_sink2 = NullSink::<bool>::new();
     let null_sink3 = NullSink::<u8>::new();
 
