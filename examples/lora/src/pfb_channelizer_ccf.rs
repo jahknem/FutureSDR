@@ -2,32 +2,27 @@ use futuredsp::fir::NonResamplingFirKernel;
 use futuredsp::UnaryKernel;
 use futuresdr::anyhow::Result;
 use futuresdr::async_trait::async_trait;
-use futuresdr::log::info;
 use futuresdr::num_complex::Complex32;
+use futuresdr::runtime::Block;
 use futuresdr::runtime::BlockMeta;
 use futuresdr::runtime::BlockMetaBuilder;
 use futuresdr::runtime::Kernel;
 use futuresdr::runtime::MessageIo;
 use futuresdr::runtime::MessageIoBuilder;
-use futuresdr::runtime::Pmt;
 use futuresdr::runtime::StreamIo;
 use futuresdr::runtime::StreamIoBuilder;
-use futuresdr::runtime::Tag;
 use futuresdr::runtime::WorkIo;
-use futuresdr::runtime::{Block, ItemTag};
 use rustfft::{Fft, FftDirection, FftPlanner};
 use std::cmp::min;
 use std::sync::Arc;
 
-use crate::utilities::*;
-
 pub struct PfbChannelizer {
     d_updated: bool,
     // d_oversample_rate: f32,
-    d_idxlut: Vec<usize>,
+    // d_idxlut: Vec<usize>,
     // d_rate_ratio: usize,
     // d_output_multiple: i32,
-    d_channel_map: Vec<usize>,
+    // d_channel_map: Vec<usize>,
     // gr::thread::mutex d_mutex: ,
     d_fir_filters: Vec<NonResamplingFirKernel<Complex32, Complex32, Vec<f32>, f32>>,
     d_taps_per_filter: usize,
@@ -49,7 +44,7 @@ impl PfbChannelizer {
         // Default channel map. The channel map specifies which input
         // goes to which output channel; so out[0] comes from
         // channel_map[0].
-        let channel_map: Vec<usize> = (0..nfilts).collect();
+        // let channel_map: Vec<usize> = (0..nfilts).collect();
 
         // We use a look up table to set the index of the FFT input
         // buffer, which equivalently performs the FFT shift operation
@@ -60,9 +55,9 @@ impl PfbChannelizer {
         // with the first and put it into the fft object properly for
         // the same effect.
         let rate_ratio = (nfilts as f32 / oversample_rate) as usize;
-        let idxlut: Vec<usize> = (0..nfilts)
-            .map(|x| nfilts - ((x + rate_ratio) % nfilts) - 1)
-            .collect();
+        // let idxlut: Vec<usize> = (0..nfilts)
+        //     .map(|x| nfilts - ((x + rate_ratio) % nfilts) - 1)
+        //     .collect();
 
         // Calculate the number of filtering rounds to do to evenly
         // align the input vectors with the output channels
@@ -72,28 +67,15 @@ impl PfbChannelizer {
         }
         // set_output_multiple(d_output_multiple);  // TODO
 
-        let mut fir_filters: Vec<NonResamplingFirKernel<Complex32, Complex32, Vec<f32>, f32>> =
-            vec![];
-        let n_taps_per_filter = (taps.len() as f32 / nfilts as f32).ceil() as usize;
-        for i in 0..nfilts {
-            let mut taps_tmp: Vec<f32> = taps[i..].iter().step_by(nfilts).copied().collect();
-            if taps_tmp.len() < n_taps_per_filter {
-                taps_tmp.push(0.);
-            }
-            fir_filters.push(NonResamplingFirKernel::<Complex32, Complex32, _, _>::new(
-                taps_tmp,
-            ));
-        }
-
         let mut channelizer = PfbChannelizer {
             d_updated: false,
             // d_oversample_rate: oversample_rate,
-            d_channel_map: channel_map,
-            d_idxlut: idxlut,
+            // d_channel_map: channel_map,
+            // d_idxlut: idxlut,
             // d_rate_ratio: rate_ratio,
             // d_output_multiple: output_multiple,
-            d_fir_filters: fir_filters,
-            d_taps_per_filter: n_taps_per_filter,
+            d_fir_filters: vec![],
+            d_taps_per_filter: 0,
             d_filts: nfilts,
             d_fft: FftPlanner::new().plan_fft(nfilts, FftDirection::Inverse),
         };
@@ -121,9 +103,18 @@ impl PfbChannelizer {
     }
 
     fn set_taps(&mut self, taps: &[f32]) {
-        // gr::thread::scoped_lock guard(d_mutex);
-
-        // polyphase_filterbank::set_taps(taps);
+        self.d_fir_filters = vec![];
+        self.d_taps_per_filter = (taps.len() as f32 / self.d_filts as f32).ceil() as usize;
+        for i in 0..self.d_filts {
+            let mut taps_tmp: Vec<f32> = taps[i..].iter().step_by(self.d_filts).copied().collect();
+            if taps_tmp.len() < self.d_taps_per_filter {
+                taps_tmp.push(0.);
+            }
+            self.d_fir_filters
+                .push(NonResamplingFirKernel::<Complex32, Complex32, _, _>::new(
+                    taps_tmp,
+                ));
+        }
         // set_history(d_taps_per_filter + 1);
         self.d_updated = true;
     }
@@ -135,17 +126,17 @@ impl PfbChannelizer {
     //     return polyphase_filterbank::taps();
     // }
 
-    fn set_channel_map(&mut self, map: Vec<usize>) {
-        // gr::thread::scoped_lock guard(d_mutex);
-
-        if !map.is_empty() {
-            let max = map.iter().max().unwrap();
-            if *max >= self.d_filts {
-                panic!("pfb_channelizer_ccf_impl::set_channel_map: map range out of bounds.");
-            }
-            self.d_channel_map = map;
-        }
-    }
+    // fn set_channel_map(&mut self, map: Vec<usize>) {
+    //     // gr::thread::scoped_lock guard(d_mutex);
+    //
+    //     if !map.is_empty() {
+    //         let max = map.iter().max().unwrap();
+    //         if *max >= self.d_filts {
+    //             panic!("pfb_channelizer_ccf_impl::set_channel_map: map range out of bounds.");
+    //         }
+    //         self.d_channel_map = map;
+    //     }
+    // }
 
     // std::vector<int> pfb_channelizer_ccf_impl::channel_map() const { return d_channel_map; }
 }
@@ -194,8 +185,13 @@ impl Kernel for PfbChannelizer {
                 .collect();
             for j in 0..n_items_to_process {
                 self.d_fft.process(&mut fft_bufs[j]);
-                for i in 0..self.d_filts {
-                    outs[i][j] = fft_bufs[j][i]
+                for (out, &fft_val) in outs
+                    .as_mut_slice()
+                    .iter_mut()
+                    .map(|x| &mut x[j])
+                    .zip(fft_bufs[j].iter())
+                {
+                    *out = fft_val;
                 }
             }
 

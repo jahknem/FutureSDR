@@ -1,65 +1,41 @@
-/**************************************************************************
- * Parks-McClellan algorithm for FIR filter design (C version)
- *-------------------------------------------------
- *  Copyright (c) 1995,1998  Jake Janovetz (janovetz@uiuc.edu)
- *  Copyright (c) 2004  Free Software Foundation, Inc.
- *
- * SPDX-License-Identifier: GPL-2.0-or-later
- *
- *
- *  Sep 1999 - Paul Kienzle (pkienzle@cs.indiana.edu)
- *      Modified for use in octave as a replacement for the matlab function
- *      remez.mex.  In particular, magnitude responses are required for all
- *      band edges rather than one per band, griddensity is a parameter,
- *      and errors are returned rather than printed directly.
- *  Mar 2000 - Kai Habel (kahacjde@linux.zrz.tu-berlin.de)
- *      Change: ColumnVector x=arg(i).vector_value();
- *      to: ColumnVector x(arg(i).vector_value());
- *  There appear to be some problems with the routine search. See comments
- *  therein [search for PAK:].  I haven't looked closely at the rest
- *  of the code---it may also have some problems.
- *************************************************************************/
+//https://github.com/janovetz/remez-exchange/blob/master/remez.c
 
-/*
- * This code was extracted from octave.sf.net, and wrapped with
- * GNU Radio glue.
- */
+// Parks-McClellan algorithm for FIR filter design (C version)
+//-------------------------------------------------
+//  Copyright (c) 1995,1998  Jake Janovetz (janovetz@uiuc.edu)
+//  Copyright (c) 2004  Free Software Foundation, Inc.
+//
+// SPDX-License-Identifier: GPL-2.0-or-later
+//
+//
+//  Sep 1999 - Paul Kienzle (pkienzle@cs.indiana.edu)
+//      Modified for use in octave as a replacement for the matlab function
+//      remez.mex.  In particular, magnitude responses are required for all
+//      band edges rather than one per band, griddensity is a parameter,
+//      and errors are returned rather than printed directly.
+//  Mar 2000 - Kai Habel (kahacjde@linux.zrz.tu-berlin.de)
+//      Change: ColumnVector x=arg(i).vector_value();
+//      to: ColumnVector x(arg(i).vector_value());
+//  There appear to be some problems with the routine search. See comments
+//  therein [search for PAK:].  I haven't looked closely at the rest
+//  of the code---it may also have some problems.
 
-/*
- * This code was then ported to rust for use with FutureSDR.
- */
+// This code was extracted from octave.sf.net, and wrapped with
+// GNU Radio glue.
+
+// This code was then ported to rust for use with FutureSDR.
 
 use futuresdr::log::warn;
 use ordered_float::OrderedFloat;
-use rustfft::num_traits::ToPrimitive;
 use std::f64::consts::PI;
 
-// #include <gnuradio/filter/pm_remez.h>
-// #include <gnuradio/logger.h>
-// #include <cassert>
-// #include <cmath>
-//
-// #ifndef LOCAL_BUFFER
-// #include <vector>
-// #define LOCAL_BUFFER(T, buf, size)     \
-//     std::vector<T> buf##_vector(size); \
-//     T* buf = &(buf##_vector[0])
-// #endif
-//
-// namespace gr {
-// namespace filter {
-//
-// #define CONST const
 const BANDPASS: usize = 1;
 const DIFFERENTIATOR: usize = 2;
 const HILBERT: usize = 3;
-//
+
 const NEGATIVE: bool = false;
 const POSITIVE: bool = true;
-//
-// #define Pi 3.14159265358979323846
-// #define Pi2 (2 * Pi)
-//
+
 const GRIDDENSITY: usize = 16;
 const MAXITERATIONS: usize = 40;
 
@@ -88,6 +64,7 @@ const MAXITERATIONS: usize = 40;
 /// double Grid[]     - Frequencies (0 to 0.5) on the dense grid [gridsize]
 /// double D[]        - Desired response on the dense grid [gridsize]
 /// double W[]        - Weight function on the dense grid [gridsize]
+#[allow(clippy::too_many_arguments)]
 fn create_dense_grid(
     r: usize,
     numtaps: usize,
@@ -111,79 +88,74 @@ fn create_dense_grid(
         bands[0]
     };
 
-    let mut Grid = vec![0.; gridsize];
-    let mut D = vec![0.; gridsize];
-    let mut W = vec![0.; gridsize];
+    let mut grid = vec![0.; gridsize];
+    let mut d = vec![0.; gridsize];
+    let mut w = vec![0.; gridsize];
     let mut j: usize = 0;
     for band in 0..numband {
         let mut lowf = if band == 0 { grid0 } else { bands[2 * band] };
         let highf = bands[2 * band + 1];
         let k = ((highf - lowf) / delf).round(); /* .5 for rounding */
         for i in 0..(k as usize) {
-            D[j] = des[2 * band] + i as f64 * (des[2 * band + 1] - des[2 * band]) / (k - 1.);
-            W[j] = weight[band];
-            Grid[j] = lowf;
+            d[j] = des[2 * band] + i as f64 * (des[2 * band + 1] - des[2 * band]) / (k - 1.);
+            w[j] = weight[band];
+            grid[j] = lowf;
             lowf += delf;
             j += 1;
         }
-        Grid[j - 1] = highf;
+        grid[j - 1] = highf;
     }
 
     /*
      * Similar to above, if odd symmetry, last grid point can't be .5
      *  - but, if there are even taps, leave the last grid point at .5
      */
-    if (symmetry == NEGATIVE) && (Grid[gridsize - 1] > (0.5 - delf)) && (numtaps % 2) != 0 {
-        Grid[gridsize - 1] = 0.5 - delf;
+    if (symmetry == NEGATIVE) && (grid[gridsize - 1] > (0.5 - delf)) && (numtaps % 2) != 0 {
+        grid[gridsize - 1] = 0.5 - delf;
     }
-    return (Grid, D, W);
+    (grid, d, w)
 }
 
-/********************
- * initial_guess
- *==============
- * Places Extremal Frequencies evenly throughout the dense grid.
- *
- *
- * INPUT:
- * ------
- * int r        - 1/2 the number of filter coefficients
- * int gridsize - Number of elements in the dense frequency grid
- *
- * OUTPUT:
- * -------
- * int ext[]    - Extremal indexes to dense frequency grid [r+1]
- ********************/
+/// initial_guess
+///==============
+/// Places Extremal Frequencies evenly throughout the dense grid.
+///
+///
+/// INPUT:
+/// ------
+/// int r        - 1/2 the number of filter coefficients
+/// int gridsize - Number of elements in the dense frequency grid
+///
+/// OUTPUT:
+/// -------
+/// int ext[]    - Extremal indexes to dense frequency grid [r+1]
 fn initial_guess(r: usize, gridsize: usize) -> Vec<usize> {
     (0..(r + 1)).map(|i| i * (gridsize - 1) / r).collect()
 }
 
-/***********************
- * calc_parms
- *===========
- *
- *
- * INPUT:
- * ------
- * int    r      - 1/2 the number of filter coefficients
- * int    Ext[]  - Extremal indexes to dense frequency grid [r+1]
- * double Grid[] - Frequencies (0 to 0.5) on the dense grid [gridsize]
- * double D[]    - Desired response on the dense grid [gridsize]
- * double W[]    - Weight function on the dense grid [gridsize]
- *
- * OUTPUT:
- * -------
- * double ad[]   - 'b' in Oppenheim & Schafer [r+1]
- * double x[]    - [r+1]
- * double y[]    - 'C' in Oppenheim & Schafer [r+1]
- ***********************/
-
+/// calc_parms
+///===========
+///
+///
+/// INPUT:
+/// ------
+/// int    r      - 1/2 the number of filter coefficients
+/// int    Ext[]  - Extremal indexes to dense frequency grid [r+1]
+/// double Grid[] - Frequencies (0 to 0.5) on the dense grid [gridsize]
+/// double D[]    - Desired response on the dense grid [gridsize]
+/// double W[]    - Weight function on the dense grid [gridsize]
+///
+/// OUTPUT:
+/// -------
+/// double ad[]   - 'b' in Oppenheim & Schafer [r+1]
+/// double x[]    - [r+1]
+/// double y[]    - 'C' in Oppenheim & Schafer [r+1]
 fn calc_parms(
     r: usize,
-    Ext: &[usize],
-    Grid: &[f64],
-    D: &[f64],
-    W: &[f64],
+    ext: &[usize],
+    grid: &[f64],
+    d: &[f64],
+    w: &[f64],
 ) -> (Vec<f64>, Vec<f64>, Vec<f64>) {
     // int i, j, k, ld;
     // double sign, xi, delta, denom, numer;
@@ -191,7 +163,7 @@ fn calc_parms(
     /*
      * Find x[]
      */
-    let x: Vec<f64> = Ext.iter().map(|i| (2. * PI * Grid[*i]).cos()).collect();
+    let x: Vec<f64> = ext.iter().map(|i| (2. * PI * grid[*i]).cos()).collect();
 
     /*
      * Calculate ad[]  - Oppenheim & Schafer eq 7.132
@@ -222,8 +194,8 @@ fn calc_parms(
     let mut denom: f64 = 0.;
     let mut sign: f64 = 1.;
     for i in 0..(r + 1) {
-        numer += ad[i] * D[Ext[i]];
-        denom += sign * ad[i] / W[Ext[i]];
+        numer += ad[i] * d[ext[i]];
+        denom += sign * ad[i] / w[ext[i]];
         sign = -sign;
     }
     let delta = numer / denom;
@@ -234,35 +206,32 @@ fn calc_parms(
      */
     let mut y = vec![0.; r + 1];
     for i in 0..(r + 1) {
-        y[i] = D[Ext[i]] - sign * delta / W[Ext[i]];
+        y[i] = d[ext[i]] - sign * delta / w[ext[i]];
         sign = -sign;
     }
 
     (ad, x, y)
 }
 
-/*********************
- * compute_A
- *==========
- * Using values calculated in calc_parms, compute_A calculates the
- * actual filter response at a given frequency (freq).  Uses
- * eq 7.133a from Oppenheim & Schafer.
- *
- *
- * INPUT:
- * ------
- * double freq - Frequency (0 to 0.5) at which to calculate A
- * int    r    - 1/2 the number of filter coefficients
- * double ad[] - 'b' in Oppenheim & Schafer [r+1]
- * double x[]  - [r+1]
- * double y[]  - 'C' in Oppenheim & Schafer [r+1]
- *
- * OUTPUT:
- * -------
- * Returns double value of A[freq]
- *********************/
-
-fn compute_A(freq: f64, r: usize, ad: &[f64], x: &[f64], y: &[f64]) -> f64 {
+/// compute_A
+///==========
+/// Using values calculated in calc_parms, compute_A calculates the
+/// actual filter response at a given frequency (freq).  Uses
+/// eq 7.133a from Oppenheim & Schafer.
+///
+///
+/// INPUT:
+/// ------
+/// double freq - Frequency (0 to 0.5) at which to calculate A
+/// int    r    - 1/2 the number of filter coefficients
+/// double ad[] - 'b' in Oppenheim & Schafer [r+1]
+/// double x[]  - [r+1]
+/// double y[]  - 'C' in Oppenheim & Schafer [r+1]
+///
+/// OUTPUT:
+/// -------
+/// Returns double value of A[freq]
+fn compute_a(freq: f64, r: usize, ad: &[f64], x: &[f64], y: &[f64]) -> f64 {
     let mut denom: f64 = 0.;
     let mut numer: f64 = 0.;
     let xc = (2. * PI * freq).cos();
@@ -280,70 +249,66 @@ fn compute_A(freq: f64, r: usize, ad: &[f64], x: &[f64], y: &[f64]) -> f64 {
     numer / denom
 }
 
-/************************
- * calc_error
- *===========
- * Calculates the Error function from the desired frequency response
- * on the dense grid (D[]), the weight function on the dense grid (W[]),
- * and the present response calculation (A[])
- *
- *
- * INPUT:
- * ------
- * int    r      - 1/2 the number of filter coefficients
- * double ad[]   - [r+1]
- * double x[]    - [r+1]
- * double y[]    - [r+1]
- * int gridsize  - Number of elements in the dense frequency grid
- * double Grid[] - Frequencies on the dense grid [gridsize]
- * double D[]    - Desired response on the dense grid [gridsize]
- * double W[]    - Weight function on the dense grid [gridsize]
- *
- * OUTPUT:
- * -------
- * double E[]    - Error function on dense grid [gridsize]
- ************************/
-
+/// calc_error
+///===========
+/// Calculates the Error function from the desired frequency response
+/// on the dense grid (D[]), the weight function on the dense grid (W[]),
+/// and the present response calculation (A[])
+///
+///
+/// INPUT:
+/// ------
+/// int    r      - 1/2 the number of filter coefficients
+/// double ad[]   - [r+1]
+/// double x[]    - [r+1]
+/// double y[]    - [r+1]
+/// int gridsize  - Number of elements in the dense frequency grid
+/// double Grid[] - Frequencies on the dense grid [gridsize]
+/// double D[]    - Desired response on the dense grid [gridsize]
+/// double W[]    - Weight function on the dense grid [gridsize]
+///
+/// OUTPUT:
+/// -------
+/// double E[]    - Error function on dense grid [gridsize]
+#[allow(clippy::too_many_arguments)]
 fn calc_error(
     r: usize,
     ad: &[f64],
     x: &[f64],
     y: &[f64],
     gridsize: usize,
-    Grid: &[f64],
-    D: &[f64],
-    W: &[f64],
+    grid: &[f64],
+    d: &[f64],
+    w: &[f64],
 ) -> Vec<f64> {
     (0..gridsize)
-        .map(|i| W[i] * (D[i] - compute_A(Grid[i], r, ad, x, y)))
+        .map(|i| w[i] * (d[i] - compute_a(grid[i], r, ad, x, y)))
         .collect()
 }
 
-/************************
- * search
- *========
- * Searches for the maxima/minima of the error curve.  If more than
- * r+1 extrema are found, it uses the following heuristic (thanks
- * Chris Hanson):
- * 1) Adjacent non-alternating extrema deleted first.
- * 2) If there are more than one excess extrema, delete the
- *    one with the smallest error.  This will create a non-alternation
- *    condition that is fixed by 1).
- * 3) If there is exactly one excess extremum, delete the smaller
- *    of the first/last extremum
- *
- *
- * INPUT:
- * ------
- * int    r        - 1/2 the number of filter coefficients
- * int    Ext[]    - Indexes to Grid[] of extremal frequencies [r+1]
- * int    gridsize - Number of elements in the dense frequency grid
- * double E[]      - Array of error values.  [gridsize]
- * OUTPUT:
- * -------
- * int    Ext[]    - New indexes to extremal frequencies [r+1]
- ************************/
-fn search(r: usize, Ext: &mut [usize], gridsize: usize, E: &[f64]) -> i8 {
+/// search
+///========
+/// Searches for the maxima/minima of the error curve.  If more than
+/// r+1 extrema are found, it uses the following heuristic (thanks
+/// Chris Hanson):
+/// 1) Adjacent non-alternating extrema deleted first.
+/// 2) If there are more than one excess extrema, delete the
+///    one with the smallest error.  This will create a non-alternation
+///    condition that is fixed by 1).
+/// 3) If there is exactly one excess extremum, delete the smaller
+///    of the first/last extremum
+///
+///
+/// INPUT:
+/// ------
+/// int    r        - 1/2 the number of filter coefficients
+/// int    Ext[]    - Indexes to Grid[] of extremal frequencies [r+1]
+/// int    gridsize - Number of elements in the dense frequency grid
+/// double E[]      - Array of error values.  [gridsize]
+/// OUTPUT:
+/// -------
+/// int    Ext[]    - New indexes to extremal frequencies [r+1]
+fn search(r: usize, ext: &mut [usize], gridsize: usize, e: &[f64]) -> i8 {
     // int i, j, k, l, extra; /* Counters */
     // int up, alt;
     // int* foundExt; /* Array of found extremals */
@@ -352,13 +317,13 @@ fn search(r: usize, Ext: &mut [usize], gridsize: usize, E: &[f64]) -> i8 {
      */
     // foundExt = (int*)malloc((2 * r) * sizeof(int));
     let mut k = 0;
-    let mut foundExt = vec![0_usize; 2 * r];
+    let mut found_ext = vec![0_usize; 2 * r];
 
     /*
      * Check for extremum at 0.
      */
-    if ((E[0] > 0.0) && (E[0] > E[1])) || ((E[0] < 0.0) && (E[0] < E[1])) {
-        foundExt[k] = 0;
+    if ((e[0] > 0.0) && (e[0] > e[1])) || ((e[0] < 0.0) && (e[0] < e[1])) {
+        found_ext[k] = 0;
         k += 1;
     }
 
@@ -366,14 +331,14 @@ fn search(r: usize, Ext: &mut [usize], gridsize: usize, E: &[f64]) -> i8 {
      * Check for extrema inside dense grid
      */
     for i in 1..(gridsize - 1) {
-        if ((E[i] >= E[i - 1]) && (E[i] > E[i + 1]) && (E[i] > 0.0))
-            || ((E[i] <= E[i - 1]) && (E[i] < E[i + 1]) && (E[i] < 0.0))
+        if ((e[i] >= e[i - 1]) && (e[i] > e[i + 1]) && (e[i] > 0.0))
+            || ((e[i] <= e[i - 1]) && (e[i] < e[i + 1]) && (e[i] < 0.0))
         {
             // PAK: we sometimes get too many extremal frequencies
             if k >= 2 * r {
                 return -3;
             }
-            foundExt[k] = i;
+            found_ext[k] = i;
             k += 1;
         }
     }
@@ -382,11 +347,11 @@ fn search(r: usize, Ext: &mut [usize], gridsize: usize, E: &[f64]) -> i8 {
      * Check for extremum at 0.5
      */
     let j = gridsize - 1;
-    if ((E[j] > 0.0) && (E[j] > E[j - 1])) || ((E[j] < 0.0) && (E[j] < E[j - 1])) {
+    if ((e[j] > 0.0) && (e[j] > e[j - 1])) || ((e[j] < 0.0) && (e[j] < e[j - 1])) {
         if k >= 2 * r {
             return -3;
         }
-        foundExt[k] = j;
+        found_ext[k] = j;
         k += 1;
     }
 
@@ -398,21 +363,20 @@ fn search(r: usize, Ext: &mut [usize], gridsize: usize, E: &[f64]) -> i8 {
     /*
      * Remove extra extremals
      */
-    let mut extra = k - (r + 1);
-    assert!(extra >= 0);
+    let mut extra = k.checked_sub(r + 1).unwrap();
 
     while extra > 0 {
-        let mut up = E[foundExt[0]] > 0.0; // first one is a maxima  vs  first one is a minima
+        let mut up = e[found_ext[0]] > 0.0; // first one is a maxima  vs  first one is a minima
 
         let mut l: usize = 0;
         let mut alt: bool = true;
         for j in 1..k {
-            if E[foundExt[j]].abs() < E[foundExt[l]].abs() {
+            if e[found_ext[j]].abs() < e[found_ext[l]].abs() {
                 l = j; /* new smallest error. */
             }
-            if up && (E[foundExt[j]] < 0.0) {
+            if up && (e[found_ext[j]] < 0.0) {
                 up = false; /* switch to a minima */
-            } else if !up && (E[foundExt[j]] > 0.0) {
+            } else if !up && (e[found_ext[j]] > 0.0) {
                 up = true; /* switch to a maxima */
             } else {
                 alt = false;
@@ -431,7 +395,7 @@ fn search(r: usize, Ext: &mut [usize], gridsize: usize, E: &[f64]) -> i8 {
          * delete the smallest of the first/last extremals.
          */
         if alt && (extra == 1) {
-            if E[foundExt[k - 1]].abs() < E[foundExt[0]].abs() {
+            if e[found_ext[k - 1]].abs() < e[found_ext[0]].abs() {
                 /* Delete last extremal */
                 l = k - 1;
             }
@@ -445,124 +409,117 @@ fn search(r: usize, Ext: &mut [usize], gridsize: usize, E: &[f64]) -> i8 {
 
         for j in l..(k - 1) {
             /* Loop that does the deletion */
-            foundExt[j] = foundExt[j + 1];
-            assert!(foundExt[j] < gridsize);
+            found_ext[j] = found_ext[j + 1];
+            assert!(found_ext[j] < gridsize);
         }
         k -= 1;
         extra -= 1;
     }
 
     for i in 0..(r + 1) {
-        assert!(foundExt[i] < gridsize);
-        Ext[i] = foundExt[i]; /* Copy found extremals to Ext[] */
+        assert!(found_ext[i] < gridsize);
+        ext[i] = found_ext[i]; /* Copy found extremals to Ext[] */
     }
-    return 0;
+    0
 }
 
-/*********************
- * freq_sample
- *============
- * Simple frequency sampling algorithm to determine the impulse
- * response h[] from A's found in compute_A
- *
- *
- * INPUT:
- * ------
- * int      N        - Number of filter coefficients
- * double   A[]      - Sample points of desired response [N/2]
- * int      symmetry - Symmetry of desired filter
- *
- * OUTPUT:
- * -------
- * double h[] - Impulse Response of final filter [N]
- *********************/
-fn freq_sample(N: usize, A: &[f64], symm: bool) -> Vec<f64> {
-    let M = (N - 1) as f64 / 2.0;
+/// freq_sample
+///============
+/// Simple frequency sampling algorithm to determine the impulse
+/// response h[] from A's found in compute_A
+///
+///
+/// INPUT:
+/// ------
+/// int      N        - Number of filter coefficients
+/// double   A[]      - Sample points of desired response [N/2]
+/// int      symmetry - Symmetry of desired filter
+///
+/// OUTPUT:
+/// -------
+/// double h[] - Impulse Response of final filter [N]
+fn freq_sample(n: usize, a: &[f64], symm: bool) -> Vec<f64> {
+    let m = (n - 1) as f64 / 2.0;
     if symm == POSITIVE {
-        if (N % 2) != 0 {
-            (0..N)
+        if (n % 2) != 0 {
+            (0..n)
                 .map(|n| {
-                    let mut val = A[0];
-                    let x = 2. * PI * (n as f64 - M) / N as f64;
-                    for k in 1..(M as usize) {
-                        val += 2.0 * A[k] * (x * k as f64).cos();
+                    let mut val = a[0];
+                    let x = 2. * PI * (n as f64 - m) / n as f64;
+                    for (k, &a_k) in a[1..(m as usize)].iter().enumerate() {
+                        val += 2.0 * a_k * (x * k as f64).cos();
                     }
-                    val / N as f64
+                    val / n as f64
                 })
                 .collect()
         } else {
-            (0..N)
+            (0..n)
                 .map(|n| {
-                    let mut val = A[0];
-                    let x = 2. * PI * (n as f64 - M) / N as f64;
-                    for k in 1..(N / 2 - 1) {
-                        val += 2.0 * A[k] * (x * k as f64).cos();
+                    let mut val = a[0];
+                    let x = 2. * PI * (n as f64 - m) / n as f64;
+                    for (k, &a_k) in a[1..(n / 2 - 1)].iter().enumerate() {
+                        val += 2.0 * a_k * (x * k as f64).cos();
                     }
-                    val / N as f64
+                    val / n as f64
                 })
                 .collect()
         }
+    } else if (n % 2) != 0 {
+        (0..n)
+            .map(|n| {
+                let mut val = 0.;
+                let x = 2. * PI * (n as f64 - m) / n as f64;
+                for (k, &a_k) in a[1..(m as usize)].iter().enumerate() {
+                    val += 2.0 * a_k * (x * k as f64).sin();
+                }
+                val / n as f64
+            })
+            .collect()
     } else {
-        if (N % 2) != 0 {
-            (0..N)
-                .map(|n| {
-                    let mut val = 0.;
-                    let x = 2. * PI * (n as f64 - M) / N as f64;
-                    for k in 1..(M as usize) {
-                        val += 2.0 * A[k] * (x * k as f64).sin();
-                    }
-                    val / N as f64
-                })
-                .collect()
-        } else {
-            (0..N)
-                .map(|n| {
-                    let mut val = A[N / 2] * (PI * (n as f64 - M)).sin();
-                    let x = 2. * PI * (n as f64 - M) / N as f64;
-                    for k in 1..(N / 2 - 1) {
-                        val += 2.0 * A[k] * (x * k as f64).sin();
-                    }
-                    val / N as f64
-                })
-                .collect()
-        }
+        (0..n)
+            .map(|n| {
+                let mut val = a[n / 2] * (PI * (n as f64 - m)).sin();
+                let x = 2. * PI * (n as f64 - m) / n as f64;
+                for (k, &a_k) in a[1..(n / 2 - 1)].iter().enumerate() {
+                    val += 2.0 * a_k * (x * k as f64).sin();
+                }
+                val / n as f64
+            })
+            .collect()
     }
 }
 
-/*******************
- * is_done
- *========
- * Checks to see if the error function is small enough to consider
- * the result to have converged.
- *
- * INPUT:
- * ------
- * int    r     - 1/2 the number of filter coefficients
- * int    Ext[] - Indexes to extremal frequencies [r+1]
- * double E[]   - Error function on the dense grid [gridsize]
- *
- * OUTPUT:
- * -------
- * Returns 1 if the result converged
- * Returns 0 if the result has not converged
- ********************/
-
-fn is_done(r: usize, Ext: &[usize], E: &[f64]) -> bool {
-    let min = Ext
+/// is_done
+///========
+/// Checks to see if the error function is small enough to consider
+/// the result to have converged.
+///
+/// INPUT:
+/// ------
+/// int    r     - 1/2 the number of filter coefficients
+/// int    Ext[] - Indexes to extremal frequencies [r+1]
+/// double E[]   - Error function on the dense grid [gridsize]
+///
+/// OUTPUT:
+/// -------
+/// Returns 1 if the result converged
+/// Returns 0 if the result has not converged
+fn is_done(ext: &[usize], e: &[f64]) -> bool {
+    let min = ext
         .iter()
-        .map(|i| E[*i].abs())
-        .map(|x| OrderedFloat::<f64>(x))
+        .map(|i| e[*i].abs())
+        .map(OrderedFloat::<f64>)
         .min()
         .unwrap()
         .into_inner();
-    let max = Ext
+    let max = ext
         .iter()
-        .map(|i| E[*i].abs())
-        .map(|x| OrderedFloat::<f64>(x))
+        .map(|i| e[*i].abs())
+        .map(OrderedFloat::<f64>)
         .max()
         .unwrap()
         .into_inner();
-    return ((max - min) / max) < 0.0001;
+    ((max - min) / max) < 0.0001
 }
 
 /// remez
@@ -639,7 +596,7 @@ fn remez(
     /*
      * Create dense frequency grid
      */
-    let (Grid, mut D, mut W) = create_dense_grid(
+    let (grid, mut d, mut w) = create_dense_grid(
         r,
         numtaps,
         numband,
@@ -650,7 +607,7 @@ fn remez(
         griddensity,
         gridsize,
     );
-    let mut Ext = initial_guess(r, gridsize);
+    let mut ext = initial_guess(r, gridsize);
 
     /*
      * For Differentiator: (fix grid)
@@ -658,8 +615,8 @@ fn remez(
     if filter_type == DIFFERENTIATOR {
         for i in 0..gridsize {
             /* D[i] = D[i]*Grid[i]; */
-            if D[i] > 0.0001 {
-                W[i] = W[i] / Grid[i];
+            if d[i] > 0.0001 {
+                w[i] /= grid[i];
             }
         }
     }
@@ -671,24 +628,22 @@ fn remez(
     if symmetry == POSITIVE {
         if numtaps % 2 == 0 {
             for i in 0..gridsize {
-                let c = (PI * Grid[i]).cos();
-                D[i] /= c;
-                W[i] *= c;
+                let c = (PI * grid[i]).cos();
+                d[i] /= c;
+                w[i] *= c;
             }
         }
+    } else if numtaps % 2 != 0 {
+        for i in 0..gridsize {
+            let c = (2. * PI * grid[i]).sin();
+            d[i] /= c;
+            w[i] *= c;
+        }
     } else {
-        if numtaps % 2 != 0 {
-            for i in 0..gridsize {
-                let c = (2. * PI * Grid[i]).sin();
-                D[i] /= c;
-                W[i] *= c;
-            }
-        } else {
-            for i in 0..gridsize {
-                let c = (PI * Grid[i]).sin();
-                D[i] /= c;
-                W[i] *= c;
-            }
+        for i in 0..gridsize {
+            let c = (PI * grid[i]).sin();
+            d[i] /= c;
+            w[i] *= c;
         }
     }
 
@@ -697,22 +652,22 @@ fn remez(
      */
     let mut num_iter: usize = 0;
     for iter in 0..MAXITERATIONS {
-        let (ad, x, y) = calc_parms(r, &Ext, &Grid, &D, &W);
-        let E = calc_error(r, &ad, &x, &y, gridsize, &Grid, &D, &W);
-        let err = search(r, &mut Ext, gridsize, &E);
+        let (ad, x, y) = calc_parms(r, &ext, &grid, &d, &w);
+        let e = calc_error(r, &ad, &x, &y, gridsize, &grid, &d, &w);
+        let err = search(r, &mut ext, gridsize, &e);
         if err > 0 {
             return (vec![0.], err);
         }
-        for i in 0..r {
-            assert!(Ext[i] < gridsize);
+        for &ext_idx in &ext {
+            assert!(ext_idx < gridsize);
         }
         num_iter = iter;
-        if is_done(r, &Ext, &E) {
+        if is_done(&ext, &e) {
             break;
         }
     }
 
-    let (ad, x, y) = calc_parms(r, &Ext, &Grid, &D, &W);
+    let (ad, x, y) = calc_parms(r, &ext, &grid, &d, &w);
 
     /*
      * Find the 'taps' of the filter for use with Frequency
@@ -727,14 +682,12 @@ fn remez(
                 } else {
                     (PI * i as f64 / numtaps as f64).cos()
                 }
+            } else if numtaps % 2 != 0 {
+                (2. * PI * i as f64 / numtaps as f64).sin()
             } else {
-                if numtaps % 2 != 0 {
-                    (2. * PI * i as f64 / numtaps as f64).sin()
-                } else {
-                    (PI * i as f64 / numtaps as f64).sin()
-                }
+                (PI * i as f64 / numtaps as f64).sin()
             };
-            compute_A(i as f64 / numtaps as f64, r, &ad, &x, &y) * c
+            compute_a(i as f64 / numtaps as f64, r, &ad, &x, &y) * c
         })
         .collect();
 
@@ -743,12 +696,12 @@ fn remez(
      */
     let h = freq_sample(numtaps, &taps, symmetry);
 
-    return (h, if num_iter < MAXITERATIONS { 0 } else { -1 });
+    (h, if num_iter < MAXITERATIONS { 0 } else { -1 })
 }
 
 //////////////////////////////////////////////////////////////////////////////
 //
-//			    GNU Radio interface
+//                GNU Radio interface
 //
 //////////////////////////////////////////////////////////////////////////////
 
@@ -768,11 +721,11 @@ fn punt(msg: &str) {
 ///
 /// \param order         filter order (number of taps in the returned filter - 1)
 /// \param bands         frequency at the band edges [ b1 e1 b2 e2 b3 e3 ...]
-/// \param ampl  	    desired amplitude at the band edges [ a(b1) a(e1) a(b2) a(e2)
+/// \param ampl          desired amplitude at the band edges [ a(b1) a(e1) a(b2) a(e2)
 ///...] \param error_weight  weighting applied to each band (usually 1) \param filter_type
 ///one of "bandpass", "hilbert" or "differentiator"
 /// \param grid_density  determines how accurately the filter will be constructed. \
-///			    The minimum value is 16; higher values are slower to compute.
+///                      The minimum value is 16; higher values are slower to compute.
 ///
 /// Frequency is in the range [0, 1], with 1 being the Nyquist
 /// frequency (Fs/2)
@@ -787,7 +740,7 @@ pub fn pm_remez(
     arg_response: &[f64],
     arg_weight: &[f64],
     filter_type: &str,
-    grid_density: usize,
+    grid_density: Option<usize>,
 ) -> Vec<f64> {
     // let loggers_set_up = false;
     //
@@ -846,6 +799,7 @@ pub fn pm_remez(
         0
     };
 
+    let grid_density = grid_density.unwrap_or(GRIDDENSITY);
     if grid_density < 16 {
         punt("grid_density is too low; must be >= 16");
     }

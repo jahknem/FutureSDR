@@ -26,9 +26,9 @@ use ordered_float::OrderedFloat;
 //
 // Args:
 //     gain: Filter gain in the passband (linear)
-//     Fs: Sampling rate (sps)
-//     freq1: End of pass band (in Hz)
-//     freq2: Start of stop band (in Hz)
+//     Fs: Sampling rate (sps) == number of channels in case of polyphase channelizer
+//     freq1: End of pass band (in Hz) == 0.5 - (transition_bw/channel_spacing)/2. in case of polyphase channelizer
+//     freq2: Start of stop band (in Hz) == 0.5 + (transition_bw/channel_spacing)/2. in case of polyphase channelizer
 //     passband_ripple_db: Pass band ripple in dB (should be small, < 1)
 //     stopband_atten_db: Stop band attenuation in dB (should be large, >= 60)
 //     nextra_taps: Extra taps to use in the filter (default=2)
@@ -36,7 +36,7 @@ use ordered_float::OrderedFloat;
 // ""
 pub fn low_pass(
     gain: f64,
-    Fs: usize,
+    fs: usize,
     freq1: f64,
     freq2: f64,
     passband_ripple_db: f64,
@@ -50,21 +50,10 @@ pub fn low_pass(
         &[freq1, freq2],
         &[gain, 0.0_f64],
         &[passband_dev, stopband_dev],
-        Some(Fs),
+        Some(fs),
     );
-    // # The
-    // remezord
-    // typically
-    // under - estimates
-    // the
-    // filter
-    // order, so
-    // add
-    // 2
-    // taps
-    // by
-    // default
-    pm_remez(n + nextra_taps, &fo, &ao, &w, "bandpass", 16)
+    // # The remezord typically under - estimates the filter order, so add 2 taps by default
+    pm_remez(n + nextra_taps, &fo, &ao, &w, "bandpass", None)
 }
 
 // def band_pass(gain, Fs, freq_sb1, freq_pb1, freq_pb2, freq_sb2,
@@ -222,14 +211,14 @@ fn stopband_atten_to_dev(atten_db: f64) -> f64 {
     // ""
     // "Convert a stopband attenuation in dB to an absolute value"
     // ""
-    return 10.0_f64.powf(-atten_db / 20.);
+    10.0_f64.powf(-atten_db / 20.)
 }
 
 fn passband_ripple_to_dev(ripple_db: f64) -> f64 {
     // ""
     // "Convert passband ripple spec expressed in dB to an absolute value"
     // ""
-    return (10.0_f64.powf(ripple_db / 20.) - 1.) / (10.0_f64.powf(ripple_db / 20.) + 1.);
+    (10.0_f64.powf(ripple_db / 20.) - 1.) / (10.0_f64.powf(ripple_db / 20.) + 1.)
 }
 
 //  ----------------------------------------------------------------
@@ -356,7 +345,7 @@ fn remezord(
         .into_inner();
     let wts: Vec<f64> = devs.iter().map(|&x| max_dev / x).collect();
 
-    return (n, ff, aa, wts);
+    (n, ff, aa, wts)
 }
 
 //  ----------------------------------------------------------------

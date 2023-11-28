@@ -57,7 +57,7 @@ fn main() -> Result<()> {
     let rt = Runtime::new();
     let mut fg = Flowgraph::new();
 
-    let filter = args.device_filter.unwrap_or_else(|| String::new());
+    let filter = args.device_filter.unwrap_or_else(String::new);
     let is_soapy_dev = filter.clone().contains("driver=soapy");
     println!("is_soapy_dev: {}", is_soapy_dev);
     let seify_dev = Device::from_args(&*filter).unwrap();

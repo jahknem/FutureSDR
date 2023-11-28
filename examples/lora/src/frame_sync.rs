@@ -766,7 +766,7 @@ impl Kernel for FrameSync {
         let indexing_offset = min(
             0,
             ((self.m_os_factor / 2) as isize
-                - FrameSync::my_roundf(self.m_sto_frac * self.m_os_factor as f32) as isize)
+                - FrameSync::my_roundf(self.m_sto_frac * self.m_os_factor as f32))
                 as usize,
         );
         self.in_down = input

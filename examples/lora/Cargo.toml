@@ -15,10 +15,6 @@ path = "src/bin/rx.rs"
 name = "tx"
 path = "src/bin/tx.rs"
 
-[[bin]]
-name = "pfb_test"
-path = "src/bin/pfb_test.rs"
-
 [dependencies]
 clap = { version = "4.4.0", features = ["derive"] }
 futuresdr = { path = "../..", features = ["seify"] }

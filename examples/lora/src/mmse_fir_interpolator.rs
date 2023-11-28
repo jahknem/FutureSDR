@@ -1,20 +1,16 @@
 use crate::interpolator_taps::*;
-use futuredsp::fir::NonResamplingFirKernel;
-use futuresdr::num_complex::Complex32;
 use num_traits::Num;
 use std::iter::Sum;
 use std::marker::PhantomData;
 use std::ops::Mul;
 
 fn build_filters() -> Vec<Vec<f32>> {
-    let mut filters: Vec<Vec<f32>> = vec![];
-
-    filters.reserve(NSTEPS + 1);
-    for i in 0..(NSTEPS + 1) {
-        let taps_tmp: Vec<f32> = TAPS[i].as_slice().iter().map(|&x| x as f32).collect();
+    let mut filters: Vec<Vec<f32>> = Vec::with_capacity(NSTEPS + 1);
+    for taps in TAPS {
+        let taps_tmp: Vec<f32> = taps.iter().map(|&x| x as f32).collect();
         filters.push(taps_tmp);
     }
-    return filters;
+    filters
 }
 
 /// \brief Compute intermediate samples between signal samples x(k//Ts)
@@ -60,7 +56,7 @@ where
     pub fn interpolate(&self, input: &[T], mu: f32) -> T {
         let imu: usize = (mu * NSTEPS as f32).round() as usize;
 
-        if (imu < 0) || (imu > NSTEPS) {
+        if (mu < 0.) || (imu > NSTEPS) {
             panic!("mmse_fir_interpolator_cc: imu out of bounds.");
         }
 
@@ -73,5 +69,14 @@ where
 
     pub fn get_n_lookahead() -> usize {
         NSTEPS - 1 // number of future input samples required to compute output sample for current input sample
+    }
+}
+
+impl<T> Default for MmseFirInterpolator<'_, T>
+where
+    T: Copy + Num + Sum<T> + Mul<f32, Output = T> + 'static,
+{
+    fn default() -> Self {
+        Self::new()
     }
 }
