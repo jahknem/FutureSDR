@@ -8,6 +8,10 @@ edition = "2021"
 [workspace]
 
 [[bin]]
+name = "rx_pfb"
+path = "src/bin/rx_pfb.rs"
+
+[[bin]]
 name = "rx"
 path = "src/bin/rx.rs"
 
