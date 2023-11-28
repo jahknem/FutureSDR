@@ -118,7 +118,7 @@ fn create_dense_grid(
     for band in 0..numband {
         let mut lowf = if band == 0 { grid0 } else { bands[2 * band] };
         let highf = bands[2 * band + 1];
-        let k = ((highf - lowf) / delf + 0.5); /* .5 for rounding */
+        let k = ((highf - lowf) / delf).round(); /* .5 for rounding */
         for i in 0..(k as usize) {
             D[j] = des[2 * band] + i as f64 * (des[2 * band + 1] - des[2 * band]) / (k - 1.);
             W[j] = weight[band];
@@ -155,7 +155,7 @@ fn create_dense_grid(
  * int ext[]    - Extremal indexes to dense frequency grid [r+1]
  ********************/
 fn initial_guess(r: usize, gridsize: usize) -> Vec<usize> {
-    (0..r).map(|i| i * (gridsize - 1) / r).collect()
+    (0..(r + 1)).map(|i| i * (gridsize - 1) / r).collect()
 }
 
 /***********************
@@ -197,12 +197,12 @@ fn calc_parms(
      * Calculate ad[]  - Oppenheim & Schafer eq 7.132
      */
     let ld = (r - 1) / 15 + 1; /* Skips around to avoid round errors */
-    let ad: Vec<f64> = (0..r)
+    let ad: Vec<f64> = (0..(r + 1))
         .map(|i| {
             let mut denom: f64 = 1.;
             let xi = x[i];
             for j in 0..ld {
-                for k in (j..r).step_by(ld) {
+                for k in (j..(r + 1)).step_by(ld) {
                     if k != i {
                         denom *= 2.0 * (xi - x[k]);
                     }
@@ -221,7 +221,7 @@ fn calc_parms(
     let mut numer: f64 = 0.;
     let mut denom: f64 = 0.;
     let mut sign: f64 = 1.;
-    for i in 0..r {
+    for i in 0..(r + 1) {
         numer += ad[i] * D[Ext[i]];
         denom += sign * ad[i] / W[Ext[i]];
         sign = -sign;
@@ -232,8 +232,8 @@ fn calc_parms(
     /*
      * Calculate y[]  - Oppenheim & Schafer eq 7.133b
      */
-    let mut y = vec![0.; r];
-    for i in 0..r {
+    let mut y = vec![0.; r + 1];
+    for i in 0..(r + 1) {
         y[i] = D[Ext[i]] - sign * delta / W[Ext[i]];
         sign = -sign;
     }
@@ -263,13 +263,10 @@ fn calc_parms(
  *********************/
 
 fn compute_A(freq: f64, r: usize, ad: &[f64], x: &[f64], y: &[f64]) -> f64 {
-    // int i;
-    // double xc, c, denom, numer;
-
     let mut denom: f64 = 0.;
     let mut numer: f64 = 0.;
     let xc = (2. * PI * freq).cos();
-    for i in 0..r {
+    for i in 0..(r + 1) {
         let mut c = xc - x[i];
         if c.abs() < 1.0e-7 {
             numer = y[i];
@@ -455,7 +452,7 @@ fn search(r: usize, Ext: &mut [usize], gridsize: usize, E: &[f64]) -> i8 {
         extra -= 1;
     }
 
-    for i in 0..r {
+    for i in 0..(r + 1) {
         assert!(foundExt[i] < gridsize);
         Ext[i] = foundExt[i]; /* Copy found extremals to Ext[] */
     }
@@ -619,8 +616,8 @@ fn remez(
      */
     let mut gridsize: usize = 0;
     for i in 0..numband {
-        gridsize +=
-            2 * r * griddensity * ((bands[2 * i + 1] - bands[2 * i]) + 0.5).floor() as usize;
+        gridsize += (2. * r as f64 * griddensity as f64 * (bands[2 * i + 1] - bands[2 * i])).round()
+            as usize;
     }
     if symmetry == NEGATIVE {
         gridsize -= 1;
@@ -863,6 +860,15 @@ pub fn pm_remez(
         itype,
         grid_density,
     );
+    // let (coeff, err) = remez(
+    //     15,
+    //     numbands,
+    //     &[0., 0.3, 0.4, 1.],
+    //     &[1., 1., 0., 0.],
+    //     &[1., 1., 1., 1.],
+    //     itype,
+    //     16,
+    // );
 
     if err == -1 {
         punt("failed to converge");

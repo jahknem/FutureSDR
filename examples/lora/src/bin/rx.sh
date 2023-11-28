@@ -11,7 +11,7 @@ RX_GAIN="--rx-gain 10"
 #TX_GAIN="--tx-gain 40"
 RX_ANTENNA=""
 #TX_ANTENNA=""
-SAMPLE_RATE="--sample-rate 125000"
+SAMPLE_RATE="--sample-rate 600000"
 SPREADING_FACTOR="--spreading-factor 8"
 BANDWIDTH="--bandwidth 125000"
 

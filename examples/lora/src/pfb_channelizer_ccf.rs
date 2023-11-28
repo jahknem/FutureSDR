@@ -203,8 +203,12 @@ impl Kernel for PfbChannelizer {
             for i in 0..self.d_filts {
                 sio.input(i).consume(n_items_to_process);
                 sio.output(i).produce(n_items_to_process);
+                // println!("PfbChannelizer: consumed {n_items_to_process}, produced {n_items_to_process} samples on channel {i}");
             }
         }
+        // else if n_items_to_produce == 0 {
+        //     println!("Flaggggaag!");
+        // }
 
         // TODO propagate tags
 

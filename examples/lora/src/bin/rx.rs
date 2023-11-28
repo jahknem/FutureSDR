@@ -12,11 +12,9 @@ use futuresdr::runtime::Flowgraph;
 use futuresdr::runtime::Runtime;
 use rustfft::num_complex::Complex32;
 
-use futuredsp::firdes::lowpass;
-use futuredsp::windows::hamming;
 use lora::{
-    CrcVerif, Deinterleaver, Dewhitening, FftDemod, FrameSync, GrayMapping, HammingDec,
-    HeaderDecoder, PfbChannelizer, StreamDeinterleaver,
+    optfir, CrcVerif, Deinterleaver, Dewhitening, FftDemod, FrameSync, GrayMapping, HammingDec,
+    HeaderDecoder, MmseResampler, PfbChannelizer, StreamDeinterleaver,
 };
 use seify::Device;
 use seify::Direction::Rx;
@@ -66,7 +64,7 @@ fn main() -> Result<()> {
 
     seify_dev
         // .set_sample_rate(Rx, args.soapy_rx_channel, args.sample_rate)
-        .set_sample_rate(Rx, args.soapy_rx_channel, 375000.0)
+        .set_sample_rate(Rx, args.soapy_rx_channel, args.sample_rate)
         .unwrap();
 
     if is_soapy_dev {
@@ -109,17 +107,32 @@ fn main() -> Result<()> {
 
     let deinterleaver = fg.add_block(StreamDeinterleaver::<Complex32>::new(3));
     fg.connect_stream(src, "out", deinterleaver, "in")?;
-    let filter_coefs = lowpass(0.208333333, &hamming(24, false));
+    // let filter_coefs = lowpass(0.208333333, &hamming(24, false));
+    let transition_bw = (200_000. - 125_000.) / 200_000.;
+    // let transition_bw = 0.2;
+    let filter_coefs = optfir::low_pass(
+        1.,
+        3,
+        0.5 - transition_bw / 2.,
+        0.5 + transition_bw / 2.,
+        0.1,
+        100.,
+        None,
+    );
+    let filter_coefs: Vec<f32> = filter_coefs.iter().map(|&x| x as f32).collect();
+    println!("filter taps: {:?}", filter_coefs);
     let channelizer = fg.add_block(PfbChannelizer::new(3, &filter_coefs, 1.));
     fg.connect_stream(deinterleaver, "out0", channelizer, "in0")?;
     fg.connect_stream(deinterleaver, "out1", channelizer, "in1")?;
     fg.connect_stream(deinterleaver, "out2", channelizer, "in2")?;
     let null_sink21 = fg.add_block(NullSink::<Complex32>::new());
     let null_sink23 = fg.add_block(NullSink::<Complex32>::new());
-    fg.connect_stream(channelizer, "out0", null_sink21, "in")?;
-    fg.connect_stream(channelizer, "out2", null_sink23, "in")?;
+    fg.connect_stream(channelizer, "out1", null_sink21, "in")?;
+    fg.connect_stream(channelizer, "out0", null_sink23, "in")?;
     // fg.connect_stream(deinterleaver, "out0", null_sink21, "in")?;
     // fg.connect_stream(deinterleaver, "out1", null_sink23, "in")?;
+    let resampler = fg.add_block(MmseResampler::<Complex32>::new(0., 1.6));
+    fg.connect_stream(channelizer, "out2", resampler, "in")?;
 
     let frame_sync = fg.add_block(FrameSync::new(
         (args.center_freq + args.rx_freq_offset) as u32,
@@ -139,8 +152,8 @@ fn main() -> Result<()> {
     //     Circular::with_size(2 * 4 * 8192 * 4),
     // )?;
     fg.connect_stream_with_type(
-        channelizer,
-        "out1",
+        resampler,
+        "out",
         frame_sync,
         "in",
         Circular::with_size(2 * 4 * 8192 * 4),
