@@ -1,7 +1,7 @@
 use clap::{Parser, ValueEnum};
 
 use futuresdr::anyhow::Result;
-use futuresdr::async_trait::async_trait;
+use futuresdr::macros::async_trait;
 use futuresdr::macros::connect;
 use futuresdr::runtime::scheduler;
 use futuresdr::runtime::{

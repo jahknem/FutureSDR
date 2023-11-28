@@ -1,8 +1,8 @@
 use crate::decoder::{AdsbPacket, DecoderMetaData};
 use futuresdr::anyhow::Result;
 use futuresdr::async_io::Timer;
-use futuresdr::async_trait::async_trait;
 use futuresdr::log::{info, warn};
+use futuresdr::macros::async_trait;
 use futuresdr::macros::message_handler;
 use futuresdr::runtime::Block;
 use futuresdr::runtime::BlockMeta;

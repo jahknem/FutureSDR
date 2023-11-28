@@ -21,6 +21,7 @@ use crate::runtime::FlowgraphDescription;
 use crate::runtime::FlowgraphMessage;
 use crate::runtime::Kernel;
 use crate::runtime::Pmt;
+use crate::runtime::PortId;
 use crate::runtime::Topology;
 
 /// The main component of any FutureSDR program.
@@ -118,37 +119,16 @@ impl Default for Flowgraph {
     }
 }
 
-/// Port Identifier
-#[derive(Debug, Clone)]
-pub enum PortId {
-    /// Index
-    Index(usize),
-    /// Name
-    Name(String),
-}
-
-impl From<usize> for PortId {
-    fn from(item: usize) -> Self {
-        PortId::Index(item)
-    }
-}
-
-impl From<&str> for PortId {
-    fn from(item: &str) -> Self {
-        PortId::Name(item.to_string())
-    }
-}
-
-impl From<String> for PortId {
-    fn from(item: String) -> Self {
-        PortId::Name(item)
-    }
-}
-
 /// Handle to interact with running [`Flowgraph`]
 #[derive(Debug, Clone)]
 pub struct FlowgraphHandle {
     inbox: Sender<FlowgraphMessage>,
+}
+
+impl PartialEq for FlowgraphHandle {
+    fn eq(&self, other: &Self) -> bool {
+        self.inbox.same_receiver(&other.inbox)
+    }
 }
 
 impl FlowgraphHandle {
@@ -197,12 +177,13 @@ impl FlowgraphHandle {
     }
 
     /// Get [`FlowgraphDescription`]
-    pub async fn description(&mut self) -> Result<FlowgraphDescription> {
+    pub async fn description(&mut self) -> result::Result<FlowgraphDescription, Error> {
         let (tx, rx) = oneshot::channel::<FlowgraphDescription>();
         self.inbox
             .send(FlowgraphMessage::FlowgraphDescription { tx })
-            .await?;
-        let d = rx.await?;
+            .await
+            .or(Err(Error::FlowgraphTerminated))?;
+        let d = rx.await.or(Err(Error::FlowgraphTerminated))?;
         Ok(d)
     }
 

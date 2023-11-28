@@ -41,7 +41,7 @@ clap = { version = "4.0.19", features = ["derive"] }
 futuresdr = { path = "../..", features = ["seify"] }
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
-console_error_panic_hook = "0.1.6"
+console_error_panic_hook = "0.1.7"
+console_log = "1"
 futuresdr = { path = "../.." }
-wasm-bindgen = "0.2.84"
-wasm-bindgen-futures = "0.4.34"
+leptos = { version = "0.4.5", features = ["csr", "nightly"] }

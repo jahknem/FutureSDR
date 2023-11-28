@@ -542,6 +542,7 @@ pub fn message_handler(
     // println!("pmt {}", pmt);
 
     out.extend(quote! {
+        #[cfg(not(target_arch = "wasm32"))]
         fn #name<'a>(
             &'a mut self,
             #io: &'a mut WorkIo,
@@ -550,9 +551,22 @@ pub fn message_handler(
             #pmt: Pmt,
         ) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<Pmt>> + Send + 'a>> {
             use crate::futures::FutureExt;
-            async move {
+            Box::pin(async move {
                 #(#body)*
-            }.boxed()
+            })
+        }
+        #[cfg(target_arch = "wasm32")]
+        fn #name<'a>(
+            &'a mut self,
+            #io: &'a mut WorkIo,
+            #mio: &'a mut MessageIo<Self>,
+            #meta: &'a mut BlockMeta,
+            #pmt: Pmt,
+        ) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<Pmt>> + 'a>> {
+            use crate::futures::FutureExt;
+            Box::pin(async move {
+                #(#body)*
+            })
         }
     });
 
@@ -618,6 +632,7 @@ pub fn message_handler_external(
     // println!("pmt {}", pmt);
 
     out.extend(quote! {
+        #[cfg(not(target_arch = "wasm32"))]
         fn #name<'a>(
             &'a mut self,
             #io: &'a mut WorkIo,
@@ -626,9 +641,22 @@ pub fn message_handler_external(
             #pmt: Pmt,
         ) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<Pmt>> + Send + 'a>> {
             use futuresdr::futures::FutureExt;
-            async move {
+            Box::pin(async move {
                 #(#body)*
-            }.boxed()
+            })
+        }
+        #[cfg(target_arch = "wasm32")]
+        fn #name<'a>(
+            &'a mut self,
+            #io: &'a mut WorkIo,
+            #mio: &'a mut MessageIo<Self>,
+            #meta: &'a mut BlockMeta,
+            #pmt: Pmt,
+        ) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<Pmt>> + 'a>> {
+            use futuresdr::futures::FutureExt;
+            Box::pin(async move {
+                #(#body)*
+            })
         }
     });
 
@@ -643,4 +671,42 @@ fn get_parameter_ident(arg: &syn::FnArg) -> Option<syn::Ident> {
         }
     }
     None
+}
+
+//=========================================================================
+// ASYNC_TRAIT
+//=========================================================================
+
+/// Custom version of async_trait that uses non-send futures for WASM.
+#[proc_macro_attribute]
+pub fn async_trait(
+    _attr: proc_macro::TokenStream,
+    fun: proc_macro::TokenStream,
+) -> proc_macro::TokenStream {
+    let fun: proc_macro2::TokenStream = fun.into();
+    quote!(
+        #[cfg_attr(not(target_arch = "wasm32"), async_trait::async_trait)]
+        #[cfg_attr(target_arch = "wasm32", async_trait::async_trait(?Send))]
+        #fun
+    )
+    .into()
+}
+
+//=========================================================================
+// ASYNC_TRAIT_EXTERNAL
+//=========================================================================
+
+/// Custom version of async_trait that uses non-send futures for WASM.
+#[proc_macro_attribute]
+pub fn async_trait_external(
+    _attr: proc_macro::TokenStream,
+    fun: proc_macro::TokenStream,
+) -> proc_macro::TokenStream {
+    let fun: proc_macro2::TokenStream = fun.into();
+    quote!(
+        #[cfg_attr(not(target_arch = "wasm32"), futuresdr::ignore::async_trait::async_trait)]
+        #[cfg_attr(target_arch = "wasm32", futuresdr::ignore::async_trait::async_trait(?Send))]
+        #fun
+    )
+    .into()
 }

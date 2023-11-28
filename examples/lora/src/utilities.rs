@@ -93,7 +93,6 @@ impl From<usize> for LdroMode {
  *          The output number of bits
  */
 #[inline]
-#[must_use]
 pub fn int2bool(integer: u16, n_bits: usize) -> Vec<bool> {
     let mut vec: Vec<bool> = vec![false; n_bits];
     let mut j = n_bits;
@@ -110,7 +109,6 @@ pub fn int2bool(integer: u16, n_bits: usize) -> Vec<bool> {
  *          The boolean vector to convert
  */
 #[inline]
-#[must_use]
 pub fn bool2int(b: &[bool]) -> u16 {
     assert!(b.len() <= 16);
     b.iter()
@@ -133,7 +131,6 @@ pub fn bool2int(b: &[bool]) -> u16 {
  *          The oversampling factor used to generate the upchirp
  */
 #[inline]
-#[must_use]
 pub fn build_upchirp(id: usize, sf: usize, os_factor: usize) -> Vec<Complex32> {
     let n = (1 << sf) as f32;
     let n_idx = 1 << sf;
@@ -164,7 +161,6 @@ pub fn build_upchirp(id: usize, sf: usize, os_factor: usize) -> Vec<Complex32> {
 }
 
 #[inline]
-#[must_use]
 pub fn my_modulo(val1: isize, val2: usize) -> usize {
     if val1 >= 0 {
         (val1 as usize) % val2
@@ -184,7 +180,6 @@ pub fn my_modulo(val1: isize, val2: usize) -> usize {
  *          The spreading factor to use
  */
 #[inline]
-#[must_use]
 pub fn build_ref_chirps(sf: usize, os_factor: usize) -> (Vec<Complex32>, Vec<Complex32>) {
     let upchirp = build_upchirp(0, sf, os_factor);
     let downchirp = volk_32fc_conjugate_32fc(&upchirp);
@@ -193,7 +188,6 @@ pub fn build_ref_chirps(sf: usize, os_factor: usize) -> (Vec<Complex32>, Vec<Com
 
 // find most frequency number in vector
 #[inline]
-#[must_use]
 pub fn most_frequent<T>(input_slice: &[T]) -> T
 where
     T: Eq + Hash + Copy,
@@ -223,7 +217,6 @@ where
 // return result;
 //     }
 
-#[must_use]
 pub fn argmax_float<T: Float>(input_slice: &[T]) -> usize {
     input_slice
         .iter()
@@ -235,7 +228,6 @@ pub fn argmax_float<T: Float>(input_slice: &[T]) -> usize {
 }
 
 // TODO possibly limit size of input slices according to 'num_points' param from cpp code
-#[must_use]
 pub fn volk_32fc_conjugate_32fc(a_vector: &Vec<Complex32>) -> Vec<Complex32> {
     // TODO use map and generic type
     let mut b_vector = vec![Complex32::from(0.); a_vector.len()];
@@ -247,7 +239,6 @@ pub fn volk_32fc_conjugate_32fc(a_vector: &Vec<Complex32>) -> Vec<Complex32> {
 }
 
 #[inline]
-#[must_use]
 pub fn volk_32fc_x2_multiply_32fc<T: Copy + Mul<T, Output = T>>(
     input_slice_1: &[T],
     input_slice_2: &[T],
@@ -275,7 +266,6 @@ pub fn volk_32fc_x2_multiply_32fc<T: Copy + Mul<T, Output = T>>(
 // }
 
 #[inline]
-#[must_use]
 pub fn volk_32fc_magnitude_squared_32f(input_slice: &[Complex32]) -> Vec<f32> {
     let tmp: Vec<f32> = input_slice
         .iter()
@@ -320,7 +310,6 @@ impl TryDowncast<f32> for f32 {
     }
 }
 
-#[must_use]
 pub fn get_tags_in_window<T: Clone>(
     tags_in: &[ItemTag],
     window_size: usize,
@@ -340,7 +329,6 @@ where
             } => {
                 if n == tag_name && *index < window_size {
                     match (**val).downcast_ref().unwrap() {
-                        // can not panic, but the compiler doesn't know about the relation between Pmt variants and their encapsulated types
                         Pmt::String(payload) => Some((*index, payload.try_downcast().unwrap())),
                         Pmt::Usize(payload) => Some((*index, payload.try_downcast().unwrap())),
                         Pmt::F32(payload) => Some((*index, payload.try_downcast().unwrap())),

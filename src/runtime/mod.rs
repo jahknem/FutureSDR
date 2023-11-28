@@ -43,7 +43,6 @@ pub use block_meta::BlockMeta;
 pub use block_meta::BlockMetaBuilder;
 pub use flowgraph::Flowgraph;
 pub use flowgraph::FlowgraphHandle;
-pub use flowgraph::PortId;
 pub use message_io::MessageInput;
 pub use message_io::MessageIo;
 pub use message_io::MessageIoBuilder;
@@ -62,6 +61,7 @@ pub use topology::Topology;
 pub use futuresdr_types::BlockDescription;
 pub use futuresdr_types::FlowgraphDescription;
 pub use futuresdr_types::Pmt;
+pub use futuresdr_types::PortId;
 
 use buffer::BufferReader;
 use buffer::BufferWriter;
@@ -201,12 +201,15 @@ pub enum BlockMessage {
 }
 
 /// FutureSDR Error
-#[derive(Error, Debug)]
+#[derive(Error, Debug, Clone)]
 #[non_exhaustive]
 pub enum Error {
     /// Block does not exist
     #[error("Block does not exist")]
     InvalidBlock,
+    /// Flowgraph does not exist or terminated
+    #[error("Flowgraph terminated")]
+    FlowgraphTerminated,
     /// Handler does not exist
     #[error("Handler does not exist (Id {0:?})")]
     InvalidHandler(PortId),

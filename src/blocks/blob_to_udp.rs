@@ -50,13 +50,13 @@ impl BlobToUdp {
     #[message_handler]
     async fn handler(
         &mut self,
-        _io: &mut WorkIo,
+        io: &mut WorkIo,
         _mio: &mut MessageIo<Self>,
         _meta: &mut BlockMeta,
         p: Pmt,
     ) -> Result<Pmt> {
-        if let Pmt::Blob(v) = p {
-            match self.socket.as_ref().unwrap().send_to(&v, self.remote).await {
+        match p {
+            Pmt::Blob(v) => match self.socket.as_ref().unwrap().send_to(&v, self.remote).await {
                 Ok(s) => {
                     assert_eq!(s, v.len());
                 }
@@ -64,9 +64,13 @@ impl BlobToUdp {
                     println!("udp error: {e:?}");
                     return Err(e.into());
                 }
+            },
+            Pmt::Finished => {
+                io.finished = true;
             }
-        } else {
-            warn!("BlockToUdp: received wrong PMT type. {:?}", p);
+            _ => {
+                warn!("BlockToUdp: received wrong PMT type. {:?}", p);
+            }
         }
         Ok(Pmt::Null)
     }

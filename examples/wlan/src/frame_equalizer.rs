@@ -8,8 +8,8 @@ use crate::POLARITY;
 use crate::{FrameParam, MAX_PAYLOAD_SIZE};
 
 use futuresdr::anyhow::Result;
-use futuresdr::async_trait::async_trait;
 use futuresdr::log::info;
+use futuresdr::macros::async_trait;
 use futuresdr::num_complex::Complex32;
 use futuresdr::runtime::Block;
 use futuresdr::runtime::BlockMeta;
@@ -18,6 +18,7 @@ use futuresdr::runtime::ItemTag;
 use futuresdr::runtime::Kernel;
 use futuresdr::runtime::MessageIo;
 use futuresdr::runtime::MessageIoBuilder;
+use futuresdr::runtime::Pmt;
 use futuresdr::runtime::StreamIo;
 use futuresdr::runtime::StreamIoBuilder;
 use futuresdr::runtime::Tag;
@@ -99,6 +100,7 @@ pub struct FrameEqualizer {
     decoded_bits: [u8; 24],
     bits_out: [u8; 48],
     decoder: ViterbiDecoder,
+    syms: Vec<Complex32>,
 }
 
 impl FrameEqualizer {
@@ -109,7 +111,7 @@ impl FrameEqualizer {
                 .add_input::<Complex32>("in")
                 .add_output::<u8>("out")
                 .build(),
-            MessageIoBuilder::new().build(),
+            MessageIoBuilder::new().add_output("symbols").build(),
             Self {
                 equalizer: Equalizer::new(),
                 state: State::Skip,
@@ -118,6 +120,7 @@ impl FrameEqualizer {
                 decoded_bits: [0; 24],
                 bits_out: [0; 48],
                 decoder: ViterbiDecoder::new(),
+                syms: Vec::new(),
             },
         )
     }
@@ -187,7 +190,7 @@ impl Kernel for FrameEqualizer {
         &mut self,
         io: &mut WorkIo,
         sio: &mut StreamIo,
-        _m: &mut MessageIo<Self>,
+        mio: &mut MessageIo<Self>,
         _b: &mut BlockMeta,
     ) -> Result<()> {
         let mut input = sio.input(0).slice::<Complex32>();
@@ -323,11 +326,17 @@ impl Kernel for FrameEqualizer {
                             *modulation,
                         );
 
+                        self.syms.extend_from_slice(&self.sym_out);
+
                         i += 1;
                         o += 1;
 
                         n_sym -= 1;
                         if n_sym == 0 {
+                            if !self.syms.is_empty() {
+                                mio.post(0, Pmt::VecCF32(std::mem::take(&mut self.syms)))
+                                    .await;
+                            }
                             self.state = State::Skip;
                         } else {
                             self.state = State::Copy(n_sym, *all_sym, *modulation);

@@ -12,9 +12,6 @@ pub use channels::parse_channel;
 mod decoder;
 pub use decoder::Decoder;
 
-mod delay;
-pub use delay::Delay;
-
 mod encoder;
 pub use encoder::Encoder;
 
@@ -48,11 +45,15 @@ pub use sync_short::SyncShort;
 mod viterbi_decoder;
 pub use viterbi_decoder::ViterbiDecoder;
 
+#[cfg(target_arch = "wasm32")]
+pub mod wasm;
+
 pub const MAX_PAYLOAD_SIZE: usize = 1500;
 pub const MAX_PSDU_SIZE: usize = MAX_PAYLOAD_SIZE + 28; // MAC, CRC
 pub const MAX_SYM: usize = ((16 + 8 * MAX_PSDU_SIZE + 6) / 24) + 1;
 pub const MAX_ENCODED_BITS: usize = (16 + 8 * MAX_PSDU_SIZE + 6) * 2 + 288;
 
+#[allow(clippy::needless_pass_by_ref_mut)]
 pub fn fft_tag_propagation(inputs: &mut [StreamInput], outputs: &mut [StreamOutput]) {
     debug_assert_eq!(inputs[0].consumed().0, outputs[0].produced());
     let (n, tags) = inputs[0].consumed();

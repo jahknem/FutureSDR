@@ -1,7 +1,5 @@
 use futuresdr::anyhow::Result;
-use futuresdr::async_trait::async_trait;
-
-use std::cmp::min;
+use futuresdr::macros::async_trait;
 use std::collections::HashMap;
 use std::f32::consts::PI;
 
@@ -763,12 +761,8 @@ impl Kernel for FrameSync {
         }
 
         // downsampling
-        let indexing_offset = min(
-            0,
-            ((self.m_os_factor / 2) as isize
-                - FrameSync::my_roundf(self.m_sto_frac * self.m_os_factor as f32))
-                as usize,
-        );
+        let indexing_offset = self.m_os_factor / 2
+            - FrameSync::my_roundf(self.m_sto_frac * self.m_os_factor as f32) as usize;
         self.in_down = input
             [indexing_offset..(indexing_offset + self.m_number_of_bins * self.m_os_factor)]
             .iter()
@@ -839,7 +833,7 @@ impl Kernel for FrameSync {
                 }
                 self.bin_idx = bin_idx_new_opt;
                 if self.symbol_cnt == self.m_n_up_req {
-                    info!("FrameSync: detected Frame.");
+                    info!("..:: Frame Detected");
                     // info!(
                     //     "FrameSync: detected required nuber of upchirps ({})",
                     //     Into::<usize>::into(self.m_n_up_req)

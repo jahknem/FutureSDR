@@ -1,5 +1,5 @@
 use futuresdr::anyhow::Result;
-use futuresdr::async_trait::async_trait;
+use futuresdr::macros::async_trait;
 use futuresdr::num_complex::Complex32;
 use futuresdr::runtime::Block;
 use futuresdr::runtime::BlockMeta;
@@ -96,6 +96,8 @@ impl Kernel for Prefix {
 
                 sio.input(0).consume(len * 64);
                 let produce = self.pad_front + std::cmp::max(self.pad_tail, 1) + len * 80 + 320;
+
+                output[0..produce].iter_mut().for_each(|v| *v *= 0.6);
 
                 sio.output(0)
                     .add_tag(0, Tag::NamedUsize("burst_start".to_string(), produce));

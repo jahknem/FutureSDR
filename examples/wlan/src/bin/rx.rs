@@ -6,8 +6,10 @@ use futuresdr::anyhow::Result;
 use futuresdr::blocks::seify::SourceBuilder;
 use futuresdr::blocks::Apply;
 use futuresdr::blocks::Combine;
+use futuresdr::blocks::Delay;
 use futuresdr::blocks::Fft;
 use futuresdr::blocks::MessagePipe;
+use futuresdr::blocks::WebsocketPmtSink;
 use futuresdr::macros::connect;
 use futuresdr::num_complex::Complex32;
 use futuresdr::runtime::Flowgraph;
@@ -17,7 +19,6 @@ use futuresdr::runtime::Runtime;
 use wlan::fft_tag_propagation;
 use wlan::parse_channel;
 use wlan::Decoder;
-use wlan::Delay;
 use wlan::FrameEqualizer;
 use wlan::MovingAverage;
 use wlan::SyncLong;
@@ -41,6 +42,9 @@ struct Args {
     /// WLAN Channel Number
     #[clap(short, long, value_parser = parse_channel, default_value = "34")]
     channel: f64,
+    /// DC Offset
+    #[clap(short, long, default_value_t = false)]
+    dc_offset: bool,
 }
 
 fn main() -> Result<()> {
@@ -62,16 +66,34 @@ fn main() -> Result<()> {
     }
 
     let src = seify.build()?;
+    connect!(fg, src);
+
+    let prev = if args.dc_offset {
+        let mut avg_real = 0.0;
+        let mut avg_img = 0.0;
+        let ratio = 1.0e-5;
+        let dc = Apply::new(move |c: &Complex32| -> Complex32 {
+            avg_real = ratio * (c.re - avg_real) + avg_real;
+            avg_img = ratio * (c.im - avg_img) + avg_img;
+            Complex32::new(c.re - avg_real, c.im - avg_img)
+        });
+
+        connect!(fg, src > dc);
+        dc
+    } else {
+        src
+    };
+
     let delay = Delay::<Complex32>::new(16);
-    connect!(fg, src > delay);
+    connect!(fg, prev > delay);
 
     let complex_to_mag_2 = Apply::new(|i: &Complex32| i.norm_sqr());
     let float_avg = MovingAverage::<f32>::new(64);
-    connect!(fg, src > complex_to_mag_2 > float_avg);
+    connect!(fg, prev > complex_to_mag_2 > float_avg);
 
     let mult_conj = Combine::new(|a: &Complex32, b: &Complex32| a * b.conj());
     let complex_avg = MovingAverage::<Complex32>::new(48);
-    connect!(fg, src > in0.mult_conj.out > complex_avg;
+    connect!(fg, prev > in0.mult_conj.out > complex_avg;
                  delay > mult_conj.in1);
 
     let divide_mag = Combine::new(|a: &Complex32, b: &f32| a.norm() / b);
@@ -89,7 +111,9 @@ fn main() -> Result<()> {
     fft.set_tag_propagation(Box::new(fft_tag_propagation));
     let frame_equalizer = FrameEqualizer::new();
     let decoder = Decoder::new();
-    connect!(fg, sync_long > fft > frame_equalizer > decoder);
+    let symbol_sink = WebsocketPmtSink::new(9002);
+    connect!(fg, sync_long > fft > frame_equalizer > decoder;
+        frame_equalizer.symbols | symbol_sink.in);
 
     let (tx_frame, mut rx_frame) = mpsc::channel::<Pmt>(100);
     let message_pipe = MessagePipe::new(tx_frame);

@@ -5,14 +5,16 @@ set -xe
 SCRIPT=$(readlink -f $0)
 SCRIPTPATH=`dirname $SCRIPT`
 
-# cd ${SCRIPTPATH} && find . -name "Cargo.lock" -delete
+export RUSTFLAGS='--cfg=web_sys_unstable_apis'
+cd ${SCRIPTPATH} && find . -name "Cargo.lock" -delete
+
 ###########################################################
 # FMT
 ###########################################################
 cd ${SCRIPTPATH} && cargo fmt --check
-cd ${SCRIPTPATH}/crates/frontend && cargo fmt --check
 cd ${SCRIPTPATH}/crates/futuredsp && cargo fmt --check
 cd ${SCRIPTPATH}/crates/macros && cargo fmt --check
+cd ${SCRIPTPATH}/crates/prophecy && cargo fmt --check
 cd ${SCRIPTPATH}/crates/remote && cargo fmt --check
 cd ${SCRIPTPATH}/crates/types && cargo fmt --check
 
@@ -37,13 +39,17 @@ cd ${SCRIPTPATH}/examples/audio && cargo fmt --check
 cd ${SCRIPTPATH}/examples/custom-routes && cargo fmt --check
 cd ${SCRIPTPATH}/examples/cw && cargo fmt --check
 cd ${SCRIPTPATH}/examples/debug && cargo fmt --check
+cd ${SCRIPTPATH}/examples/file-trx && cargo fmt --check
 cd ${SCRIPTPATH}/examples/firdes && cargo fmt --check
 cd ${SCRIPTPATH}/examples/fm-receiver && cargo fmt --check
+cd ${SCRIPTPATH}/examples/keyfob && cargo fmt --check
 cd ${SCRIPTPATH}/examples/logging && cargo fmt --check
+cd ${SCRIPTPATH}/examples/lora && cargo fmt --check
+cd ${SCRIPTPATH}/examples/m17 && cargo fmt --check
 cd ${SCRIPTPATH}/examples/macros && cargo fmt --check
-cd ${SCRIPTPATH}/examples/rx-to-file && cargo fmt --check
+cd ${SCRIPTPATH}/examples/rattlegram && cargo fmt --check
 cd ${SCRIPTPATH}/examples/spectrum && cargo fmt --check
-cd ${SCRIPTPATH}/examples/ssb-receiver && cargo fmt --check
+cd ${SCRIPTPATH}/examples/ssb && cargo fmt --check
 cd ${SCRIPTPATH}/examples/wasm && cargo fmt --check
 cd ${SCRIPTPATH}/examples/wgpu && cargo fmt --check
 cd ${SCRIPTPATH}/examples/wlan && cargo fmt --check
@@ -53,13 +59,14 @@ cd ${SCRIPTPATH}/examples/zigbee && cargo fmt --check
 ###########################################################
 # CLIPPY
 ###########################################################
-cd ${SCRIPTPATH} && cargo clippy --all-targets --workspace --features=aaronia,vulkan,zeromq,audio,flow_scheduler,tpb_scheduler,soapy,lttng,zynq,wgpu -- -D warnings
-cd ${SCRIPTPATH} && RUSTFLAGS='--cfg=web_sys_unstable_apis' cargo clippy --lib --workspace --features=audio,wgpu --target=wasm32-unknown-unknown -- -D warnings
-cd ${SCRIPTPATH}/crates/frontend && cargo clippy --all-targets -- -D warnings
-cd ${SCRIPTPATH}/crates/frontend && cargo clippy --all-targets --target=wasm32-unknown-unknown -- -D warnings
+# aaronia feature is not tested, since most user might not have the sdr installed
+cd ${SCRIPTPATH} && cargo clippy --all-targets --workspace --features=vulkan,zeromq,audio,flow_scheduler,tpb_scheduler,soapy,lttng,zynq,wgpu -- -D warnings
+cd ${SCRIPTPATH} && cargo clippy --lib --workspace --features=audio,wgpu --target=wasm32-unknown-unknown -- -D warnings
 cd ${SCRIPTPATH}/crates/futuredsp && cargo clippy --all-targets -- -D warnings
 cd ${SCRIPTPATH}/crates/macros && cargo clippy --all-targets -- -D warnings
 cd ${SCRIPTPATH}/crates/macros && cargo clippy --all-targets --target=wasm32-unknown-unknown -- -D warnings
+cd ${SCRIPTPATH}/crates/prophecy && cargo clippy --all-targets -- -D warnings
+cd ${SCRIPTPATH}/crates/prophecy && cargo clippy --all-targets --target=wasm32-unknown-unknown -- -D warnings
 cd ${SCRIPTPATH}/crates/remote && cargo clippy --all-targets -- -D warnings
 cd ${SCRIPTPATH}/crates/types && cargo clippy --all-targets -- -D warnings
 cd ${SCRIPTPATH}/crates/types && cargo clippy --all-targets --target=wasm32-unknown-unknown -- -D warnings
@@ -74,7 +81,7 @@ cd ${SCRIPTPATH}/perf/null_rand && cargo clippy --all-targets -- -D warnings
 cd ${SCRIPTPATH}/perf/null_rand_latency && cargo clippy --all-targets -- -D warnings
 cd ${SCRIPTPATH}/perf/vulkan && cargo clippy --all-targets -- -D warnings
 cd ${SCRIPTPATH}/perf/wgpu && cargo clippy --all-targets -- -D warnings
-cd ${SCRIPTPATH}/perf/wgpu && RUSTFLAGS='--cfg=web_sys_unstable_apis' cargo clippy --lib --target=wasm32-unknown-unknown -- -D warnings
+cd ${SCRIPTPATH}/perf/wgpu && cargo clippy --lib --target=wasm32-unknown-unknown -- -D warnings
 cd ${SCRIPTPATH}/perf/zynq && cargo clippy --all-targets -- -D warnings
 
 # examples
@@ -87,28 +94,37 @@ cd ${SCRIPTPATH}/examples/custom-routes && cargo clippy --all-targets -- -D warn
 cd ${SCRIPTPATH}/examples/cw && cargo clippy --all-targets -- -D warnings
 cd ${SCRIPTPATH}/examples/cw && cargo clippy --lib --target=wasm32-unknown-unknown -- -D warnings
 cd ${SCRIPTPATH}/examples/debug && cargo clippy --all-targets -- -D warnings
+cd ${SCRIPTPATH}/examples/file-trx && cargo clippy --all-targets -- -D warnings
 cd ${SCRIPTPATH}/examples/firdes && cargo clippy --all-targets -- -D warnings
 cd ${SCRIPTPATH}/examples/fm-receiver && cargo clippy --all-targets -- -D warnings
+cd ${SCRIPTPATH}/examples/keyfob && cargo clippy --all-targets -- -D warnings
 cd ${SCRIPTPATH}/examples/logging && cargo clippy --all-targets -- -D warnings
+cd ${SCRIPTPATH}/examples/lora && cargo clippy --all-targets -- -D warnings
+cd ${SCRIPTPATH}/examples/m17 && cargo clippy --all-targets -- -D warnings
 cd ${SCRIPTPATH}/examples/macros && cargo clippy --all-targets -- -D warnings
-cd ${SCRIPTPATH}/examples/rx-to-file && cargo clippy --all-targets -- -D warnings
+cd ${SCRIPTPATH}/examples/rattlegram && cargo clippy --all-targets -- -D warnings
+cd ${SCRIPTPATH}/examples/rattlegram && cargo clippy --lib --target=wasm32-unknown-unknown -- -D warnings
 cd ${SCRIPTPATH}/examples/spectrum && cargo clippy --all-targets -- -D warnings
-cd ${SCRIPTPATH}/examples/spectrum && RUSTFLAGS='--cfg=web_sys_unstable_apis' cargo clippy --lib --target=wasm32-unknown-unknown -- -D warnings
-cd ${SCRIPTPATH}/examples/ssb-receiver && cargo clippy --all-targets -- -D warnings
+cd ${SCRIPTPATH}/examples/spectrum && cargo clippy --lib --target=wasm32-unknown-unknown -- -D warnings
+cd ${SCRIPTPATH}/examples/ssb && cargo clippy --all-targets -- -D warnings
 cd ${SCRIPTPATH}/examples/wasm && cargo clippy --all-targets -- -D warnings
-cd ${SCRIPTPATH}/examples/wasm && RUSTFLAGS='--cfg=web_sys_unstable_apis' cargo clippy --lib --target=wasm32-unknown-unknown -- -D warnings
+cd ${SCRIPTPATH}/examples/wasm && cargo clippy --lib --target=wasm32-unknown-unknown -- -D warnings
 cd ${SCRIPTPATH}/examples/wgpu && cargo clippy --all-targets -- -D warnings
-cd ${SCRIPTPATH}/examples/wgpu && RUSTFLAGS='--cfg=web_sys_unstable_apis' cargo clippy --lib --target=wasm32-unknown-unknown -- -D warnings
+cd ${SCRIPTPATH}/examples/wgpu && cargo clippy --lib --target=wasm32-unknown-unknown -- -D warnings
 cd ${SCRIPTPATH}/examples/wlan && cargo clippy --all-targets -- -D warnings
 cd ${SCRIPTPATH}/examples/zeromq && cargo clippy --all-targets -- -D warnings
 cd ${SCRIPTPATH}/examples/zigbee && cargo clippy --all-targets -- -D warnings
-cd ${SCRIPTPATH}/examples/zigbee && RUSTFLAGS='--cfg=web_sys_unstable_apis' cargo clippy --lib --target=wasm32-unknown-unknown -- -D warnings
+cd ${SCRIPTPATH}/examples/zigbee && cargo clippy --lib --target=wasm32-unknown-unknown -- -D warnings
 
 ###########################################################
 # Test
 ###########################################################
-cd ${SCRIPTPATH} && cargo test --all-targets --workspace --features=aaronia,vulkan,zeromq,audio,flow_scheduler,tpb_scheduler,soapy,lttng,zynq,wgpu -j 4
+# aaronia feature is not tested, since most user might not have the sdr installed
+cd ${SCRIPTPATH} && cargo test --all-targets --workspace --features=vulkan,zeromq,audio,flow_scheduler,tpb_scheduler,soapy,lttng,zynq,wgpu -j 4
+cd ${SCRIPTPATH}/crates/futuredsp && cargo test --all-targets
+cd ${SCRIPTPATH}/crates/macros && cargo test --all-targets
 cd ${SCRIPTPATH}/crates/remote && cargo test --all-targets
+cd ${SCRIPTPATH}/crates/types && cargo test --all-targets
 
 # perf
 cd ${SCRIPTPATH}/perf/buffer_rand && cargo test --all-targets
@@ -133,11 +149,15 @@ cd ${SCRIPTPATH}/examples/cw && cargo test --all-targets
 cd ${SCRIPTPATH}/examples/debug && cargo test --all-targets
 cd ${SCRIPTPATH}/examples/firdes && cargo test --all-targets
 cd ${SCRIPTPATH}/examples/fm-receiver && cargo test --all-targets
+cd ${SCRIPTPATH}/examples/keyfob && cargo test --all-targets
 cd ${SCRIPTPATH}/examples/logging && cargo test --all-targets
+cd ${SCRIPTPATH}/examples/lora && cargo test --all-targets
+cd ${SCRIPTPATH}/examples/m17 && cargo test --all-targets
 cd ${SCRIPTPATH}/examples/macros && cargo test --all-targets
-cd ${SCRIPTPATH}/examples/rx-to-file && cargo test --all-targets
+cd ${SCRIPTPATH}/examples/rattlegram && cargo test --all-targets
+cd ${SCRIPTPATH}/examples/file-trx && cargo test --all-targets
 cd ${SCRIPTPATH}/examples/spectrum && cargo test --all-targets
-cd ${SCRIPTPATH}/examples/ssb-receiver && cargo test --all-targets
+cd ${SCRIPTPATH}/examples/ssb && cargo test --all-targets
 cd ${SCRIPTPATH}/examples/wasm && cargo test --all-targets
 cd ${SCRIPTPATH}/examples/wgpu && cargo test --all-targets
 cd ${SCRIPTPATH}/examples/wlan && cargo test --all-targets

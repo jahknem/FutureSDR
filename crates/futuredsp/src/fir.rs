@@ -29,7 +29,7 @@ pub trait UpdateableFirFilterKernel<TA, TT> {
 /// use futuredsp::UnaryKernel;
 /// use futuredsp::fir::NonResamplingFirKernel;
 ///
-/// let fir = NonResamplingFirKernel::<f32, f32, _, _>::new([1.0, 2.0, 3.0]);
+/// let fir = NonResamplingFirKernel::<f32, f32, _, _>::new([1f32, 2f32, 3f32]);
 ///
 /// let input = [1.0, 2.0, 3.0];
 /// let mut output = [0.0];
@@ -261,7 +261,7 @@ where
 ///
 /// let decim = 2;
 /// let interp = 3;
-/// let taps = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0];
+/// let taps: [f32; 6] = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0];
 /// let fir = PolyphaseResamplingFirKernel::<f32, f32, _, _>::new(interp, decim, taps);
 ///
 /// let input = [1.0, 2.0, 3.0];

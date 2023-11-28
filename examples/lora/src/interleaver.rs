@@ -1,6 +1,6 @@
 use futuresdr::anyhow::Result;
-use futuresdr::async_trait::async_trait;
 use futuresdr::log::warn;
+use futuresdr::macros::async_trait;
 use std::cmp::{max, min};
 
 use futuresdr::runtime::BlockMeta;

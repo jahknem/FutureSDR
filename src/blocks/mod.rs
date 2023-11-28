@@ -24,6 +24,7 @@
 //! | Block | Usage | WebAssembly? |
 //! |---|---|---|
 //! | [ConsoleSink] | Log stream data with [log::info!]. | ✅ |
+//! | [Delay] | Delays samples. | ✅ |
 //! | [Head] | Copies only a given number of samples and stops. | ✅ |
 //! | [NullSink] | Drops samples. | ✅ |
 //! | [NullSource] | Generates a stream of zeros. | ✅ |
@@ -60,6 +61,7 @@
 //! | [TcpSource] | Reads samples from a TCP socket. | ❌ |
 //! | [TcpSink] | Push samples into a TCP socket. | ❌ |
 //! | [WebsocketSink] | Push samples in a WebSocket. | ❌ |
+//! | [WebsocketPmtSink] | Push samples from Pmts a WebSocket. | ❌ |
 //! | [zeromq::PubSink] | Push samples into [ZeroMQ](https://zeromq.org/) socket. | ❌ |
 //! | [zeromq::SubSource] | Read samples from [ZeroMQ](https://zeromq.org/) socket. | ❌ |
 //!
@@ -80,9 +82,8 @@
 //! ## WASM-specific (target `wasm32-unknown-unknown`)
 //! | Block | Usage | WebAssembly? |
 //! |---|---|---|
-//! | WasmSdr | Receive samples from web world. | ✅ |
+//! | HackRf | WASM + WebUSB source for HackRF. | ✅ |
 //! | WasmWsSink | Send samples via a WebSocket. | ✅ |
-//! | WasmFreq | Push samples to a GUI sink. | ✅ |
 //!
 //! ## Signal Sources
 //! | Block | Usage | WebAssembly? |
@@ -131,6 +132,9 @@ pub use copy::Copy;
 mod copy_rand;
 pub use copy_rand::{CopyRand, CopyRandBuilder};
 
+mod delay;
+pub use delay::Delay;
+
 mod filter;
 pub use filter::Filter;
 
@@ -154,6 +158,7 @@ pub use file_source::FileSource;
 
 mod finite_source;
 pub use finite_source::FiniteSource;
+
 mod head;
 pub use head::Head;
 
@@ -232,19 +237,19 @@ mod vulkan;
 #[cfg(feature = "vulkan")]
 pub use vulkan::{Vulkan, VulkanBuilder};
 
+/// WASM-specfici blocks (target wasm32-unknown-unknown)
 #[cfg(target_arch = "wasm32")]
-mod wasm_sdr;
-#[cfg(target_arch = "wasm32")]
-pub use wasm_sdr::WasmSdr;
-#[cfg(target_arch = "wasm32")]
-mod wasm_freq;
-#[cfg(target_arch = "wasm32")]
-pub use wasm_freq::WasmFreq;
+pub mod wasm;
 
 #[cfg(not(target_arch = "wasm32"))]
 mod websocket_sink;
 #[cfg(not(target_arch = "wasm32"))]
 pub use websocket_sink::{WebsocketSink, WebsocketSinkBuilder, WebsocketSinkMode};
+
+#[cfg(not(target_arch = "wasm32"))]
+mod websocket_pmt_sink;
+#[cfg(not(target_arch = "wasm32"))]
+pub use websocket_pmt_sink::WebsocketPmtSink;
 
 #[cfg(feature = "wgpu")]
 mod wgpu;
@@ -263,8 +268,3 @@ pub use zynq::Zynq;
 mod zynq_sync;
 #[cfg(feature = "zynq")]
 pub use zynq_sync::ZynqSync;
-
-#[cfg(target_arch = "wasm32")]
-mod wasm_ws_sink;
-#[cfg(target_arch = "wasm32")]
-pub use wasm_ws_sink::WasmWsSink;
