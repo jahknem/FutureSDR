@@ -438,52 +438,52 @@ fn search(r: usize, ext: &mut [usize], gridsize: usize, e: &[f64]) -> i8 {
 /// OUTPUT:
 /// -------
 /// double h[] - Impulse Response of final filter [N]
-fn freq_sample(n: usize, a: &[f64], symm: bool) -> Vec<f64> {
-    let m = (n - 1) as f64 / 2.0;
+fn freq_sample(n_coeffs: usize, a: &[f64], symm: bool) -> Vec<f64> {
+    let m = (n_coeffs - 1) as f64 / 2.0;
     if symm == POSITIVE {
-        if (n % 2) != 0 {
-            (0..n)
+        if (n_coeffs % 2) != 0 {
+            (0..n_coeffs)
                 .map(|n| {
                     let mut val = a[0];
-                    let x = 2. * PI * (n as f64 - m) / n as f64;
-                    for (k, &a_k) in a[1..(m as usize)].iter().enumerate() {
+                    let x = 2. * PI * (n as f64 - m) / n_coeffs as f64;
+                    for (k, &a_k) in a.iter().enumerate().take(m as usize).skip(1) {
                         val += 2.0 * a_k * (x * k as f64).cos();
                     }
-                    val / n as f64
+                    val / n_coeffs as f64
                 })
                 .collect()
         } else {
-            (0..n)
+            (0..n_coeffs)
                 .map(|n| {
                     let mut val = a[0];
-                    let x = 2. * PI * (n as f64 - m) / n as f64;
-                    for (k, &a_k) in a[1..(n / 2 - 1)].iter().enumerate() {
+                    let x = 2. * PI * (n as f64 - m) / n_coeffs as f64;
+                    for (k, &a_k) in a.iter().enumerate().take(n_coeffs / 2 - 1).skip(1) {
                         val += 2.0 * a_k * (x * k as f64).cos();
                     }
-                    val / n as f64
+                    val / n_coeffs as f64
                 })
                 .collect()
         }
-    } else if (n % 2) != 0 {
-        (0..n)
+    } else if (n_coeffs % 2) != 0 {
+        (0..n_coeffs)
             .map(|n| {
                 let mut val = 0.;
-                let x = 2. * PI * (n as f64 - m) / n as f64;
-                for (k, &a_k) in a[1..(m as usize)].iter().enumerate() {
+                let x = 2. * PI * (n as f64 - m) / n_coeffs as f64;
+                for (k, &a_k) in a.iter().enumerate().take(m as usize).skip(1) {
                     val += 2.0 * a_k * (x * k as f64).sin();
                 }
-                val / n as f64
+                val / n_coeffs as f64
             })
             .collect()
     } else {
-        (0..n)
+        (0..n_coeffs)
             .map(|n| {
-                let mut val = a[n / 2] * (PI * (n as f64 - m)).sin();
-                let x = 2. * PI * (n as f64 - m) / n as f64;
-                for (k, &a_k) in a[1..(n / 2 - 1)].iter().enumerate() {
+                let mut val = a[n_coeffs / 2] * (PI * (n as f64 - m)).sin();
+                let x = 2. * PI * (n as f64 - m) / n_coeffs as f64;
+                for (k, &a_k) in a.iter().enumerate().take(n_coeffs / 2 - 1).skip(1) {
                     val += 2.0 * a_k * (x * k as f64).sin();
                 }
-                val / n as f64
+                val / n_coeffs as f64
             })
             .collect()
     }
