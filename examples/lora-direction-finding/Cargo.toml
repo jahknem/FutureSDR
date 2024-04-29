@@ -1,0 +1,26 @@
+[package]
+name = "lora_direction_finding"
+version = "0.1.0"
+edition = "2021"
+default-run = "main"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[workspace]
+
+[[bin]]
+name = "main"
+path = "src/main.rs"
+
+[dependencies]
+anyhow = "1.0"
+futures = "0.3.21"
+clap = { version = "4.4.0", features = ["derive"] }
+futuresdr = { path = "../..", features = ["seify"] }
+futuredsp = { path = "../../crates/futuredsp"}
+seify = { version = ">=0.9.0", features = ["aaronia_http"] }
+lora = { path = "../lora"}
+rustfft = "6.1.0"
+ordered-float = "3.9.1"
+scilib = "1.0.0"
+num-traits = "0.2"

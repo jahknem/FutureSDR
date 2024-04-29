@@ -833,10 +833,10 @@ impl Kernel for FrameSync {
                 }
                 self.bin_idx = bin_idx_new_opt;
                 if self.symbol_cnt == self.m_n_up_req {
-                    info!(
-                        "..:: Frame Detected ({:.1}MHz)",
-                        self.m_center_freq as f32 / 1.0e6
-                    );
+                    //info!(
+                    //    "..:: Frame Detected ({:.1}MHz)",
+                    //    self.m_center_freq as f32 / 1.0e6
+                    //);
                     // info!(
                     //     "FrameSync: detected required nuber of upchirps ({})",
                     //     Into::<usize>::into(self.m_n_up_req)
@@ -1171,8 +1171,8 @@ impl Kernel for FrameSync {
                         let mut one_symbol_off = false;
                         let mut off_by_one_id = false;
 
-                        info!("netid1: {} (soll {})", netid1, self.m_sync_words[0]);
-                        info!("netid2: {} (soll {})", netid2, self.m_sync_words[1]);
+                        //info!("netid1: {} (soll {})", netid1, self.m_sync_words[0]);
+                        //info!("netid2: {} (soll {})", netid2, self.m_sync_words[1]);
 
                         if (netid1 as i32 - self.m_sync_words[0] as i32).abs() > 2
                         // wrong id 1, (we allow an offset of 2)

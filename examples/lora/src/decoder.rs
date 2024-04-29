@@ -74,7 +74,7 @@ impl Decoder {
                         dewhitened.push((high_nib << 4) | low_nib);
                     }
 
-                    info!("..:: Payload");
+                    //info!("..:: Payload");
 
                     if frame.has_crc {
                         let l = frame.nibbles.len();
@@ -93,10 +93,10 @@ impl Decoder {
                             ((dewhitened[l - 2] as u16) + ((dewhitened[l - 1] as u16) << 8)) as i32
                                 == crc as i32;
                         if !crc_valid {
-                            info!("crc check failed");
+                            //info!("crc check failed");
                             return Ok(Pmt::Ok);
                         } else {
-                            info!("crc check passed");
+                            //info!("crc check passed");
                         }
                     }
 
@@ -120,7 +120,7 @@ impl Decoder {
                     mio.output_mut(1).post(Pmt::Blob(rftap.clone())).await;
 
                     let data = String::from_utf8_lossy(&dewhitened);
-                    info!("received frame: {}", data);
+                    //info!("received frame: {}", data);
                     mio.output_mut(0).post(Pmt::Blob(dewhitened)).await;
 
                     Pmt::Ok
