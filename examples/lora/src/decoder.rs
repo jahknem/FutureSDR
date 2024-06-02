@@ -99,6 +99,8 @@ impl Decoder {
                             //info!("crc check passed");
                         }
                     }
+                    let data = String::from_utf8_lossy(&dewhitened);
+                    println!("received: {}", data);
 
                     let mut rftap = vec![0; dewhitened.len() + 12 + 15];
                     rftap[0..4].copy_from_slice("RFta".as_bytes());

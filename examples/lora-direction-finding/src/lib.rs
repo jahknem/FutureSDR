@@ -26,7 +26,7 @@ use lora::HeaderMode;
 
 const SOFT_DECODING: bool = false;
 const SPREADING_FACTOR: usize = 7;
-const BANDWIDTH: f64 = 500_000.0;
+const BANDWIDTH: f64 = 125_000.0;
 const SYNC_WORD: u8 = 0x12;
 const PAYLOAD_LENGTH: usize = 26;
 const HEADER: HeaderMode = HeaderMode::Implicit {
@@ -39,6 +39,7 @@ fn find_usable_device() -> Result<Option<Device<Arc<dyn DeviceTrait<RxStreamer =
     for args in seify::enumerate()? {
         let device = seify::Device::from_args(args)?;
         let num_rx = device.num_channels(seify::Direction::Rx)?;
+        println!("Device: {:?}", device.antennas(seify::Direction::Rx, 0));
         if num_rx >= 2 {
             return Ok(Some(device));
         }
@@ -48,8 +49,8 @@ fn find_usable_device() -> Result<Option<Device<Arc<dyn DeviceTrait<RxStreamer =
 }
 
 pub fn add_lora_decoder(mut fg: &mut Flowgraph, sample_rate: f64, frequency: f64) -> Result<(usize, usize)> {
-    let downsample =
-        FirBuilder::new_resampling::<Complex32, Complex32>(1, (sample_rate / BANDWIDTH) as usize);
+    //let downsample =
+    //    FirBuilder::new_resampling::<Complex32, Complex32>(1, (sample_rate / BANDWIDTH) as usize);
     let frame_sync = FrameSync::new(
         frequency as u32,
         BANDWIDTH as u32,
@@ -64,19 +65,21 @@ pub fn add_lora_decoder(mut fg: &mut Flowgraph, sample_rate: f64, frequency: f64
     let gray_mapping = GrayMapping::new(SOFT_DECODING);
     let deinterleaver = Deinterleaver::new(SOFT_DECODING);
     let hamming_dec = HammingDec::new(SOFT_DECODING);
-    let header_decoder = HeaderDecoder::new(HEADER, false);
+    let header_decoder = HeaderDecoder::new(HeaderMode::Explicit, false);
     let decoder = Decoder::new();
 
     let (sender, mut receiver) = mpsc::channel::<Pmt>(10);
     let channel_sink = MessagePipe::new(sender);
 
     connect!(fg,
-             downsample [Circular::with_size(2 * 4 * 8192 * 4)] frame_sync > fft_demod > gray_mapping > deinterleaver > hamming_dec > header_decoder;
+             //downsample [Circular::with_size(2 * 4 * 8192 * 4)] frame_sync > fft_demod > gray_mapping > deinterleaver 
+             frame_sync > fft_demod > gray_mapping > deinterleaver > hamming_dec > header_decoder;
              frame_sync.log_out > null_sink;
              header_decoder.frame_info | frame_sync.frame_info;
              header_decoder | decoder);
 
-    Ok((downsample, decoder))
+    //Ok((downsample, decoder))
+    Ok((frame_sync, decoder))
 }
 
 pub fn build_flowgraph(
@@ -91,7 +94,9 @@ pub fn build_flowgraph(
     let mut src = SourceBuilder::new()
         .device(device.clone())
         .channels(vec![0, 1])
-        .sample_rate(sample_rate)
+    //    .sample_rate(sample_rate)
+        .sample_rate(BANDWIDTH as f64)
+        .antenna("TX/RX")
         .frequency(frequency)
         .gain(gain)
         .build()?;
@@ -105,8 +110,8 @@ pub fn build_flowgraph(
     let (sender, mut receiver2) = mpsc::channel::<Pmt>(10);
     let channel_sink2 = MessagePipe::new(sender);
 
-    connect!(fg, src.out1 > lora_dec_in1; lora_dec_out1.data | channel_sink1);
-    connect!(fg, src.out2 > lora_dec_in2; lora_dec_out2.data | channel_sink2);
+    connect!(fg, src.out1 [Circular::with_size(2 * 4 * 8192 * 4)] lora_dec_in1; lora_dec_out1.data | channel_sink1);
+    connect!(fg, src.out2 [Circular::with_size(2 * 4 * 8192 * 4)] lora_dec_in2; lora_dec_out2.data | channel_sink2);
 
     Ok((fg, receiver1, receiver2))
 }

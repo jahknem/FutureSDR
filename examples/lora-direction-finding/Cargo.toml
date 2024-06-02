@@ -18,7 +18,7 @@ futures = "0.3.21"
 clap = { version = "4.4.0", features = ["derive"] }
 futuresdr = { path = "../..", features = ["seify"] }
 futuredsp = { path = "../../crates/futuredsp"}
-seify = { version = ">=0.9.0", features = ["aaronia_http"] }
+seify = { version = "=0.10.0", features = ["aaronia_http"] }
 lora = { path = "../lora"}
 rustfft = "6.1.0"
 ordered-float = "3.9.1"

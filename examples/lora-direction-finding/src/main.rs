@@ -14,7 +14,7 @@ struct Args {
     #[clap(long, default_value_t = 50.0)]
     gain: f64,
     /// RX Frequency
-    #[clap(long, default_value_t = 864.25e6)]
+    #[clap(long, default_value_t = 868.10e6)]
     frequency: f64,
 }
 

@@ -524,11 +524,9 @@ impl Kernel for FftDemod {
                 warn!("FftDemod: not enough space in output buffer.");
             }
         } else if self.m_soft_decoding && self.llrs_block.len() == block_size {
-            // HERE!
             let out_buf = sio.output(0).slice::<[LLR; MAX_SF]>();
             if out_buf.len() >= block_size {
                 out_buf[0..block_size].copy_from_slice(&self.llrs_block);
-                println!("LLR Blocks; {:?}", &self.llrs_block);
                 self.llrs_block.clear();
                 items_to_output = block_size
             } else {

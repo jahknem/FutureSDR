@@ -1,3 +1,6 @@
+use std::sync::Arc;
+
+
 use clap::Parser;
 use futuresdr::anyhow::Result;
 use futuresdr::blocks::seify::SourceBuilder;
@@ -9,6 +12,8 @@ use futuresdr::num_complex::Complex32;
 use futuresdr::runtime::buffer::circular::Circular;
 use futuresdr::runtime::Flowgraph;
 use futuresdr::runtime::Runtime;
+use seify::{Device, DeviceTrait, RxStreamer, TxStreamer};
+
 
 use lora::Decoder;
 use lora::Deinterleaver;
@@ -45,6 +50,18 @@ struct Args {
     sync_word: u8,
 }
 
+fn find_usable_device() -> Result<Option<Device<Arc<dyn DeviceTrait<RxStreamer = Box<(dyn RxStreamer + 'static)>, TxStreamer = Box<(dyn TxStreamer + 'static)>> + Sync>>>> {
+    for args in seify::enumerate()? {
+        let device = seify::Device::from_args(args)?;
+        let num_rx = device.num_channels(seify::Direction::Rx)?;
+        if num_rx >= 2 {
+            return Ok(Some(device));
+        }
+    }
+
+    return Ok(None)
+}
+
 fn main() -> Result<()> {
     let args = Args::parse();
     let soft_decoding: bool = false;
@@ -53,7 +70,8 @@ fn main() -> Result<()> {
     let mut fg = Flowgraph::new();
 
     let mut src = SourceBuilder::new()
-        .sample_rate(1e6)
+        .device(find_usable_device().unwrap().unwrap())
+        .sample_rate(125000.)
         .frequency(args.frequency)
         .gain(args.gain);
 
@@ -65,8 +83,8 @@ fn main() -> Result<()> {
     }
     let src = fg.add_block(src.build().unwrap());
 
-    let downsample =
-        FirBuilder::new_resampling::<Complex32, Complex32>(1, 1000000 / args.bandwidth);
+    //let downsample =
+    //    FirBuilder::new_resampling::<Complex32, Complex32>(1, 200000 / args.bandwidth);
     let frame_sync = FrameSync::new(
         args.frequency as u32,
         args.bandwidth as u32,
@@ -86,7 +104,10 @@ fn main() -> Result<()> {
     let udp_data = BlobToUdp::new("127.0.0.1:55555");
     let udp_rftap = BlobToUdp::new("127.0.0.1:55556");
 
-    connect!(fg, src > downsample [Circular::with_size(2 * 4 * 8192 * 4)] frame_sync > fft_demod > gray_mapping > deinterleaver > hamming_dec > header_decoder;
+    connect!(fg, 
+        //src > downsample [Circular::with_size(2 * 4 * 8192 * 4)] frame_sync 
+        src [Circular::with_size(2 * 4 * 8192 * 4)] frame_sync 
+        > fft_demod > gray_mapping > deinterleaver > hamming_dec > header_decoder;
         frame_sync.log_out > null_sink;
         header_decoder.frame_info | frame_sync.frame_info;
         header_decoder | decoder;
