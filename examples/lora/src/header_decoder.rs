@@ -77,6 +77,7 @@ impl HeaderDecoder {
         crc: bool,
         ldro_mode: bool,
         err: bool,
+        timestamp: u64,
     ) {
         let mut header_content: HashMap<String, Pmt> = HashMap::new();
 
@@ -85,6 +86,7 @@ impl HeaderDecoder {
         header_content.insert("crc".to_string(), Pmt::Bool(crc));
         header_content.insert("ldro_mode".to_string(), Pmt::Bool(ldro_mode));
         header_content.insert("err".to_string(), Pmt::Bool(err));
+
         mio.output_mut(1)
             .post(Pmt::MapStrPmt(header_content.clone()))
             .await;
@@ -103,6 +105,7 @@ impl Kernel for HeaderDecoder {
         let input = sio.input(0).slice::<u8>();
         let mut nitem_to_consume = input.len();
         let mut is_header = false;
+        let mut timestamp = 0u64;
 
         let tags: Vec<(usize, &HashMap<String, Pmt>)> = sio
             .input(0)
@@ -133,6 +136,11 @@ impl Kernel for HeaderDecoder {
                     nitem_to_consume = tags[1].0 - tags[0].0;
                 }
                 is_header = if let Pmt::Bool(tmp) = tags[0].1.get("is_header").unwrap() {
+                    *tmp
+                } else {
+                    panic!()
+                };
+                timestamp = if let Pmt::U64(tmp) = tags[0].1.get("timestamp").unwrap() {
                     *tmp
                 } else {
                     panic!()
@@ -169,6 +177,7 @@ impl Kernel for HeaderDecoder {
                     has_crc,
                     self.ldro_mode,
                     false,
+                    timestamp,
                 )
                 .await;
 
@@ -236,6 +245,7 @@ impl Kernel for HeaderDecoder {
                     has_crc,
                     self.ldro_mode,
                     head_err,
+                    timestamp,
                 )
                 .await;
 

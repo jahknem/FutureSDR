@@ -48,7 +48,7 @@ fn find_usable_device() -> Result<Option<Device<Arc<dyn DeviceTrait<RxStreamer =
     return Ok(None)
 }
 
-pub fn add_lora_decoder(mut fg: &mut Flowgraph, sample_rate: f64, frequency: f64) -> Result<(usize, usize)> {
+pub fn add_lora_decoder(mut fg: &mut Flowgraph, sample_rate: f64, frequency: f64) -> Result<(usize, usize, Receiver<Pmt>)> {
     //let downsample =
     //    FirBuilder::new_resampling::<Complex32, Complex32>(1, (sample_rate / BANDWIDTH) as usize);
     let frame_sync = FrameSync::new(
@@ -76,17 +76,18 @@ pub fn add_lora_decoder(mut fg: &mut Flowgraph, sample_rate: f64, frequency: f64
              frame_sync > fft_demod > gray_mapping > deinterleaver > hamming_dec > header_decoder;
              frame_sync.log_out > null_sink;
              header_decoder.frame_info | frame_sync.frame_info;
+             header_decoder.frame_info | channel_sink;
              header_decoder | decoder);
 
     //Ok((downsample, decoder))
-    Ok((frame_sync, decoder))
+    Ok((frame_sync, decoder, receiver))
 }
 
 pub fn build_flowgraph(
     sample_rate: f64,
     frequency: f64,
     gain: f64
-) -> Result<(Flowgraph, Receiver<Pmt>, Receiver<Pmt>)> {
+) -> Result<(Flowgraph, Receiver<Pmt>, Receiver<Pmt>, Receiver<Pmt>, Receiver<Pmt>)> {
     let mut fg = Flowgraph::new();
 
     let device = find_usable_device()?.unwrap();
@@ -101,8 +102,8 @@ pub fn build_flowgraph(
         .gain(gain)
         .build()?;
 
-    let (lora_dec_in1, lora_dec_out1) = add_lora_decoder(&mut fg, sample_rate, frequency)?;
-    let (lora_dec_in2, lora_dec_out2) = add_lora_decoder(&mut fg, sample_rate, frequency)?;
+    let (lora_dec_in1, lora_dec_out1, lora_frame_info_receiver1) = add_lora_decoder(&mut fg, sample_rate, frequency)?;
+    let (lora_dec_in2, lora_dec_out2, lora_frame_info_receiver2) = add_lora_decoder(&mut fg, sample_rate, frequency)?;
 
     let (sender, mut receiver1) = mpsc::channel::<Pmt>(10);
     let channel_sink1 = MessagePipe::new(sender);
@@ -113,5 +114,5 @@ pub fn build_flowgraph(
     connect!(fg, src.out1 [Circular::with_size(2 * 4 * 8192 * 4)] lora_dec_in1; lora_dec_out1.data | channel_sink1);
     connect!(fg, src.out2 [Circular::with_size(2 * 4 * 8192 * 4)] lora_dec_in2; lora_dec_out2.data | channel_sink2);
 
-    Ok((fg, receiver1, receiver2))
+    Ok((fg, receiver1, receiver2, lora_frame_info_receiver1, lora_frame_info_receiver2))
 }

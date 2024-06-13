@@ -23,7 +23,7 @@ fn main() -> Result<()> {
     let soft_decoding: bool = false;
 
     let rt = Runtime::new();
-    let (fg, mut receiver1, mut receiver2) = lora_direction_finding::build_flowgraph(
+    let (fg, mut receiver1, mut receiver2, mut frame_info_receiver1, mut frame_info_receiver2) = lora_direction_finding::build_flowgraph(
         args.sample_rate,
         args.frequency,
         args.gain,
@@ -40,12 +40,24 @@ fn main() -> Result<()> {
     });
 
     rt.spawn_background(async move {
+        while let Some(pmt) = frame_info_receiver1.next().await {
+            println!("received frame timestamp (ch. 1) {:?}", pmt);
+        }
+    });
+
+    rt.spawn_background(async move {
         while let Some(pmt) = receiver2.next().await {
             if let Pmt::Blob(bytes) = pmt {
                 println!("received frame (ch. 2): {:02x?}", bytes);
             } else {
                 println!("{:?}", pmt);
             }
+        }
+    });
+
+    rt.spawn_background(async move {
+        while let Some(pmt) = frame_info_receiver2.next().await {
+            println!("received frame timestamp (ch. 2) {:?}", pmt);
         }
     });
 

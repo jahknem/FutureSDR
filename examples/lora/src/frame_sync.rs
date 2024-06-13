@@ -2,6 +2,7 @@ use futuresdr::anyhow::Result;
 use futuresdr::macros::async_trait;
 use std::collections::HashMap;
 use std::f32::consts::PI;
+use std::time::Instant;
 
 use futuresdr::futures::channel::mpsc;
 
@@ -101,6 +102,7 @@ pub struct FrameSync {
     m_received_head: bool, //< indicate that the header has be decoded and received by this block
     // m_noise_est: f64,            //< estimate of the noise
     in_down: Vec<Complex32>,     //< downsampled input
+    in_down_timestamps: Vec<u64>,
     m_downchirp: Vec<Complex32>, //< Reference downchirp
     m_upchirp: Vec<Complex32>,   //< Reference upchirp
 
@@ -142,6 +144,7 @@ pub struct FrameSync {
     // m_should_log: bool, //< indicate that the sync values should be logged
     // off_by_one_id: f32, //< Indicate that the network identifiers where off by one and corrected (float used as saved in a float32 bin file)
     tag_from_msg_handler_to_work_channel: (mpsc::Sender<Pmt>, mpsc::Receiver<Pmt>),
+    origin_timestamp: Instant,
 }
 
 impl FrameSync {
@@ -169,7 +172,7 @@ impl FrameSync {
         let (m_upchirp_tmp, m_downchirp_tmp) = build_ref_chirps(sf, 1); // vec![0; m_number_of_bins_tmp]
                                                                         // let (m_upchirp_tmp, m_downchirp_tmp) = build_ref_chirps(sf, os_factor); // TODO
 
-        Block::new(
+        let block = Block::new(
             BlockMetaBuilder::new("FrameSync").build(),
             StreamIoBuilder::new()
                 .add_input::<Complex32>("in")
@@ -216,7 +219,7 @@ impl FrameSync {
                 cfo_frac_correc: vec![Complex32::new(0., 0.); m_number_of_bins_tmp], //< cfo frac correction vector
                 // cfo_sfo_frac_correc: vec![Complex32::new(0., 0.); m_number_of_bins_tmp], //< correction vector accounting for cfo and sfo
                 symb_corr: vec![Complex32::new(0., 0.); m_number_of_bins_tmp], //< symbol with CFO frac corrected
-                in_down: vec![Complex32::new(0., 0.); m_number_of_bins_tmp],   //< downsampled input
+                in_down: vec![(Complex32::new(0., 0.); m_number_of_bins_tmp],   //< downsampled input
                 preamble_raw: vec![Complex32::new(0., 0.); m_number_of_bins_tmp * preamble_len_tmp], //<vector containing the preamble upchirps without any synchronization
                 net_id_samp: vec![
                     Complex32::new(0., 0.);
@@ -259,8 +262,10 @@ impl FrameSync {
                 // m_should_log: false, //< indicate that the sync values should be logged
                 // off_by_one_id: f32  // local to work
                 tag_from_msg_handler_to_work_channel: mpsc::channel::<Pmt>(1),
+                origin_timestamp: Instant::now(),
             },
-        )
+        );
+        block
     }
 
     fn my_roundf(number: f32) -> isize {
@@ -769,6 +774,19 @@ impl Kernel for FrameSync {
             .step_by(self.m_os_factor)
             .copied()
             .collect();
+
+        // self.in_down = input
+        //     [indexing_offset..(indexing_offset + self.m_number_of_bins * self.m_os_factor)]
+        //     .iter()
+        //     .enumerate()
+        //     .step_by(self.m_os_factor)
+        //     .map(|(index, &sample)| {
+        //         // Calculate and store the timestamp for each sample
+        //         in_down_timestamps.push((indexing_offset + index * self.m_os_factor) as u64);
+        //         sample // Continue collecting only the sample for in_down
+        //     })
+        //     .copied()
+        //     .collect();
 
         match self.m_state {
             DecoderState::Detect => {
@@ -1291,6 +1309,7 @@ impl Kernel for FrameSync {
                             frame_info.insert(String::from("cfo_int"), Pmt::F32(m_cfo_int as f32));
                             frame_info.insert(String::from("cfo_frac"), Pmt::F64(self.m_cfo_frac));
                             frame_info.insert(String::from("sf"), Pmt::Usize(self.m_sf));
+                            frame_info.insert(String::from("timestamp"), Pmt::U64(self.origin_timestamp.elapsed().as_nanos() as u64));
                             let frame_info_pmt = Pmt::MapStrPmt(frame_info);
 
                             sio.output(0).add_tag(
@@ -1400,6 +1419,17 @@ impl Kernel for FrameSync {
         if items_to_output > 0 {
             // info!("FrameSync: producing {} samples", items_to_output);
         }
+        let mut frame_info: HashMap<String, Pmt> = HashMap::new();
+
+        // frame_info.insert(String::from("is_header"), Pmt::Bool(true));
+        // frame_info.insert(String::from("cfo_int"), Pmt::F32(m_cfo_int as f32));
+        // frame_info.insert(String::from("cfo_frac"), Pmt::F64(self.m_cfo_frac));
+        // frame_info.insert(String::from("sf"), Pmt::Usize(self.m_sf));
+        // let frame_info_pmt = Pmt::MapStrPmt(frame_info);
+        // sio.output(0).add_tag(
+        //     0,
+        //     Tag::NamedAny("frame_info".to_string(), Box::new(frame_info_tag)),
+        // );
         sio.output(0).produce(items_to_output);
         Ok(())
     }
