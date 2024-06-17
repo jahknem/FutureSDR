@@ -9,7 +9,6 @@ use crate::runtime::BlockMessage;
 use crate::runtime::PortId;
 use slab::Slab;
 use std::any::{Any, TypeId};
-use std::cmp::{Eq, PartialEq};
 use std::fmt::Debug;
 use std::hash::{Hash, Hasher};
 
@@ -358,6 +357,18 @@ impl Topology {
     /// Get mutable reference to a block
     pub fn block_mut(&mut self, id: usize) -> Option<&mut Block> {
         self.blocks.get_mut(id).and_then(|v| v.as_mut())
+    }
+
+    /// Iterate over all blocks
+    pub fn blocks(&self) -> impl Iterator<Item = &Block> {
+        self.blocks.iter().filter_map(|(_id, block)| block.as_ref())
+    }
+
+    /// Mutably iterate over all blocks
+    pub fn blocks_mut(&mut self) -> impl Iterator<Item = &mut Block> {
+        self.blocks
+            .iter_mut()
+            .filter_map(|(_id, block)| block.as_mut())
     }
 }
 

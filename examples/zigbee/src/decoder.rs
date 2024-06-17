@@ -130,7 +130,7 @@ impl Kernel for Decoder {
                             if let Some(o) = byte {
                                 let len = (i << 4) | *o;
                                 self.state = State::Decode {
-                                    len: len as usize,
+                                    len: (len as usize).saturating_sub(2),
                                     data: Vec::new(),
                                     byte: None,
                                 };
