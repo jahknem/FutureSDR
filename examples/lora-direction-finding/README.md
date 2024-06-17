@@ -39,3 +39,15 @@ Duplicate using split block (add lambda function that maps from a to b and c)
 
 
 Software modulation using tx.rs
+
+
+m_sto_frac wo ein Header detected wird 
+int m_cfo_int wo ein Header detected wird.
+k_hat
+STO_int (=k_hat - CFO_int)
+
+frac wie viel innerhalb eines samples
+int wie viel innerhalb eines frame
+
+
+Sollte bei software only 0 sein.

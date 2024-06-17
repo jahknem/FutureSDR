@@ -12,6 +12,10 @@ default-run = "main"
 name = "main"
 path = "src/main.rs"
 
+[[bin]]
+name = "tx_rx"
+path = "src/tx_rx.rs"
+
 [dependencies]
 anyhow = "1.0"
 futures = "0.3.21"
