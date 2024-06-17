@@ -86,6 +86,7 @@ impl HeaderDecoder {
         header_content.insert("crc".to_string(), Pmt::Bool(crc));
         header_content.insert("ldro_mode".to_string(), Pmt::Bool(ldro_mode));
         header_content.insert("err".to_string(), Pmt::Bool(err));
+        header_content.insert("timestamp".to_string(), Pmt::U64(timestamp));
 
         mio.output_mut(1)
             .post(Pmt::MapStrPmt(header_content.clone()))
@@ -105,7 +106,7 @@ impl Kernel for HeaderDecoder {
         let input = sio.input(0).slice::<u8>();
         let mut nitem_to_consume = input.len();
         let mut is_header = false;
-        let mut timestamp = 0u64;
+        let mut timestamp = 0;
 
         let tags: Vec<(usize, &HashMap<String, Pmt>)> = sio
             .input(0)
@@ -132,18 +133,27 @@ impl Kernel for HeaderDecoder {
             if tags[0].0 != 0 {
                 nitem_to_consume = tags[0].0;
             } else {
+                // Print tag wtih {.?}
+                // println!("tag {:?}", tags[0].1);
                 if tags.len() >= 2 {
                     nitem_to_consume = tags[1].0 - tags[0].0;
                 }
                 is_header = if let Pmt::Bool(tmp) = tags[0].1.get("is_header").unwrap() {
                     *tmp
+                    
                 } else {
                     panic!()
                 };
-                timestamp = if let Pmt::U64(tmp) = tags[0].1.get("timestamp").unwrap() {
-                    *tmp
-                } else {
-                    panic!()
+                timestamp = match tags[0].1.get("timestamp") {
+                    Some(Pmt::U64(tmp)) => *tmp,
+                    None => {
+                        println!("Warning: 'timestamp' not found, defaulting to 0");
+                        0 // Use default value
+                    },
+                    _ => {
+                        println!("Warning: Unexpected type for 'timestamp', expected U64, defaulting to 0");
+                        0 // Use default value
+                    }
                 };
             }
         }

@@ -24,6 +24,8 @@ use lora::HammingDec;
 use lora::HeaderDecoder;
 use lora::HeaderMode;
 
+use lora_direction_finding::phase_difference::PhaseDifference;
+
 const SOFT_DECODING: bool = false;
 const SPREADING_FACTOR: usize = 7;
 const BANDWIDTH: f64 = 125_000.0;
@@ -74,7 +76,13 @@ pub fn add_lora_decoder(mut fg: &mut Flowgraph, sample_rate: f64, frequency: f64
     connect!(fg,
              //downsample [Circular::with_size(2 * 4 * 8192 * 4)] frame_sync > fft_demod > gray_mapping > deinterleaver 
              frame_sync > fft_demod > gray_mapping > deinterleaver > hamming_dec > header_decoder;
+
+             frame_sync > fft_demod > gray_mapping;
+             gray_mapping.out_0 > deinterleaver > hamming_dec > header_decoder;
+             gray_mapping.out_1 > deinterleaver > hamming_dec > header_decoder;
              frame_sync.log_out > null_sink;
+            //  frame_sync.phase_out | phase_difference.in_0;
+            //  frame_sync_2.phase_out | phase_difference.in_1;
              header_decoder.frame_info | frame_sync.frame_info;
              header_decoder.frame_info | channel_sink;
              header_decoder | decoder);

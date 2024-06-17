@@ -379,7 +379,10 @@ impl Kernel for FftDemod {
                 } => {
                     if n == "frame_info" {
                         match (**val).downcast_ref().unwrap() {
-                            Pmt::MapStrPmt(map) => Some(map.clone()),
+                            Pmt::MapStrPmt(map) => {
+                                // println!("fft_demod tag: {:?}", map);
+                                Some(map.clone())
+                            },
                             _ => None,
                         }
                     } else {
@@ -496,6 +499,7 @@ impl Kernel for FftDemod {
             }
             items_to_consume += self.m_samples_per_symbol;
             if let Some(tag) = tag_tmp {
+                // println!("Forwarding frame_info tag: {:?}", tag);
                 sio.output(0).add_tag(
                     0,
                     Tag::NamedAny("frame_info".to_string(), Box::new(Pmt::MapStrPmt(tag))),

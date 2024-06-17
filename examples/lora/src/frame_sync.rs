@@ -102,7 +102,6 @@ pub struct FrameSync {
     m_received_head: bool, //< indicate that the header has be decoded and received by this block
     // m_noise_est: f64,            //< estimate of the noise
     in_down: Vec<Complex32>,     //< downsampled input
-    in_down_timestamps: Vec<u64>,
     m_downchirp: Vec<Complex32>, //< Reference downchirp
     m_upchirp: Vec<Complex32>,   //< Reference upchirp
 
@@ -219,7 +218,7 @@ impl FrameSync {
                 cfo_frac_correc: vec![Complex32::new(0., 0.); m_number_of_bins_tmp], //< cfo frac correction vector
                 // cfo_sfo_frac_correc: vec![Complex32::new(0., 0.); m_number_of_bins_tmp], //< correction vector accounting for cfo and sfo
                 symb_corr: vec![Complex32::new(0., 0.); m_number_of_bins_tmp], //< symbol with CFO frac corrected
-                in_down: vec![(Complex32::new(0., 0.); m_number_of_bins_tmp],   //< downsampled input
+                in_down: vec![Complex32::new(0., 0.); m_number_of_bins_tmp],   //< downsampled input
                 preamble_raw: vec![Complex32::new(0., 0.); m_number_of_bins_tmp * preamble_len_tmp], //<vector containing the preamble upchirps without any synchronization
                 net_id_samp: vec![
                     Complex32::new(0., 0.);
@@ -619,6 +618,7 @@ impl FrameSync {
                 frame_info.insert(String::from("symb_numb"), Pmt::Usize(self.m_symb_numb));
                 frame_info.remove("ldro_mode");
                 frame_info.insert(String::from("ldro"), Pmt::Bool(m_ldro as usize != 0));
+                frame_info.insert(String::from("timestamp"), Pmt::U64(self.origin_timestamp.elapsed().as_nanos() as u64));
                 let frame_info_pmt = Pmt::MapStrPmt(frame_info);
                 self.tag_from_msg_handler_to_work_channel
                     .0
@@ -895,8 +895,8 @@ impl Kernel for FrameSync {
                         &self.preamble_raw[(self.m_number_of_bins - self.k_hat)..],
                     );
                     self.preamble_upchirps = preamble_upchirps_tmp;
-                    self.m_cfo_frac = cfo_frac_tmp;
-                    self.m_sto_frac = self.estimate_sto_frac();
+                    self.m_cfo_frac = cfo_frac_tmp; // Nonrelevant
+                    self.m_sto_frac = self.estimate_sto_frac(); // offset in a sample (offset of the samples in integers (x / sample rate)) => zeit des samples * (integer + fractional offset)
                     // create correction vector
                     self.cfo_frac_correc = (0..self.m_number_of_bins)
                         .map(|x| {
@@ -1311,6 +1311,13 @@ impl Kernel for FrameSync {
                             frame_info.insert(String::from("sf"), Pmt::Usize(self.m_sf));
                             frame_info.insert(String::from("timestamp"), Pmt::U64(self.origin_timestamp.elapsed().as_nanos() as u64));
                             let frame_info_pmt = Pmt::MapStrPmt(frame_info);
+                            // println!("frame_info_pmt {:?}", frame_info_pmt.clone());
+
+
+                            // HERE OUTPUT FOR THESE VARS: (in separate message output (PMT<hashmap>))
+                            // m_cfo_int, m_cfo_frac, k_hat, (total_consumed_samples)
+                            
+
 
                             sio.output(0).add_tag(
                                 0,
@@ -1415,7 +1422,8 @@ impl Kernel for FrameSync {
         //     warn!("FrameSync: not enough samples in input buffer, waiting for more.")
         // }
         // info!("FrameSync: consuing {} samples, producing {}", items_to_consume, items_to_output);
-        sio.input(0).consume(items_to_consume as usize);
+        sio.input(0).consume(items_to_consume as usize); // An jeder stelle wo items_to_consume steht 
+        // items_to_consume ist die Menge an Samples die aus der queue genommen werden
         if items_to_output > 0 {
             // info!("FrameSync: producing {} samples", items_to_output);
         }

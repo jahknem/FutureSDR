@@ -1,0 +1,2 @@
+{"sf": Usize(7), "cfo_frac": F64(-0.43426016411680723), "is_header": Bool(true), "cfo_int": F32(-7.0), "timestamp": U64(2529112488)}
+{"pay_len": Usize(16), "is_header": Bool(false), "symb_numb": Usize(33), "err": Bool(false), "ldro": Bool(false), "cr": Usize(1), "crc": Bool(false)}
