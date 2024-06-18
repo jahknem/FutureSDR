@@ -22,10 +22,13 @@ impl PhaseDifference {
             StreamIoBuilder::new()
                 .add_input::<Complex<f32>>("in0")
                 .add_input::<Complex<f32>>("in1")
+                .build(),
+            MessageIoBuilder::new()
                 .add_output::<f32>("out")
                 .build(),
-            MessageIoBuilder::new().build(),
-            PhaseDifference { fft_size },
+            PhaseDifference {
+                 fft_size 
+            },
         )
     }
 }
@@ -42,6 +45,8 @@ impl Kernel for PhaseDifference {
         let input0 = sio.input(0).slice::<Complex<f32>>();
         let input1 = sio.input(1).slice::<Complex<f32>>();
         let out = sio.output(0).slice::<f32>();
+
+        
 
         let n = std::cmp::min(input0.len(), input1.len());
         let n = std::cmp::min(n, out.len());

@@ -134,7 +134,7 @@ impl FftDemod {
     /// Set spreading factor and init vector sizes accordingly
     fn set_sf(&mut self, sf: usize) {
         //Set he new sf for the frame
-        // info!("[fft_demod_impl.cc] new sf received {}", sf);
+        println!("[fft_demod_impl.cc] new sf received {}", sf);
         self.m_sf = sf;
         self.m_samples_per_symbol = 1_usize << self.m_sf;
         // self.m_upchirp = vec![Complex32::new(0., 0.); self.m_samples_per_symbol];
@@ -147,7 +147,7 @@ impl FftDemod {
 
     ///Compute the FFT and fill the class attributes
     fn compute_fft_mag(&self, samples: &[Complex32]) -> Vec<f64> {
-        // info!("samples: {:?}", samples);
+        //println!("samples: {:?}", samples);
         // info!("self.m_downchirp: {:?}", self.m_downchirp);
         // Multiply with ideal downchirp
         let mut m_dechirped = volk_32fc_x2_multiply_32fc(samples, &self.m_downchirp);
@@ -499,7 +499,7 @@ impl Kernel for FftDemod {
             }
             items_to_consume += self.m_samples_per_symbol;
             if let Some(tag) = tag_tmp {
-                // println!("Forwarding frame_info tag: {:?}", tag);
+                println!("Forwarding frame_info tag: {:?}", tag);
                 sio.output(0).add_tag(
                     0,
                     Tag::NamedAny("frame_info".to_string(), Box::new(Pmt::MapStrPmt(tag))),
@@ -541,11 +541,11 @@ impl Kernel for FftDemod {
         } // else nothing to output
 
         if items_to_consume > 0 {
-            // info!("FftDemod: consuming {} samples", items_to_consume);
+            //println!("FftDemod: consuming {} samples", items_to_consume);
             sio.input(0).consume(items_to_consume);
         }
         if items_to_output > 0 {
-            // info!("FftDemod: producing {} samples", items_to_output);
+            //println!("FftDemod: producing {} samples", items_to_output);
             sio.output(0).produce(items_to_output);
         }
         Ok(())

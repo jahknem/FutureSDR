@@ -681,7 +681,7 @@ impl FrameSync {
 impl Kernel for FrameSync {
     async fn work(
         &mut self,
-        _io: &mut WorkIo,
+        io: &mut WorkIo,
         sio: &mut StreamIo,
         _m: &mut MessageIo<Self>,
         _b: &mut BlockMeta,
@@ -1004,7 +1004,7 @@ impl Kernel for FrameSync {
                         self.additional_symbol_samp
                             [self.m_samples_per_symbol..(self.m_samples_per_symbol + count)]
                             .copy_from_slice(&input[0..count]);
-                        let m_cfo_int = if let Some(down_val) = self.down_val {
+                        let m_cfo_int: isize = if let Some(down_val) = self.down_val {
                             // info!("down_val: {}", down_val);
                             if down_val < self.m_number_of_bins / 2 {
                                 down_val as isize / 2
@@ -1313,15 +1313,27 @@ impl Kernel for FrameSync {
                             let frame_info_pmt = Pmt::MapStrPmt(frame_info);
                             // println!("frame_info_pmt {:?}", frame_info_pmt.clone());
 
-
                             // HERE OUTPUT FOR THESE VARS: (in separate message output (PMT<hashmap>))
                             // m_cfo_int, m_cfo_frac, k_hat, (total_consumed_samples)
+                            let mut phase_diff_info: HashMap<String, Pmt> = HashMap::new();
+                            phase_diff_info.insert(String::from("cfo_int"), Pmt::Usize(m_cfo_int as usize));  // DANGEROUS, LETS HOPE THERE IS NO NEGATIVE CFO!!
+                            phase_diff_info.insert(String::from("cfo_frac"), Pmt::F64(self.m_cfo_frac));
+                            phase_diff_info.insert(String::from("sto_frac"), Pmt::F32(self.m_sto_frac));
+                            phase_diff_info.insert(String::from("k_hat"), Pmt::Usize(self.k_hat));
+                            let phase_diff_info_pmt = Pmt::MapStrPmt(phase_diff_info);
+
+
                             
 
 
                             sio.output(0).add_tag(
                                 0,
                                 Tag::NamedAny("frame_info".to_string(), Box::new(frame_info_pmt)),
+                            );
+
+                            sio.output(0).add_tag(
+                                0,
+                                Tag::NamedAny("phase_diff_info".to_string(), Box::new(phase_diff_info_pmt)),
                             );
 
                             self.m_received_head = false;
@@ -1421,11 +1433,11 @@ impl Kernel for FrameSync {
         // if items_to_consume == 0 {
         //     warn!("FrameSync: not enough samples in input buffer, waiting for more.")
         // }
-        // info!("FrameSync: consuing {} samples, producing {}", items_to_consume, items_to_output);
+        //debug!("FrameSync: consuing {} samples, producing {}", items_to_consume, items_to_output);
         sio.input(0).consume(items_to_consume as usize); // An jeder stelle wo items_to_consume steht 
         // items_to_consume ist die Menge an Samples die aus der queue genommen werden
         if items_to_output > 0 {
-            // info!("FrameSync: producing {} samples", items_to_output);
+            //println!("FrameSync: producing {} samples", items_to_output);
         }
         let mut frame_info: HashMap<String, Pmt> = HashMap::new();
 
@@ -1439,6 +1451,7 @@ impl Kernel for FrameSync {
         //     Tag::NamedAny("frame_info".to_string(), Box::new(frame_info_tag)),
         // );
         sio.output(0).produce(items_to_output);
+        io.call_again = true; //Dirty fix!
         Ok(())
     }
 }

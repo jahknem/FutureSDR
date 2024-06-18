@@ -7,6 +7,7 @@ use futuresdr::async_io::Timer;
 use futuresdr::blocks::NullSink;
 use futuresdr::blocks::MessagePipe;
 use futuresdr::blocks::MessageSourceBuilder;
+use futuresdr::blocks::Split;
 use futuresdr::macros::connect;
 use futuresdr::num_complex::Complex32;
 use futuresdr::runtime::buffer::circular::Circular;
@@ -58,8 +59,8 @@ fn main() -> Result<()> {
     let soft_decoding: bool = false;
 
     let msg_source = MessageSourceBuilder::new(
-        Pmt::String("foo".to_string()),
-        time::Duration::from_millis(100),
+        Pmt::String("foooooooooooooooooooooooooo".to_string()),
+        time::Duration::from_millis(500),
     )
     .n_messages(20000)
     .build();
@@ -91,13 +92,6 @@ fn main() -> Result<()> {
         None,
     );
 
-    // TX Connect Macro
-    connect!(
-        fg, 
-        msg_source | whitening.msg;
-        whitening > header > add_crc > hamming_enc > interleaver > gray_demap > modulate
-    );
-
 
     // RX chain
     let frame_sync = FrameSync::new(
@@ -119,15 +113,45 @@ fn main() -> Result<()> {
     let (sender, mut receiver) = mpsc::channel::<Pmt>(10);
     let channel_sink = MessagePipe::new(sender);
 
-    connect!(fg, modulate [Circular::with_size(2 * 4 * 8192 * 4 * 2)] frame_sync);
 
-    connect!(fg,
-        frame_sync > fft_demod > gray_mapping > deinterleaver > hamming_dec > header_decoder;
-        frame_sync.log_out > null_sink; 
-        header_decoder.frame_info | frame_sync.frame_info; 
-        header_decoder | decoder;
-        decoder.data | channel_sink;
+    // TX Connect Macro
+    connect!(
+        fg, 
+        msg_source | whitening.msg;
+        whitening > header > add_crc > hamming_enc > interleaver > gray_demap > modulate
     );
+    let split_function = |input: &Complex32| -> (Complex32, Complex32) {
+        (*input, *input)  // Example split logic
+    };
+    let split_block = Split::new(split_function);
+    let complex_null_sink = NullSink::<Complex32>::new();
+
+    connect!(
+        fg, 
+        modulate [Circular::with_size(2 * 4 * 8192 * 4 * 2)] split_block.in;
+        split_block.out0 > complex_null_sink;
+        split_block.out1 > complex_null_sink;
+    );
+    // connect!(fg, 
+    //     split_block.out0 [Circular::with_size(2 * 4 * 8192 * 4 * 2)] complex_null_sink;
+    //     split_block.out1 > complex_null_sink;
+    // );
+
+
+
+    // connect!(
+    //     fg, 
+    //     modulate [Circular::with_size(2 * 4 * 8192 * 4 * 2)] frame_sync
+    // );
+
+    // connect!(
+    //     fg,
+    //     frame_sync > fft_demod > gray_mapping > deinterleaver > hamming_dec > header_decoder;
+    //     frame_sync.log_out > null_sink; 
+    //     header_decoder.frame_info | frame_sync.frame_info; 
+    //     header_decoder | decoder;
+    //     decoder.data | channel_sink;
+    // );
 
     rt.spawn_background(async move {
         while let Some(x) = receiver.next().await {

@@ -227,10 +227,10 @@ impl Kernel for HeaderDecoder {
                     ^ (input[2] & 0b0010) >> 1
                     ^ (input[2] & 0b0001);
 
-                info!("..:: Header");
-                info!("Payload length: {}", payload_len);
-                info!("CRC presence:   {}", has_crc);
-                info!("Coding rate:    {}", code_rate);
+                println!("..:: Header");
+                println!("Payload length: {}", payload_len);
+                println!("CRC presence:   {}", has_crc);
+                println!("Coding rate:    {}", code_rate);
 
                 let mut head_err = header_chk as i16
                     - ((c4 << 4) + (c3 << 3) + (c2 << 2) + (c1 << 1) + c0) as i16
@@ -245,7 +245,7 @@ impl Kernel for HeaderDecoder {
                     }
                     head_err = true;
                 } else {
-                    info!("Header checksum valid!");
+                    println!("Header checksum valid!");
                 }
 
                 Self::publish_frame_info(
