@@ -20,7 +20,7 @@ path = "src/tx_rx.rs"
 anyhow = "1.0"
 futures = "0.3.21"
 clap = { version = "4.4.0", features = ["derive"] }
-futuresdr = { path = "../..", features = ["seify"] }
+futuresdr = { path = "../..", features = ["seify", "egui"] }
 futuredsp = { path = "../../crates/futuredsp"}
 seify = { version = "=0.10.0", features = ["aaronia_http"] }
 lora = { path = "../lora"}

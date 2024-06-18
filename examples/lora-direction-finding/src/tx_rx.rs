@@ -1,12 +1,24 @@
+use std::time;
+
+use futures::channel::mpsc;
+use futures::executor::block_on;
 use futuresdr::anyhow::Result;
 use futuresdr::async_io::Timer;
 use futuresdr::blocks::NullSink;
+use futuresdr::blocks::MessagePipe;
+use futuresdr::blocks::MessageSourceBuilder;
 use futuresdr::macros::connect;
 use futuresdr::num_complex::Complex32;
 use futuresdr::runtime::buffer::circular::Circular;
 use futuresdr::runtime::Flowgraph;
 use futuresdr::runtime::Pmt;
 use futuresdr::runtime::Runtime;
+use futures::StreamExt;
+use lora::frame_sync;
+use lora::whitening;
+use futuresdr::gui::Gui;
+use futuresdr::gui::GuiFrontend;
+use futuresdr::blocks::gui::SpectrumPlotBuilder;
 use lora::{
     AddCrc, Decoder, Deinterleaver, FftDemod, FrameSync, GrayDemap, GrayMapping, HammingDec,
     HammingEnc, Header, HeaderDecoder, HeaderMode, Interleaver, Modulate, Whitening,
@@ -26,68 +38,66 @@ struct Args {
     /// lora bandwidth
     #[clap(long, default_value_t = 125000)]
     bandwidth: usize,
-    /// lora sample rate
-    #[clap(long, default_value_t = 125000)]
-    sample_rate: usize,
     /// lora sync word
     #[clap(long, default_value_t = 0x12)]
     sync_word: u8,
     /// lora frequency
     #[clap(long, default_value_t = 868.1e6)]
     frequency: f64, // Add the frequency field!
+    /// lora amplitude
+    #[clap(long, default_value_t = 1.0)]
+    lora_amplitude: f64,
 }
 
 fn main() -> Result<()> {
     let args = Args::parse();
-
     let rt = Runtime::new();
     let mut fg = Flowgraph::new();
+
+    // TX/RX Config
     let soft_decoding: bool = false;
 
-    let null_sink = fg.add_block(NullSink::<Complex32>::new());
-    let null_sink_rx = fg.add_block(NullSink::<f32>::new());
+    let msg_source = MessageSourceBuilder::new(
+        Pmt::String("foo".to_string()),
+        time::Duration::from_millis(100),
+    )
+    .n_messages(3000)
+    .build();
 
-    // TX Chain
-    let impl_head = false;
+    // GUI
+    let spectrum = SpectrumPlotBuilder::new(args.bandwidth as f64)
+        .center_frequency(args.frequency)
+        .fft_size(2048)
+        .build();
+
+    // Felix TX Chain
+
     let has_crc = true;
-    let cr = 3;
+    let cr = 0;
 
     let whitening = Whitening::new(false, false);
-    let fg_tx_port = whitening
-        .message_input_name_to_id("msg")
-        .expect("No message_in port found!");
-    let whitening = fg.add_block(whitening);
-    let header = fg.add_block(Header::new(impl_head, has_crc, cr));
-    fg.connect_stream(whitening, "out", header, "in")?;
-    let add_crc = fg.add_block(AddCrc::new(has_crc));
-    fg.connect_stream(header, "out", add_crc, "in")?;
-    let hamming_enc = fg.add_block(HammingEnc::new(cr, args.spreading_factor));
-    fg.connect_stream(add_crc, "out", hamming_enc, "in")?;
-    let interleaver = fg.add_block(Interleaver::new(
-        cr as usize,
+    let header = Header::new(false, has_crc, cr);
+    let add_crc = AddCrc::new(has_crc);
+    let hamming_enc = HammingEnc::new(cr, args.spreading_factor);
+    let interleaver = Interleaver::new(cr as usize, args.spreading_factor, 0, args.bandwidth);
+    let gray_demap = GrayDemap::new(args.spreading_factor);
+    let intermediate_sample_rate = args.bandwidth as usize * 1;
+    let modulate = Modulate::new(
         args.spreading_factor,
-        0,
-        args.bandwidth,
-    ));
-    fg.connect_stream(hamming_enc, "out", interleaver, "in")?;
-    let gray_demap = fg.add_block(GrayDemap::new(args.spreading_factor));
-    fg.connect_stream(interleaver, "out", gray_demap, "in")?;
-    let modulate = fg.add_block(Modulate::new(
-        args.spreading_factor,
-        args.sample_rate,
-        args.bandwidth,
-        vec![8, 16],
-        20 * (1 << args.spreading_factor) * args.sample_rate / args.bandwidth,
-        Some(8),
-    ));
-    fg.connect_stream(gray_demap, "out", modulate, "in")?;
-    fg.connect_stream_with_type(
-        modulate,
-        "out",
-        null_sink,
-        "in",
-        Circular::with_size(2 * 4 * 8192 * 4 * 8),
-    )?;
+        intermediate_sample_rate,
+        args.bandwidth as usize,
+        vec![0x12],
+        20 * (1 << args.spreading_factor) * intermediate_sample_rate / args.bandwidth,
+        None,
+    );
+
+    // TX Connect Macro
+    connect!(
+        fg, 
+        msg_source | whitening.msg;
+        whitening > header > add_crc > hamming_enc > interleaver > gray_demap > modulate
+    );
+
 
     // RX chain
     let frame_sync = FrameSync::new(
@@ -95,7 +105,7 @@ fn main() -> Result<()> {
         args.bandwidth as u32,
         args.spreading_factor,
         false,
-        vec![args.sync_word.into()],
+        vec![0x12],
         1,
         None,
     );
@@ -105,38 +115,33 @@ fn main() -> Result<()> {
     let hamming_dec = HammingDec::new(soft_decoding);
     let header_decoder = HeaderDecoder::new(HeaderMode::Explicit, false);
     let decoder = Decoder::new();
+    let null_sink = NullSink::<f32>::new();
+    let (sender, mut receiver) = mpsc::channel::<Pmt>(10);
+    let channel_sink = MessagePipe::new(sender);
+
+    // connect!(fg, modulate [Circular::with_size(256*256)] frame_sync);
+
+    // connect!(fg,
+    //     frame_sync > fft_demod > gray_mapping > deinterleaver > hamming_dec > header_decoder;
+    //     frame_sync.log_out > null_sink; 
+    //     header_decoder.frame_info | frame_sync.frame_info; 
+    //     header_decoder | decoder;
+    //     decoder.data | channel_sink;
+    // );
 
     connect!(fg,
-        whitening > header > add_crc > hamming_enc > interleaver > gray_demap > modulate 
-            [Circular::with_size(2 * 4 * 8192 * 4 * 8)] null_sink;
-        modulate [Circular::with_size(2 * 4 * 8192 * 4 * 8)] frame_sync > fft_demod 
-            > gray_mapping > deinterleaver > hamming_dec > header_decoder;
-        frame_sync.log_out > null_sink_rx;
-        header_decoder.frame_info | frame_sync.frame_info; 
-        header_decoder > decoder
+        modulate > spectrum;
     );
 
-    // if tx_interval is set, send messages periodically
-    if let Some(tx_interval) = args.tx_interval {
-        let (_fg, mut handle) = rt.start_sync(fg);
-        rt.block_on(async move {
-            let mut counter: usize = 0;
-            loop {
-                Timer::after(Duration::from_secs_f32(tx_interval)).await;
-                let dummy_packet = format!("hello world! {:02}", counter).to_string();
-                // let dummy_packet = "hello world!1".to_string();
-                handle
-                    .call(whitening, fg_tx_port, Pmt::String(dummy_packet))
-                    .await
-                    .unwrap();
-                println!("sending sample packet.");
-                counter += 1;
-                counter %= 100;
-            }
-        });
-    } else {
-        let _ = rt.run(fg);
-    }
+    // rt.spawn_background(async move {
+    //     while let Some(x) = receiver.next().await {
+    //         println!("Received: {:?}", x)
+    //     }
+    // });
+
+    // let (_fg, handle) = block_on(rt.start(fg));
+    // let _ = rt.run(fg);
+    Gui::run(fg);
 
     Ok(())
 }

@@ -6,12 +6,9 @@ use seify::{Device, DeviceTrait, RxStreamer, TxStreamer};
 
 use futuresdr::anyhow::Result;
 use futuresdr::blocks::seify::SourceBuilder;
-use futuresdr::blocks::BlobToUdp;
-use futuresdr::blocks::FirBuilder;
 use futuresdr::blocks::NullSink;
 use futuresdr::blocks::MessagePipe;
 use futuresdr::macros::connect;
-use futuresdr::num_complex::Complex32;
 use futuresdr::runtime::buffer::circular::Circular;
 use futuresdr::runtime::{Flowgraph, Pmt};
 
@@ -68,16 +65,16 @@ pub fn add_lora_decoder(mut fg: &mut Flowgraph, sample_rate: f64, frequency: f64
     let header_decoder = HeaderDecoder::new(HeaderMode::Explicit, false);
     let decoder = Decoder::new();
 
-    let (sender, mut receiver) = mpsc::channel::<Pmt>(10);
+    let (sender, receiver) = mpsc::channel::<Pmt>(10);
     let channel_sink = MessagePipe::new(sender);
 
     connect!(fg,
              //downsample [Circular::with_size(2 * 4 * 8192 * 4)] frame_sync > fft_demod > gray_mapping > deinterleaver 
              frame_sync > fft_demod > gray_mapping > deinterleaver > hamming_dec > header_decoder;
 
-             frame_sync > fft_demod > gray_mapping;
-             gray_mapping.out_0 > deinterleaver > hamming_dec > header_decoder;
-             gray_mapping.out_1 > deinterleaver > hamming_dec > header_decoder;
+            //  frame_sync > fft_demod > gray_mapping;
+            //  gray_mapping.out_0 > deinterleaver > hamming_dec > header_decoder;
+            //  gray_mapping.out_1 > deinterleaver > hamming_dec > header_decoder;
              frame_sync.log_out > null_sink;
             //  frame_sync.phase_out | phase_difference.in_0;
             //  frame_sync_2.phase_out | phase_difference.in_1;
@@ -98,7 +95,7 @@ pub fn build_flowgraph(
 
     let device = find_usable_device()?.unwrap();
 
-    let mut src = SourceBuilder::new()
+    let src = SourceBuilder::new()
         .device(device.clone())
         .channels(vec![0, 1])
     //    .sample_rate(sample_rate)
@@ -111,10 +108,10 @@ pub fn build_flowgraph(
     let (lora_dec_in1, lora_dec_out1, lora_frame_info_receiver1) = add_lora_decoder(&mut fg, sample_rate, frequency)?;
     let (lora_dec_in2, lora_dec_out2, lora_frame_info_receiver2) = add_lora_decoder(&mut fg, sample_rate, frequency)?;
 
-    let (sender, mut receiver1) = mpsc::channel::<Pmt>(10);
+    let (sender, receiver1) = mpsc::channel::<Pmt>(10);
     let channel_sink1 = MessagePipe::new(sender);
 
-    let (sender, mut receiver2) = mpsc::channel::<Pmt>(10);
+    let (sender, receiver2) = mpsc::channel::<Pmt>(10);
     let channel_sink2 = MessagePipe::new(sender);
 
     connect!(fg, src.out1 [Circular::with_size(2 * 4 * 8192 * 4)] lora_dec_in1; lora_dec_out1.data | channel_sink1);
