@@ -16,8 +16,8 @@ use futuresdr::runtime::Runtime;
 use futures::StreamExt;
 use lora::frame_sync;
 use lora::whitening;
-use futuresdr::gui::Gui;
-use futuresdr::gui::GuiFrontend;
+// use futuresdr::gui::Gui;
+// use futuresdr::gui::GuiFrontend;
 use futuresdr::blocks::gui::SpectrumPlotBuilder;
 use lora::{
     AddCrc, Decoder, Deinterleaver, FftDemod, FrameSync, GrayDemap, GrayMapping, HammingDec,
@@ -61,16 +61,16 @@ fn main() -> Result<()> {
         Pmt::String("foo".to_string()),
         time::Duration::from_millis(100),
     )
-    .n_messages(3000)
+    .n_messages(20000)
     .build();
 
     // GUI
-    let spectrum = SpectrumPlotBuilder::new(args.bandwidth as f64)
-        .center_frequency(args.frequency)
-        .fft_size(2048)
-        .build();
+    // let spectrum = SpectrumPlotBuilder::new(args.bandwidth as f64)
+    //     .center_frequency(args.frequency)
+    //     .fft_size(2048)
+    //     .build();
 
-    // Felix TX Chain
+    // TX Chain
 
     let has_crc = true;
     let cr = 0;
@@ -119,29 +119,31 @@ fn main() -> Result<()> {
     let (sender, mut receiver) = mpsc::channel::<Pmt>(10);
     let channel_sink = MessagePipe::new(sender);
 
-    // connect!(fg, modulate [Circular::with_size(256*256)] frame_sync);
-
-    // connect!(fg,
-    //     frame_sync > fft_demod > gray_mapping > deinterleaver > hamming_dec > header_decoder;
-    //     frame_sync.log_out > null_sink; 
-    //     header_decoder.frame_info | frame_sync.frame_info; 
-    //     header_decoder | decoder;
-    //     decoder.data | channel_sink;
-    // );
+    connect!(fg, modulate [Circular::with_size(2 * 4 * 8192 * 4 * 2)] frame_sync);
 
     connect!(fg,
-        modulate > spectrum;
+        frame_sync > fft_demod > gray_mapping > deinterleaver > hamming_dec > header_decoder;
+        frame_sync.log_out > null_sink; 
+        header_decoder.frame_info | frame_sync.frame_info; 
+        header_decoder | decoder;
+        decoder.data | channel_sink;
     );
 
-    // rt.spawn_background(async move {
-    //     while let Some(x) = receiver.next().await {
-    //         println!("Received: {:?}", x)
-    //     }
-    // });
+    rt.spawn_background(async move {
+        while let Some(x) = receiver.next().await {
+            println!("Received: {:?}", x)
+        }
+    });
 
     // let (_fg, handle) = block_on(rt.start(fg));
-    // let _ = rt.run(fg);
-    Gui::run(fg);
+
+    // Auskommentiert da dafür der gui branch von Felix notwendig ist.
+    let _ = rt.run(fg);
+
+    // connect!(fg,
+    //     modulate > spectrum;
+    // );
+    // Gui::run(fg);
 
     Ok(())
 }
