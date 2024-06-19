@@ -182,6 +182,7 @@ impl FrameSync {
                 .add_input("frame_info", Self::frame_info_handler)
                 // .add_input("noise_est", Self::noise_est_handler)
                 .add_output("snr")
+                .add_output("phase_info", )
                 .build(),
             FrameSync {
                 m_state: DecoderState::Detect, //< Current state of the synchronization
@@ -631,6 +632,7 @@ impl FrameSync {
         Ok(Pmt::Null)
     }
 
+    
     // fn set_sf(&mut self, sf: usize) {
     //     self.m_sf = sf;
     //     self.m_number_of_bins = 1 << self.m_sf;
@@ -766,8 +768,7 @@ impl Kernel for FrameSync {
         }
 
         // downsampling
-        let indexing_offset = self.m_os_factor / 2
-            - FrameSync::my_roundf(self.m_sto_frac * self.m_os_factor as f32) as usize;
+        let indexing_offset = FrameSync::my_roundf(self.m_os_factor as f32 * (0.5 - self.m_sto_frac)) as usize;
         self.in_down = input
             [indexing_offset..(indexing_offset + self.m_number_of_bins * self.m_os_factor)]
             .iter()
@@ -1134,8 +1135,7 @@ impl Kernel for FrameSync {
                         }
                         // decim net id according to new sto_frac and sto int
                         // start_off gives the offset in the net_id_samp vector required to be aligned in time (CFOint is equivalent to STOint since upchirp_val was forced to 0)
-                        let start_off = (self.m_os_factor as isize / 2
-                            - FrameSync::my_roundf(self.m_sto_frac * self.m_os_factor as f32)
+                        let start_off = (FrameSync::my_roundf(self.m_os_factor as f32 * (0.5 - self.m_sto_frac))
                             + self.m_os_factor as isize
                                 * (self.m_number_of_bins as isize / 4 + m_cfo_int))
                             as usize;
@@ -1313,14 +1313,15 @@ impl Kernel for FrameSync {
                             let frame_info_pmt = Pmt::MapStrPmt(frame_info);
                             // println!("frame_info_pmt {:?}", frame_info_pmt.clone());
 
-                            // HERE OUTPUT FOR THESE VARS: (in separate message output (PMT<hashmap>))
-                            // m_cfo_int, m_cfo_frac, k_hat, (total_consumed_samples)
-                            let mut phase_diff_info: HashMap<String, Pmt> = HashMap::new();
-                            phase_diff_info.insert(String::from("cfo_int"), Pmt::Usize(m_cfo_int as usize));  // DANGEROUS, LETS HOPE THERE IS NO NEGATIVE CFO!!
-                            phase_diff_info.insert(String::from("cfo_frac"), Pmt::F64(self.m_cfo_frac));
-                            phase_diff_info.insert(String::from("sto_frac"), Pmt::F32(self.m_sto_frac));
-                            phase_diff_info.insert(String::from("k_hat"), Pmt::Usize(self.k_hat));
-                            let phase_diff_info_pmt = Pmt::MapStrPmt(phase_diff_info);
+                            // TODO!!
+                            // HERE OUTPUT FOR THESE VARS: (in separate message output (PMT<hashmap>)) -> Refactor to message 
+                            // // m_cfo_int, m_cfo_frac, k_hat, (total_consumed_samples)
+                            // let mut phase_diff_info: HashMap<String, Pmt> = HashMap::new();
+                            // phase_diff_info.insert(String::from("cfo_int"), Pmt::Usize(m_cfo_int as usize));  // DANGEROUS, LETS HOPE THERE IS NO NEGATIVE CFO!!
+                            // phase_diff_info.insert(String::from("cfo_frac"), Pmt::F64(self.m_cfo_frac));
+                            // phase_diff_info.insert(String::from("sto_frac"), Pmt::F32(self.m_sto_frac));
+                            // phase_diff_info.insert(String::from("k_hat"), Pmt::Usize(self.k_hat));
+                            // let phase_diff_info_pmt = Pmt::MapStrPmt(phase_diff_info);
 
 
                             
@@ -1329,11 +1330,6 @@ impl Kernel for FrameSync {
                             sio.output(0).add_tag(
                                 0,
                                 Tag::NamedAny("frame_info".to_string(), Box::new(frame_info_pmt)),
-                            );
-
-                            sio.output(0).add_tag(
-                                0,
-                                Tag::NamedAny("phase_diff_info".to_string(), Box::new(phase_diff_info_pmt)),
                             );
 
                             self.m_received_head = false;

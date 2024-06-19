@@ -4,6 +4,8 @@ use futures::channel::mpsc;
 use futures::executor::block_on;
 use futuresdr::anyhow::Result;
 use futuresdr::async_io::Timer;
+use futuresdr::blocks::Delay;
+use futuresdr::blocks::FirBuilder;
 use futuresdr::blocks::NullSink;
 use futuresdr::blocks::MessagePipe;
 use futuresdr::blocks::MessageSourceBuilder;
@@ -17,8 +19,8 @@ use futuresdr::runtime::Runtime;
 use futures::StreamExt;
 use lora::frame_sync;
 use lora::whitening;
-// use futuresdr::gui::Gui;
-// use futuresdr::gui::GuiFrontend;
+use futuresdr::gui::Gui;
+use futuresdr::gui::GuiFrontend;
 use futuresdr::blocks::gui::SpectrumPlotBuilder;
 use lora::{
     AddCrc, Decoder, Deinterleaver, FftDemod, FrameSync, GrayDemap, GrayMapping, HammingDec,
@@ -50,6 +52,7 @@ struct Args {
     lora_amplitude: f64,
 }
 
+
 fn main() -> Result<()> {
     let args = Args::parse();
     let rt = Runtime::new();
@@ -66,10 +69,10 @@ fn main() -> Result<()> {
     .build();
 
     // GUI
-    // let spectrum = SpectrumPlotBuilder::new(args.bandwidth as f64)
-    //     .center_frequency(args.frequency)
-    //     .fft_size(2048)
-    //     .build();
+    let spectrum = SpectrumPlotBuilder::new(args.bandwidth as f64)
+        .center_frequency(args.frequency)
+        .fft_size(2048)
+        .build();
 
     // TX Chain
 
@@ -92,6 +95,18 @@ fn main() -> Result<()> {
         None,
     );
 
+    const STO_FRAC_DENOM: isize = 1000; // How much to upsample
+    const STO_FRAC_NOM: isize = 0; // Delay in sample parts (defined by denom)
+    const STO_INT: isize = 0; // Delay in ganzen samples 
+
+    let up_sample = FirBuilder::new_resampling::<Complex32, Complex32>(STO_FRAC_DENOM.abs() as usize, 1); // 
+    let sampling_time_offset = Delay::<Complex32>::new((STO_INT + 23) * STO_FRAC_DENOM + STO_FRAC_NOM - 1); // -1 to compensate resampling delay of 1 sample (I guess...)
+    let down_sample = FirBuilder::new_resampling::<Complex32, Complex32>(1, STO_FRAC_DENOM.abs() as usize); // Bruchteil nehmen gemäß des os_factor in frame_sync
+
+    let up_sample_reference = FirBuilder::new_resampling::<Complex32, Complex32>(STO_FRAC_DENOM.abs() as usize, 1); // 
+    let sampling_time_offset_reference = Delay::<Complex32>::new((0 + 23) * STO_FRAC_DENOM + 0 - 1); // -1 to compensate resampling delay of 1 sample (I guess...)
+    let down_sample_reference = FirBuilder::new_resampling::<Complex32, Complex32>(1, STO_FRAC_DENOM.abs() as usize); // Bruchteil nehmen gemäß des os_factor in frame_sync 
+
 
     // RX chain
     let frame_sync = FrameSync::new(
@@ -100,7 +115,7 @@ fn main() -> Result<()> {
         args.spreading_factor,
         false,
         vec![0x12],
-        1,
+        1, // auf 4 setzen
         None,
     );
     let fft_demod = FftDemod::new(soft_decoding, true, args.spreading_factor);
@@ -124,34 +139,29 @@ fn main() -> Result<()> {
         (*input, *input)  // Example split logic
     };
     let split_block = Split::new(split_function);
-    let complex_null_sink = NullSink::<Complex32>::new();
+    let complex_null_sink_0 = NullSink::<Complex32>::new();
+    let complex_null_sink_1 = NullSink::<Complex32>::new();
 
     connect!(
         fg, 
         modulate [Circular::with_size(2 * 4 * 8192 * 4 * 2)] split_block.in;
-        split_block.out0 > complex_null_sink;
-        split_block.out1 > complex_null_sink;
+        split_block.out0 > up_sample_reference > sampling_time_offset_reference > down_sample_reference > frame_sync;
+        split_block.out1 > up_sample > sampling_time_offset > down_sample > complex_null_sink_1;
     );
-    // connect!(fg, 
-    //     split_block.out0 [Circular::with_size(2 * 4 * 8192 * 4 * 2)] complex_null_sink;
-    //     split_block.out1 > complex_null_sink;
-    // );
-
-
-
+    
     // connect!(
     //     fg, 
     //     modulate [Circular::with_size(2 * 4 * 8192 * 4 * 2)] frame_sync
     // );
 
-    // connect!(
-    //     fg,
-    //     frame_sync > fft_demod > gray_mapping > deinterleaver > hamming_dec > header_decoder;
-    //     frame_sync.log_out > null_sink; 
-    //     header_decoder.frame_info | frame_sync.frame_info; 
-    //     header_decoder | decoder;
-    //     decoder.data | channel_sink;
-    // );
+    connect!(
+        fg,
+        frame_sync > fft_demod > gray_mapping > deinterleaver > hamming_dec > header_decoder;
+        frame_sync.log_out > null_sink; 
+        header_decoder.frame_info | frame_sync.frame_info; 
+        header_decoder | decoder;
+        decoder.data | channel_sink;
+    );
 
     rt.spawn_background(async move {
         while let Some(x) = receiver.next().await {
@@ -161,9 +171,10 @@ fn main() -> Result<()> {
 
     // let (_fg, handle) = block_on(rt.start(fg));
 
-    // Auskommentiert da dafür der gui branch von Felix notwendig ist.
+
     let _ = rt.run(fg);
 
+    // Auskommentiert da dafür der gui branch von Felix notwendig ist.
     // connect!(fg,
     //     modulate > spectrum;
     // );
