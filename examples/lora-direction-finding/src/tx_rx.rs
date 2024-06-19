@@ -148,10 +148,10 @@ fn main() -> Result<()> {
         fg, 
         modulate [Circular::with_size(2 * 4 * 8192 * 4 * 2)] split_block.in;
         split_block.out0 > 
-        up_sample_reference > down_sample_reference > 
+        up_sample_reference [Circular::with_size(2 * 4 * 8192 * 4 * 2)] down_sample_reference > 
         frame_sync;
         split_block.out1 > 
-        up_sample > down_sample > 
+        up_sample [Circular::with_size(2 * 4 * 8192 * 4 * 2)] down_sample > 
         complex_null_sink_1;
     );
     

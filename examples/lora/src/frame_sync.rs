@@ -1426,9 +1426,9 @@ impl Kernel for FrameSync {
               //     panic!("[LoRa sync] WARNING : No state! Shouldn't happen\n");
               // }
         }
-        // if items_to_consume == 0 {
-        //     warn!("FrameSync: not enough samples in input buffer, waiting for more.")
-        // }
+        if items_to_consume == 0 {
+            warn!("FrameSync: not enough samples in input buffer, waiting for more.")
+        }
         //debug!("FrameSync: consuing {} samples, producing {}", items_to_consume, items_to_output);
         sio.input(0).consume(items_to_consume as usize); // An jeder stelle wo items_to_consume steht 
         // items_to_consume ist die Menge an Samples die aus der queue genommen werden
