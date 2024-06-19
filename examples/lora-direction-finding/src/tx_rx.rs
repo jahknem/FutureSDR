@@ -97,14 +97,16 @@ fn main() -> Result<()> {
 
     const STO_FRAC_DENOM: isize = 1000; // How much to upsample
     const STO_FRAC_NOM: isize = 0; // Delay in sample parts (defined by denom)
-    const STO_INT: isize = 0; // Delay in ganzen samples 
+    const STO_INT: isize = 0; // Delay in ganzen samples
+
+
 
     let up_sample = FirBuilder::new_resampling::<Complex32, Complex32>(STO_FRAC_DENOM.abs() as usize, 1); // 
-    let sampling_time_offset = Delay::<Complex32>::new((STO_INT + 23) * STO_FRAC_DENOM + STO_FRAC_NOM - 1); // -1 to compensate resampling delay of 1 sample (I guess...)
+    let sampling_time_offset = Delay::<Complex32>::new((STO_INT + 2300000) * STO_FRAC_DENOM + STO_FRAC_NOM - 1); // -1 to compensate resampling delay of 1 sample (I guess...)
     let down_sample = FirBuilder::new_resampling::<Complex32, Complex32>(1, STO_FRAC_DENOM.abs() as usize); // Bruchteil nehmen gemäß des os_factor in frame_sync
 
     let up_sample_reference = FirBuilder::new_resampling::<Complex32, Complex32>(STO_FRAC_DENOM.abs() as usize, 1); // 
-    let sampling_time_offset_reference = Delay::<Complex32>::new((0 + 23) * STO_FRAC_DENOM + 0 - 1); // -1 to compensate resampling delay of 1 sample (I guess...)
+    let sampling_time_offset_reference = Delay::<Complex32>::new((0 + 2300000) * STO_FRAC_DENOM + 0 - 1); // -1 to compensate resampling delay of 1 sample (I guess...)
     let down_sample_reference = FirBuilder::new_resampling::<Complex32, Complex32>(1, STO_FRAC_DENOM.abs() as usize); // Bruchteil nehmen gemäß des os_factor in frame_sync 
 
 
@@ -145,8 +147,12 @@ fn main() -> Result<()> {
     connect!(
         fg, 
         modulate [Circular::with_size(2 * 4 * 8192 * 4 * 2)] split_block.in;
-        split_block.out0 > up_sample_reference > sampling_time_offset_reference > down_sample_reference > frame_sync;
-        split_block.out1 > up_sample > sampling_time_offset > down_sample > complex_null_sink_1;
+        split_block.out0 > 
+        up_sample_reference > down_sample_reference > 
+        frame_sync;
+        split_block.out1 > 
+        up_sample > down_sample > 
+        complex_null_sink_1;
     );
     
     // connect!(
