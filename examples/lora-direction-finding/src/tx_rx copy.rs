@@ -21,7 +21,6 @@ use lora::frame_sync;
 use lora::whitening;
 use futuresdr::gui::Gui;
 use futuresdr::gui::GuiFrontend;
-use lora_direction_finding::PhaseDifference;
 use futuresdr::blocks::gui::SpectrumPlotBuilder;
 use lora::{
     AddCrc, Decoder, Deinterleaver, FftDemod, FrameSync, GrayDemap, GrayMapping, HammingDec,
@@ -103,16 +102,15 @@ fn main() -> Result<()> {
 
 
     let up_sample_a = FirBuilder::new_resampling::<Complex32, Complex32>(STO_FRAC_DENOM.abs() as usize, 1); // 
-    let sampling_time_offset_a = Delay::<Complex32>::new((STO_INT + 23) * STO_FRAC_DENOM + STO_FRAC_NOM - 1); // -1 to compensate resampling delay of 1 sample (I guess...)
+    let sampling_time_offset_a = Delay::<Complex32>::new((STO_INT + 2300000) * STO_FRAC_DENOM + STO_FRAC_NOM - 1); // -1 to compensate resampling delay of 1 sample (I guess...)
     let down_sample_a = FirBuilder::new_resampling::<Complex32, Complex32>(1, STO_FRAC_DENOM.abs() as usize); // Bruchteil nehmen gemäß des os_factor in frame_sync
 
-
     let up_sample_b = FirBuilder::new_resampling::<Complex32, Complex32>(STO_FRAC_DENOM.abs() as usize, 1); // 
-    let sampling_time_offset_b = Delay::<Complex32>::new((0 + 23) * STO_FRAC_DENOM + 0 - 1); // -1 to compensate resampling delay of 1 sample (I guess...)
+    let sampling_time_offset_b = Delay::<Complex32>::new((0 + 2300000) * STO_FRAC_DENOM + 0 - 1); // -1 to compensate resampling delay of 1 sample (I guess...)
     let down_sample_b = FirBuilder::new_resampling::<Complex32, Complex32>(1, STO_FRAC_DENOM.abs() as usize); // Bruchteil nehmen gemäß des os_factor in frame_sync 
 
 
-    // RX chain
+    // RX chain a
     let frame_sync_a = FrameSync::new(
         args.frequency as u32,
         args.bandwidth as u32,
@@ -132,6 +130,25 @@ fn main() -> Result<()> {
     let (sender_a, mut receiver_a) = mpsc::channel::<Pmt>(10);
     let channel_sink_a = MessagePipe::new(sender_a);
 
+        // RX chain b
+        let frame_sync_b = FrameSync::new(
+            args.frequency as u32,
+            args.bandwidth as u32,
+            args.spreading_factor,
+            false,
+            vec![0x12],
+            1, // auf 4 setzen
+            None,
+        );
+        let fft_demod_b = FftDemod::new(soft_decoding, true, args.spreading_factor);
+        let gray_mapping_b = GrayMapping::new(soft_decoding);
+        let deinterleaver_b = Deinterleaver::new(soft_decoding);
+        let hamming_dec_b = HammingDec::new(soft_decoding);
+        let header_decoder_b = HeaderDecoder::new(HeaderMode::Explicit, false);
+        let decoder_b = Decoder::new();
+        let null_sink_b = NullSink::<f32>::new();
+        let (sender_b, mut receiver_b) = mpsc::channel::<Pmt>(10);
+        let channel_sink_b = MessagePipe::new(sender_b);
 
     // TX Connect Macro
     connect!(
@@ -150,11 +167,10 @@ fn main() -> Result<()> {
         fg, 
         modulate [Circular::with_size(2 * 4 * 8192 * 4 * 2)] split_block.in;
         split_block.out0 > 
-        up_sample_a [Circular::with_size(2 * 4 * 8192 * 4 * 2)] sampling_time_offset_a [Circular::with_size(2 * 4 * 8192 * 4 * 2)] down_sample_a > 
+        up_sample_a [Circular::with_size(2 * 4 * 8192 * 4 * 2)] down_sample_a > 
         frame_sync_a;
         split_block.out1 > 
-        up_sample_b [Circular::with_size(2 * 4 * 8192 * 4 * 2)] down_sample_b > 
-        complex_null_sink_1;
+        up_sample_b [Circular::with_size(2 * 4 * 8192 * 4 * 2)]  down_sample_b > complex_null_sink_1 //sampling_time_offset_b [Circular::with_size(2 * 4 * 8192 * 4 * 2)] down_sample_b > frame_sync_b;
     );
     
     // connect!(
@@ -169,10 +185,21 @@ fn main() -> Result<()> {
         header_decoder_a.frame_info | frame_sync_a.frame_info; 
         header_decoder_a | decoder_a;
         decoder_a.data | channel_sink_a;
+        // frame_sync_b > fft_demod_b > gray_mapping_b > deinterleaver_b > hamming_dec_b > header_decoder_b;
+        // frame_sync_b.log_out > null_sink_b;
+        // header_decoder_b.frame_info | frame_sync_b.frame_info;
+        // header_decoder_b | decoder_b;
+        // decoder_b.data | channel_sink_b;
     );
 
     rt.spawn_background(async move {
         while let Some(x) = receiver_a.next().await {
+            println!("Received: {:?}", x)
+        }
+    });
+
+    rt.spawn_background(async move {
+        while let Some(x) = receiver_b.next().await {
             println!("Received: {:?}", x)
         }
     });
@@ -183,9 +210,6 @@ fn main() -> Result<()> {
     let _ = rt.run(fg);
 
     // Auskommentiert da dafür der gui branch von Felix notwendig ist.
-    // connect!(fg,
-    //     modulate > spectrum;
-    // );
     // Gui::run(fg);
 
     Ok(())

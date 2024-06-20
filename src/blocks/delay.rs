@@ -83,6 +83,7 @@ impl<T: Copy + Send + 'static> Kernel for Delay<T> {
                 let o = sio.output(0).slice_unchecked::<u8>();
                 o[0..m * std::mem::size_of::<T>()].fill(0);
                 sio.output(0).produce(m);
+                println!("Delay::pad producing: {}", m);
 
                 if m == n {
                     self.state = State::Copy;
@@ -97,6 +98,7 @@ impl<T: Copy + Send + 'static> Kernel for Delay<T> {
             State::Skip(n) => {
                 let m = std::cmp::min(i.len(), n);
                 sio.input(0).consume(m);
+                println!("Delay::skip consuming: {}", m);
 
                 if n == m {
                     self.state = State::Copy;
@@ -114,6 +116,7 @@ impl<T: Copy + Send + 'static> Kernel for Delay<T> {
                 if m > 0 {
                     o[..m].copy_from_slice(&i[..m]);
                 }
+                print!("Delay::copy consuming and producing: {}", m);
                 sio.input(0).consume(m);
                 sio.output(0).produce(m);
                 if sio.input(0).finished() && m == i.len() {

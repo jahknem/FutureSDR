@@ -1316,15 +1316,12 @@ impl Kernel for FrameSync {
                             // TODO!!
                             // HERE OUTPUT FOR THESE VARS: (in separate message output (PMT<hashmap>)) -> Refactor to message 
                             // // m_cfo_int, m_cfo_frac, k_hat, (total_consumed_samples)
-                            // let mut phase_diff_info: HashMap<String, Pmt> = HashMap::new();
-                            // phase_diff_info.insert(String::from("cfo_int"), Pmt::Usize(m_cfo_int as usize));  // DANGEROUS, LETS HOPE THERE IS NO NEGATIVE CFO!!
-                            // phase_diff_info.insert(String::from("cfo_frac"), Pmt::F64(self.m_cfo_frac));
-                            // phase_diff_info.insert(String::from("sto_frac"), Pmt::F32(self.m_sto_frac));
-                            // phase_diff_info.insert(String::from("k_hat"), Pmt::Usize(self.k_hat));
-                            // let phase_diff_info_pmt = Pmt::MapStrPmt(phase_diff_info);
-
-
-                            
+                            let mut phase_diff_info: HashMap<String, Pmt> = HashMap::new();
+                            phase_diff_info.insert(String::from("cfo_int"), Pmt::Usize(m_cfo_int as usize));  // DANGEROUS, LETS HOPE THERE IS NO NEGATIVE CFO!!
+                            phase_diff_info.insert(String::from("cfo_frac"), Pmt::F64(self.m_cfo_frac));
+                            phase_diff_info.insert(String::from("sto_frac"), Pmt::F32(self.m_sto_frac));
+                            phase_diff_info.insert(String::from("k_hat"), Pmt::Usize(self.k_hat));
+                            let phase_diff_info_pmt = Pmt::MapStrPmt(phase_diff_info);
 
 
                             sio.output(0).add_tag(
