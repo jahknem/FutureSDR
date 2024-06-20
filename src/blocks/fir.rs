@@ -118,6 +118,7 @@ where
 
         sio.input(0).consume(consumed);
         sio.output(0).produce(produced);
+        // println!("Fir::work consuming {} and producing {}", consumed, produced);
 
         if sio.input(0).finished() && status.produced_all_samples() {
             io.finished = true;

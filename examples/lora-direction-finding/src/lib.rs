@@ -21,6 +21,8 @@ use lora::HammingDec;
 use lora::HeaderDecoder;
 use lora::HeaderMode;
 
+pub mod phase_difference;
+
 const SOFT_DECODING: bool = false;
 const SPREADING_FACTOR: usize = 7;
 const BANDWIDTH: f64 = 125_000.0;
