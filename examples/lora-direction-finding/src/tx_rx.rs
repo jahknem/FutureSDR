@@ -102,11 +102,11 @@ fn main() -> Result<()> {
 
 
     let up_sample = FirBuilder::new_resampling::<Complex32, Complex32>(STO_FRAC_DENOM.abs() as usize, 1); // 
-    let sampling_time_offset = Delay::<Complex32>::new((STO_INT + 2300000) * STO_FRAC_DENOM + STO_FRAC_NOM - 1); // -1 to compensate resampling delay of 1 sample (I guess...)
+    let sampling_time_offset = Delay::<Complex32>::new((STO_INT + 23) * STO_FRAC_DENOM + STO_FRAC_NOM - 1); // -1 to compensate resampling delay of 1 sample (I guess...)
     let down_sample = FirBuilder::new_resampling::<Complex32, Complex32>(1, STO_FRAC_DENOM.abs() as usize); // Bruchteil nehmen gemäß des os_factor in frame_sync
 
     let up_sample_reference = FirBuilder::new_resampling::<Complex32, Complex32>(STO_FRAC_DENOM.abs() as usize, 1); // 
-    let sampling_time_offset_reference = Delay::<Complex32>::new((0 + 2300000) * STO_FRAC_DENOM + 0 - 1); // -1 to compensate resampling delay of 1 sample (I guess...)
+    let sampling_time_offset_reference = Delay::<Complex32>::new((0 + 23) * STO_FRAC_DENOM + 0 - 1); // -1 to compensate resampling delay of 1 sample (I guess...)
     let down_sample_reference = FirBuilder::new_resampling::<Complex32, Complex32>(1, STO_FRAC_DENOM.abs() as usize); // Bruchteil nehmen gemäß des os_factor in frame_sync 
 
 
