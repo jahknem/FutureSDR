@@ -8,6 +8,10 @@ use futuresdr::runtime::MessageIoBuilder;
 use futuresdr::runtime::StreamIo;
 use futuresdr::runtime::StreamIoBuilder;
 use futuresdr::runtime::WorkIo;
+use futuresdr::macros::message_handler;
+use futuresdr::runtime::Block;
+use futuresdr::runtime::Pmt;
+use futuresdr::log::{warn, info, debug};
 
 use rustfft::num_complex::Complex;
 
@@ -30,93 +34,80 @@ impl PhaseDifference {
             },
         )
     }
+    fn store_phase_info(&mut self, p: Pmt) {
+        if let Pmt::MapStrPmt(mut frame_info) = p {
+            let m_cfo_int: usize = if let Pmt::Usize(temp) = frame_info.get("cr").unwrap() {
+                *temp
+            } else {
+                panic!("invalid cr")
+            };
+            let m_sto_frac: f64 = if let Pmt::F64(temp) = frame_info.get("sto_frac").unwrap() {
+                *temp
+            } else {
+                panic!("invalid sto_frac")
+            };
+            let k_hat: usize = if let Pmt::Usize(temp) = frame_info.get("k_hat").unwrap() {
+                *temp
+            } else {
+                panic!("invalid k_hat")
+            };
+            let total_consumed_samples: usize = if let Pmt::Usize(temp) = frame_info.get("total_consumed_samples").unwrap() {
+                *temp
+            } else {
+                panic!("Missing consumed samples");
+            };
     #[message_handler]
-    fn frame_info_handler(
+    fn phase_info_handler2(
         &mut self,
         _io: &mut WorkIo,
         _mio: &mut MessageIo<Self>,
         _meta: &mut BlockMeta,
         p: Pmt,
     ) -> Result<Pmt> {
-        if let Pmt::MapStrPmt(mut frame_info) = p {
-            let m_cr: usize = if let Pmt::Usize(temp) = frame_info.get("cr").unwrap() {
-                *temp
-            } else {
-                panic!("invalid cr")
-            };
-            let m_pay_len: usize = if let Pmt::Usize(temp) = frame_info.get("pay_len").unwrap() {
-                *temp
-            } else {
-                panic!("invalid pay_len")
-            };
-            let m_has_crc: bool = if let Pmt::Bool(temp) = frame_info.get("crc").unwrap() {
-                *temp
-            } else {
-                panic!("invalid m_has_crc")
-            };
-            // uint8_t
-            let ldro_mode_tmp: LdroMode =
-                if let Pmt::Bool(temp) = frame_info.get("ldro_mode").unwrap() {
-                    if *temp {
-                        LdroMode::ENABLE
-                    } else {
-                        LdroMode::DISABLE
-                    }
-                } else {
-                    panic!("invalid ldro_mode")
-                };
-            let m_invalid_header = if let Pmt::Bool(temp) = frame_info.get("err").unwrap() {
-                *temp
-            } else {
-                panic!("invalid err flag")
-            };
+        store_phase_info(p);
 
-            // info!("FrameSync: received header info");
-
-            if m_invalid_header {
-                self.m_state = DecoderState::Detect;
-                self.symbol_cnt = SyncState::NetId2;
-                self.k_hat = 0;
-                self.m_sto_frac = 0.;
-            } else {
-                let m_ldro: LdroMode = if ldro_mode_tmp == LdroMode::AUTO {
-                    if (1_usize << self.m_sf) as f32 * 1e3 / self.m_bw as f32 > LDRO_MAX_DURATION_MS
-                    {
-                        LdroMode::ENABLE
-                    } else {
-                        LdroMode::DISABLE
-                    }
-                } else {
-                    ldro_mode_tmp
-                };
-
-                self.m_symb_numb = 8
-                    + ((2 * m_pay_len - self.m_sf
-                        + 2
-                        + (!self.m_impl_head) as usize * 5
-                        + if m_has_crc { 4 } else { 0 }) as f64
-                        / (self.m_sf - 2 * m_ldro as usize) as f64)
-                        .ceil() as usize
-                        * (4 + m_cr);
-                self.m_received_head = true;
-                frame_info.insert(String::from("is_header"), Pmt::Bool(false));
-                frame_info.insert(String::from("symb_numb"), Pmt::Usize(self.m_symb_numb));
-                frame_info.remove("ldro_mode");
-                frame_info.insert(String::from("ldro"), Pmt::Bool(m_ldro as usize != 0));
-                frame_info.insert(String::from("timestamp"), Pmt::U64(self.origin_timestamp.elapsed().as_nanos() as u64));
-                let frame_info_pmt = Pmt::MapStrPmt(frame_info);
-                self.tag_from_msg_handler_to_work_channel
-                    .0
-                    .try_send(frame_info_pmt)
-                    .unwrap();
-            }
-        } else {
-            warn!("noise_est pmt was not a Map/Dict");
-        }
         Ok(Pmt::Null)
     }
+    #[message_handler]
+    fn phase_info_handler1(
+        &mut self,
+        _io: &mut WorkIo,
+        _mio: &mut MessageIo<Self>,
+        _meta: &mut BlockMeta,
+        p: Pmt,
+    ) -> Result<Pmt> {
 
-   
+    if let Pmt::MapStrPmt(mut frame_info) = p {
+        let m_cfo_int: usize = if let Pmt::Usize(temp) = frame_info.get("cr").unwrap() {
+            *temp
+        } else {
+            panic!("invalid cr")
+        };
+        let m_sto_frac: f64 = if let Pmt::F64(temp) = frame_info.get("sto_frac").unwrap() {
+            *temp
+        } else {
+            panic!("invalid sto_frac")
+        };
+        let k_hat: usize = if let Pmt::Usize(temp) = frame_info.get("k_hat").unwrap() {
+            *temp
+        } else {
+            panic!("invalid k_hat")
+        };
+        let total_consumed_samples: usize = if let Pmt::Usize(temp) = frame_info.get("total_consumed_samples").unwrap() {
+            *temp
+        } else {
+            panic!("Missing consumed samples");
+        };
+
+
+        let m_invalid_header = if let Pmt::Bool(temp) = frame_info.get("err").unwrap() {
+            *temp
+        } else {
+            panic!("invalid err flag")
+        };
+
+        Ok(Pmt::Null)
+    }
 }
 
 #[async_trait]
