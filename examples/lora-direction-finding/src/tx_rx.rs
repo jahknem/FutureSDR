@@ -21,7 +21,7 @@ use lora::frame_sync;
 use lora::whitening;
 use futuresdr::gui::Gui;
 use futuresdr::gui::GuiFrontend;
-use lora_direction_finding::PhaseDifference;
+use lora_direction_finding::phase_difference::PhaseDifference;
 use futuresdr::blocks::gui::SpectrumPlotBuilder;
 use lora::{
     AddCrc, Decoder, Deinterleaver, FftDemod, FrameSync, GrayDemap, GrayMapping, HammingDec,
