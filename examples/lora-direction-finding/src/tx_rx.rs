@@ -21,6 +21,7 @@ use lora::frame_sync;
 use lora::whitening;
 use futuresdr::gui::Gui;
 use futuresdr::gui::GuiFrontend;
+use lora_direction_finding::phase_difference;
 use lora_direction_finding::phase_difference::PhaseDifference;
 use futuresdr::blocks::gui::SpectrumPlotBuilder;
 use lora::{
@@ -76,7 +77,6 @@ fn main() -> Result<()> {
         .build();
 
     // TX Chain
-
     let has_crc = true;
     let cr = 0;
 
@@ -112,7 +112,7 @@ fn main() -> Result<()> {
     let down_sample_b = FirBuilder::new_resampling::<Complex32, Complex32>(1, STO_FRAC_DENOM.abs() as usize); // Bruchteil nehmen gemäß des os_factor in frame_sync 
 
 
-    // RX chain
+    // RX chain A
     let frame_sync_a = FrameSync::new(
         args.frequency as u32,
         args.bandwidth as u32,
@@ -131,6 +131,29 @@ fn main() -> Result<()> {
     let null_sink_a = NullSink::<f32>::new();
     let (sender_a, mut receiver_a) = mpsc::channel::<Pmt>(10);
     let channel_sink_a = MessagePipe::new(sender_a);
+
+    //RX Chain B
+    let frame_sync_b = FrameSync::new(
+        args.frequency as u32,
+        args.bandwidth as u32,
+        args.spreading_factor,
+        false,
+        vec![0x12],
+        1, // auf 4 setzen
+        None,
+    );
+    let fft_demod_b = FftDemod::new(soft_decoding, true, args.spreading_factor);
+    let gray_mapping_b = GrayMapping::new(soft_decoding);
+    let deinterleaver_b = Deinterleaver::new(soft_decoding);
+    let hamming_dec_b = HammingDec::new(soft_decoding);
+    let header_decoder_b = HeaderDecoder::new(HeaderMode::Explicit, false);
+    let decoder_b = Decoder::new();
+    let null_sink_b = NullSink::<f32>::new();
+    let (sender_b, mut receiver_b) = mpsc::channel::<Pmt>(10);
+    let channel_sink_b = MessagePipe::new(sender_b);
+
+    // Shared RX Chain
+    let phase_difference = PhaseDifference::new(2048);
 
 
     // TX Connect Macro
@@ -153,8 +176,8 @@ fn main() -> Result<()> {
         up_sample_a [Circular::with_size(2 * 4 * 8192 * 4 * 2)] sampling_time_offset_a [Circular::with_size(2 * 4 * 8192 * 4 * 2)] down_sample_a > 
         frame_sync_a;
         split_block.out1 > 
-        up_sample_b [Circular::with_size(2 * 4 * 8192 * 4 * 2)] down_sample_b > 
-        complex_null_sink_1;
+        up_sample_b [Circular::with_size(2 * 4 * 8192 * 4 * 2)] sampling_time_offset_b [Circular::with_size(2 * 4 * 8192 * 4 * 2)] down_sample_b > 
+        frame_sync_b;
     );
     
     // connect!(
@@ -169,6 +192,13 @@ fn main() -> Result<()> {
         header_decoder_a.frame_info | frame_sync_a.frame_info; 
         header_decoder_a | decoder_a;
         decoder_a.data | channel_sink_a;
+        frame_sync_b > fft_demod_b > gray_mapping_b > deinterleaver_b > hamming_dec_b > header_decoder_b;
+        frame_sync_b.log_out > null_sink_b;
+        header_decoder_b.frame_info | frame_sync_b.frame_info;
+        header_decoder_b | decoder_b;
+        decoder_b.data | channel_sink_b;
+        frame_sync_a.phase_info | phase_difference.phase_info1;
+        frame_sync_b.phase_info | phase_difference.phase_info2;
     );
 
     rt.spawn_background(async move {

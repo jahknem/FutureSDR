@@ -116,7 +116,6 @@ impl<T: Copy + Send + 'static> Kernel for Delay<T> {
                 if m > 0 {
                     o[..m].copy_from_slice(&i[..m]);
                 }
-                print!("Delay::copy consuming and producing: {}", m);
                 sio.input(0).consume(m);
                 sio.output(0).produce(m);
                 if sio.input(0).finished() && m == i.len() {

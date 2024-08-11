@@ -31,8 +31,8 @@ impl PhaseDifference {
             BlockMetaBuilder::new("PhaseDifference").build(),
             StreamIoBuilder::new().build(),
             MessageIoBuilder::new()
-                .add_input("in1", PhaseDifference::phase_info_handler1)
-                .add_input("in2", PhaseDifference::phase_info_handler2)
+                .add_input("phase_info1", PhaseDifference::phase_info_handler1)
+                .add_input("phase_info2", PhaseDifference::phase_info_handler2)
                 .add_output("out")
                 .build(),
             PhaseDifference {
@@ -45,23 +45,23 @@ impl PhaseDifference {
         )
     }
     fn store_phase_info(&mut self, p: Pmt) {
-        if let Pmt::MapStrPmt(mut frame_info) = p {
-            let m_cfo_int: usize = if let Pmt::Usize(temp) = frame_info.get("cr").unwrap() {
+        if let Pmt::MapStrPmt(frame_info) = p {
+            self.m_cfo_int = if let Pmt::Usize(temp) = frame_info.get("cr").unwrap() {
                 *temp
             } else {
                 panic!("invalid cr")
             };
-            let m_sto_frac: f64 = if let Pmt::F64(temp) = frame_info.get("sto_frac").unwrap() {
+            self.m_sto_frac = if let Pmt::F64(temp) = frame_info.get("sto_frac").unwrap() {
                 *temp
             } else {
                 panic!("invalid sto_frac")
             };
-            let k_hat: usize = if let Pmt::Usize(temp) = frame_info.get("k_hat").unwrap() {
+            self.k_hat = if let Pmt::Usize(temp) = frame_info.get("k_hat").unwrap() {
                 *temp
             } else {
                 panic!("invalid k_hat")
             };
-            let total_consumed_samples: usize = if let Pmt::Usize(temp) = frame_info.get("total_consumed_samples").unwrap() {
+            self.total_consumed_samples = if let Pmt::Usize(temp) = frame_info.get("total_consumed_samples").unwrap() {
                 *temp
             } else {
                 panic!("Missing consumed samples");
@@ -83,7 +83,7 @@ impl PhaseDifference {
     #[message_handler]
     fn phase_info_handler2(
         &mut self,
-        io: &mut WorkIo,
+        _io: &mut WorkIo,
         mio: &mut MessageIo<Self>,
         _meta: &mut BlockMeta,
         p: Pmt,
@@ -96,7 +96,7 @@ impl PhaseDifference {
     #[message_handler]
     fn phase_info_handler1(
         &mut self,
-        io: &mut WorkIo,
+        _io: &mut WorkIo,
         mio: &mut MessageIo<Self>,
         _meta: &mut BlockMeta,
         p: Pmt,
@@ -111,15 +111,11 @@ impl PhaseDifference {
 impl Kernel for PhaseDifference {
     async fn work(
         &mut self,
-        io: &mut WorkIo,
-        sio: &mut StreamIo,
-        mio: &mut MessageIo<Self>,
-        b: &mut BlockMeta,
+        _io: &mut WorkIo,
+        _sio: &mut StreamIo,
+        _mio: &mut MessageIo<Self>,
+        _b: &mut BlockMeta,
     ) -> Result<()> {
-        let input0 = sio.input(0).slice::<Complex<f32>>();
-        let input1 = sio.input(1).slice::<Complex<f32>>();
-        let out = sio.output(0).slice::<Complex<f32>>();
-
         let n = std::cmp::min(input0.len(), input1.len());
         let n = std::cmp::min(n, out.len());
 

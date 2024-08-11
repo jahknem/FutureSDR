@@ -685,7 +685,7 @@ impl Kernel for FrameSync {
         &mut self,
         io: &mut WorkIo,
         sio: &mut StreamIo,
-        _m: &mut MessageIo<Self>,
+        m: &mut MessageIo<Self>,
         _b: &mut BlockMeta,
     ) -> Result<()> {
         //
@@ -1322,6 +1322,7 @@ impl Kernel for FrameSync {
                             phase_diff_info.insert(String::from("sto_frac"), Pmt::F32(self.m_sto_frac));
                             phase_diff_info.insert(String::from("k_hat"), Pmt::Usize(self.k_hat));
                             let phase_diff_info_pmt = Pmt::MapStrPmt(phase_diff_info);
+                            m.output_mut(0).post(phase_diff_info_pmt).await;
 
 
                             sio.output(0).add_tag(
